@@ -170,30 +170,54 @@ const Customized = ({ addToCart }) => {
       // Capture screenshot of the preview
       let photoBase64 = null;
       if (previewRef.current) {
-        const canvas = await html2canvas(previewRef.current, {
-          backgroundColor: null,
-          scale: 1,
-          logging: false,
-        });
-        photoBase64 = canvas.toDataURL('image/png');
+        try {
+          const canvas = await html2canvas(previewRef.current, {
+            backgroundColor: null,
+            scale: 1,
+            logging: false,
+          });
+          photoBase64 = canvas.toDataURL('image/png');
+        } catch (canvasError) {
+          console.error('Error capturing screenshot:', canvasError);
+          // Continue without photo if screenshot fails
+        }
       }
 
-      // Save request to localStorage
-      const requests = JSON.parse(localStorage.getItem('requests') || '[]');
+      // Get current user info
+      const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+      
+      // Create request object for localStorage
+      // This will be displayed in Profile.jsx My Orders section
       const requestId = `customized-${Date.now()}`;
       const newRequest = {
         id: requestId,
         type: 'customized',
-        status: 'pending',
-        paymentStatus: 'to_pay', // Requests default to 'to_pay' until admin confirms
+        status: 'pending', // Set as pending so it shows in pending tab
+        paymentStatus: 'to_pay',
         flower: selection.flower,
         bundleSize: selection.bundleSize,
         wrapper: selection.wrapper,
         ribbon: selection.ribbon,
         photo: photoBase64,
         price: totalPrice,
+        total: totalPrice, // Also add total for price display
         requestDate: new Date().toISOString(),
+        date: new Date().toISOString(), // Add date field for sorting
+        // Store full data structure for compatibility
+        data: {
+          flower: {
+            name: selection.flower.name,
+            id: selection.flower.id
+          },
+          bundleSize: selection.bundleSize,
+          wrapper: selection.wrapper,
+          ribbon: selection.ribbon,
+          price: totalPrice
+        }
       };
+
+      // Save to localStorage requests array
+      const requests = JSON.parse(localStorage.getItem('requests') || '[]');
       requests.push(newRequest);
       localStorage.setItem('requests', JSON.stringify(requests));
 
@@ -203,7 +227,7 @@ const Customized = ({ addToCart }) => {
         id: `notif-${Date.now()}`,
         type: 'request',
         title: 'Customized Bouquet Request Submitted!',
-        message: `Your customized bouquet (${selection.flower?.name || 'bouquet'}, ${selection.bundleSize} stems) has been submitted and is pending approval.`,
+        message: `Your customized bouquet (${selection.flower?.name || 'bouquet'}, ${selection.bundleSize} stems) has been submitted and is pending approval. You can view it in My Orders.`,
         icon: 'fa-seedling',
         timestamp: new Date().toISOString(),
         read: false,
@@ -214,7 +238,7 @@ const Customized = ({ addToCart }) => {
       setCapturedPhoto(photoBase64);
       setShowModal(true);
     } catch (error) {
-      console.error('Error capturing screenshot:', error);
+      console.error('Error submitting request:', error);
       alert('Error submitting request. Please try again.');
     }
   };
@@ -274,7 +298,7 @@ const Customized = ({ addToCart }) => {
           setShowModal(false);
           setCapturedPhoto(null);
         }}
-        message="Your customized bouquet request has been sent to the admin. Please wait for confirmation."
+        message="Your customized bouquet request has been added to My Orders! You can view it in your Profile page under the Pending tab. The admin will review and respond soon."
         photo={capturedPhoto}
       />
 

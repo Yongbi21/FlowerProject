@@ -29,13 +29,97 @@ router.get('/orders', adminAuth, async (req, res) => {
     }
 });
 
+// Accept order (move from pending to accepted, then can move to processing)
+router.post('/orders/:id/accept', adminAuth, async (req, res) => {
+    try {
+        // Check if order exists and is pending
+        const [orders] = await pool.query('SELECT status FROM orders WHERE id = ?', [req.params.id]);
+        
+        if (orders.length === 0) {
+            return res.status(404).json({ success: false, message: 'Order not found' });
+        }
+        
+        if (orders[0].status !== 'pending') {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Only pending orders can be accepted' 
+            });
+        }
+        
+        // Update order to accepted status and set accepted_at timestamp
+        await pool.query(
+            'UPDATE orders SET status = ?, accepted_at = NOW() WHERE id = ?',
+            ['accepted', req.params.id]
+        );
+        
+        res.json({ success: true, message: 'Order accepted' });
+    } catch (error) {
+        console.error('Accept order error:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// Decline order
+router.post('/orders/:id/decline', adminAuth, async (req, res) => {
+    try {
+        const { reason } = req.body;
+        
+        // Check if order exists and is pending
+        const [orders] = await pool.query('SELECT status FROM orders WHERE id = ?', [req.params.id]);
+        
+        if (orders.length === 0) {
+            return res.status(404).json({ success: false, message: 'Order not found' });
+        }
+        
+        if (orders[0].status !== 'pending') {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Only pending orders can be declined' 
+            });
+        }
+        
+        // Update order to declined status
+        await pool.query(
+            'UPDATE orders SET status = ?, decline_reason = ? WHERE id = ?',
+            ['declined', reason || null, req.params.id]
+        );
+        
+        res.json({ success: true, message: 'Order declined' });
+    } catch (error) {
+        console.error('Decline order error:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
 // Update order status
 router.put('/orders/:id/status', adminAuth, async (req, res) => {
     try {
         const { status } = req.body;
+        
+        // Check current order status
+        const [orders] = await pool.query('SELECT status, accepted_at FROM orders WHERE id = ?', [req.params.id]);
+        
+        if (orders.length === 0) {
+            return res.status(404).json({ success: false, message: 'Order not found' });
+        }
+        
+        const currentOrder = orders[0];
+        
+        // Prevent moving to 'processing' unless order is 'accepted'
+        if (status === 'processing') {
+            if (currentOrder.status !== 'accepted') {
+                return res.status(400).json({ 
+                    success: false, 
+                    message: 'Order must be accepted before it can be moved to processing. Please accept the order first.' 
+                });
+            }
+        }
+        
+        // Allow other status transitions
         await pool.query('UPDATE orders SET status = ? WHERE id = ?', [status, req.params.id]);
         res.json({ success: true, message: 'Status updated' });
     } catch (error) {
+        console.error('Update order status error:', error);
         res.status(500).json({ success: false, message: 'Server error' });
     }
 });
@@ -419,6 +503,22 @@ router.get('/requests', adminAuth, async (req, res) => {
 router.put('/requests/:id/status', adminAuth, async (req, res) => {
     try {
         const { status } = req.body;
+        
+        // If status is 'declined' or 'cancelled', delete the request instead of updating
+        if (status === 'declined' || status === 'cancelled') {
+            const [result] = await pool.query('DELETE FROM requests WHERE id = ?', [req.params.id]);
+            
+            if (result.affectedRows === 0) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Request not found'
+                });
+            }
+            
+            return res.json({ success: true, message: 'Request deleted' });
+        }
+        
+        // For other statuses, update normally
         await pool.query('UPDATE requests SET status = ? WHERE id = ?', [status, req.params.id]);
         res.json({ success: true, message: 'Status updated' });
     } catch (error) {

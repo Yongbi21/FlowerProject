@@ -28,7 +28,7 @@ const LoginScreen = () => {
     setLoading(true);
 
     try {
-      console.log('Attempting login to:', 'http://192.168.111.94:5000/api/auth/admin/login');
+      console.log('Attempting login...');
       console.log('Email:', email);
 
       const response = await authAPI.adminLogin({ email, password });
@@ -71,7 +71,7 @@ const LoginScreen = () => {
       <View style={styles.content}>
         <View style={styles.logoContainer}>
           <Text style={styles.shopName}>Joccery's Flower Shop</Text>
-          <Text style={styles.title}>Admin Login</Text>
+          <Text style={styles.title}>Login</Text>
         </View>
         <Text style={styles.subtitle}>FlowerForge Admin Dashboard</Text>
 

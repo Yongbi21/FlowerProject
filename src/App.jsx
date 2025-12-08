@@ -21,7 +21,7 @@ import MyOrders from './pages/MyOrders'
 import Notifications from './pages/Notifications'
 import AdminDashboard from './pages/AdminDashboard'
 
-import { cartAPI } from './config/api';
+// Removed cartAPI import - using localStorage instead for demo
 
 function AppContent() {
   const location = useLocation();
@@ -47,104 +47,63 @@ function AppContent() {
   const logout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('currentUser');
-    localStorage.removeItem('cart'); // Optional: clear cart on logout
+    localStorage.removeItem('cart');
+    // Clear all order/request data to prevent data leakage between accounts
+    localStorage.removeItem('orders');
+    localStorage.removeItem('requests');
+    localStorage.removeItem('messages');
+    localStorage.removeItem('notifications');
     setUser(null);
     setCart([]); // Clear cart state
-    navigate('/login');
+    window.location.href = '/login'; // Force full page reload to clear any cached state
   };
 
   const [cart, setCart] = useState([]);
 
+  // Load cart from localStorage on mount
   useEffect(() => {
-    if (isLoggedIn) {
-      fetchCart();
-    } else {
-      const savedCart = localStorage.getItem('cart');
-      if (savedCart) {
+    const savedCart = localStorage.getItem('cart');
+    if (savedCart) {
+      try {
         setCart(JSON.parse(savedCart));
+      } catch (error) {
+        console.error('Error parsing cart from localStorage:', error);
+        setCart([]);
       }
     }
-  }, [isLoggedIn]);
+  }, []);
 
-  const fetchCart = async () => {
-    try {
-      const response = await cartAPI.get();
-      if (response.data.success) {
-        const apiItems = response.data.cart.items.map(item => ({
-          id: item.id,
-          productId: item.product_id,
-          name: item.name,
-          price: parseFloat(item.price),
-          image: item.image_url,
-          qty: item.quantity,
-          stock: item.stock_quantity
-        }));
-        setCart(apiItems);
-      }
-    } catch (error) {
-      console.error('Error fetching cart:', error);
-    }
-  };
-
+  // Save cart to localStorage whenever it changes
   useEffect(() => {
-    if (!isLoggedIn) {
-      localStorage.setItem('cart', JSON.stringify(cart));
-    }
-  }, [cart, isLoggedIn]);
+    localStorage.setItem('cart', JSON.stringify(cart));
+  }, [cart]);
 
-  const addToCart = async (name, price, image, productId) => {
-    if (isLoggedIn) {
-      try {
-        await cartAPI.add({ product_id: productId, quantity: 1 });
-        await fetchCart();
-      } catch (error) {
-        console.error('Error adding to cart:', error);
-        alert(error.response?.data?.message || 'Failed to add to cart');
+  const addToCart = (name, price, image, productId) => {
+    // Always use localStorage for cart operations
+    setCart(prevCart => {
+      const existingItem = prevCart.find(item => (productId && item.productId === productId) || item.name === name);
+      if (existingItem) {
+        return prevCart.map(item =>
+          ((productId && item.productId === productId) || item.name === name)
+            ? { ...item, qty: (item.qty || 0) + 1 }
+            : item
+        );
+      } else {
+        return [...prevCart, { name, price, image, qty: 1, productId, id: productId || `local-${Date.now()}` }];
       }
-    } else {
-      setCart(prevCart => {
-        const existingItem = prevCart.find(item => (productId && item.productId === productId) || item.name === name);
-        if (existingItem) {
-          return prevCart.map(item =>
-            ((productId && item.productId === productId) || item.name === name)
-              ? { ...item, qty: (item.qty || 0) + 1 }
-              : item
-          );
-        } else {
-          return [...prevCart, { name, price, image, qty: 1, productId }];
-        }
-      });
-    }
+    });
   };
 
-  const updateCartItem = async (itemId, quantity) => {
-    if (isLoggedIn) {
-      try {
-        await cartAPI.update(itemId, { quantity });
-        await fetchCart();
-      } catch (error) {
-        console.error('Error updating cart:', error);
-        alert('Failed to update cart');
-      }
-    } else {
-      setCart(prevCart => prevCart.map(item =>
-        (item.id === itemId || item.productId === itemId) ? { ...item, qty: quantity } : item
-      ));
-    }
+  const updateCartItem = (itemId, quantity) => {
+    // Always use localStorage for cart operations
+    setCart(prevCart => prevCart.map(item =>
+      (item.id === itemId || item.productId === itemId) ? { ...item, qty: quantity } : item
+    ));
   };
 
-  const removeFromCart = async (itemId) => {
-    if (isLoggedIn) {
-      try {
-        await cartAPI.delete(itemId);
-        await fetchCart();
-      } catch (error) {
-        console.error('Error removing from cart:', error);
-        alert('Failed to remove item');
-      }
-    } else {
-      setCart(prevCart => prevCart.filter(item => item.id !== itemId && item.productId !== itemId));
-    }
+  const removeFromCart = (itemId) => {
+    // Always use localStorage for cart operations
+    setCart(prevCart => prevCart.filter(item => item.id !== itemId && item.productId !== itemId));
   };
 
   const cartCount = cart.reduce((acc, item) => acc + (item.qty || 0), 0);

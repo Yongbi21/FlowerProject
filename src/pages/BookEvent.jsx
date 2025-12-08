@@ -328,7 +328,7 @@ const BookEvent = () => {
             <RequestSuccessModal
                 show={showModal}
                 onClose={() => setShowModal(false)}
-                message="Your event inquiry has been sent to the admin. Please wait for confirmation."
+                message="Your event inquiry has been submitted successfully! You can view it in My Orders under the Pending tab. The admin will review and respond soon."
             />
         </div>
     );

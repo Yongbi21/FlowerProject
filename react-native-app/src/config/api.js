@@ -4,7 +4,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // API Base URL - Update this with your computer's IP address for mobile testing
 // For local testing: Use your computer's IP (e.g., 192.168.1.100)
 // For production: Use your deployed backend URL
-const API_URL = 'http://192.168.111.94:5000/api'; // Your computer's IP
+const BASE_URL = 'http://10.36.28.250:5000'; // Your computer's IP - Update if your IP changes
+const API_URL = `${BASE_URL}/api`;
 
 // Create axios instance
 const api = axios.create({
@@ -12,13 +13,15 @@ const api = axios.create({
     headers: {
         'Content-Type': 'application/json'
     },
-    timeout: 30000 // 30 seconds
+    timeout: 10000 // 10 seconds - reduced for faster error feedback
 });
 
 // Add token to requests automatically
 api.interceptors.request.use(
     async (config) => {
-        console.log('Making request to:', config.baseURL + config.url);
+        const fullUrl = config.baseURL + config.url;
+        console.log('🌐 Making request to:', fullUrl);
+        console.log('📡 Base URL:', BASE_URL);
         const token = await AsyncStorage.getItem('token');
         if (token) {
             config.headers.Authorization = `Bearer ${token}`;
@@ -40,6 +43,27 @@ api.interceptors.response.use(
             await AsyncStorage.removeItem('token');
             await AsyncStorage.removeItem('currentUser');
         }
+        
+        // Enhanced error logging for debugging
+        if (error.code === 'ECONNABORTED') {
+            console.error('Request timeout - Server took too long to respond');
+            console.error('Server URL:', API_URL);
+        } else if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+            console.error('Connection error - Cannot reach server at:', API_URL);
+            console.error('Base URL:', BASE_URL);
+            console.error('Error code:', error.code);
+            console.error('Make sure:');
+            console.error('1. Backend server is running on port 5000');
+            console.error('2. Your device is on the same network');
+            console.error('3. IP address is correct:', BASE_URL);
+            console.error('4. Firewall allows connections on port 5000');
+        } else if (error.request && !error.response) {
+            console.error('Network error - No response from server');
+            console.error('Request URL:', error.config?.url);
+            console.error('Base URL:', BASE_URL);
+            console.error('Full error:', JSON.stringify(error, null, 2));
+        }
+        
         return Promise.reject(error);
     }
 );
@@ -128,3 +152,4 @@ export const uploadAPI = {
 };
 
 export default api;
+export { BASE_URL };

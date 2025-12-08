@@ -100,56 +100,41 @@ const ProductDetail = ({ addToCart }) => {
     const [product, setProduct] = useState(null);
     const [loading, setLoading] = useState(true);
 
-    const { productAPI } = require('../config/api');
-
     useEffect(() => {
-        fetchProduct();
+        loadProduct();
     }, [productId]);
 
-    const fetchProduct = async () => {
+    const loadProduct = () => {
         try {
-            // Try to fetch from API using numeric ID
-            const response = await productAPI.getById(productId);
-            if (response.data && response.data.product) {
-                const apiProduct = response.data.product;
-                // Find matching local product by name to get the image
-                const localProduct = Object.values(products).find(p => p.name === apiProduct.name);
-                setProduct({
-                    id: apiProduct.id,
-                    name: apiProduct.name,
-                    price: apiProduct.price,
-                    originalPrice: apiProduct.price * 1.2, // 20% markup for display
-                    category: getCategoryName(apiProduct.category_id),
-                    image: localProduct ? localProduct.image : apiProduct.image_url,
-                    rating: localProduct ? localProduct.rating : 4.5,
-                    sold: localProduct ? localProduct.sold : 0,
-                    stock: apiProduct.stock_quantity
-                });
-            } else {
-                // Fallback to local products
-                const localProduct = products[productId] || products['md1'];
-                setProduct(localProduct);
+            // First try to get from localStorage products
+            const savedProducts = localStorage.getItem('products');
+            let productData = null;
+
+            if (savedProducts) {
+                const allProducts = JSON.parse(savedProducts);
+                // Try to find by ID
+                productData = allProducts.find(p => p.id === productId);
             }
+
+            // If not found in localStorage, try local products object
+            if (!productData) {
+                productData = products[productId];
+            }
+
+            // If still not found, use first product as fallback
+            if (!productData) {
+                productData = Object.values(products)[0] || products['md1'];
+            }
+
+            setProduct(productData);
         } catch (error) {
-            console.error('Error fetching product:', error);
+            console.error('Error loading product:', error);
             // Fallback to local products
             const localProduct = products[productId] || products['md1'];
             setProduct(localProduct);
         } finally {
             setLoading(false);
         }
-    };
-
-    const getCategoryName = (categoryId) => {
-        const categoryMap = {
-            1: 'All Souls Day',
-            2: 'Get Well Soon',
-            3: 'Graduation',
-            4: 'Mothers Day',
-            5: 'Sympathy',
-            6: 'Valentines'
-        };
-        return categoryMap[categoryId] || 'Other';
     };
 
     if (loading || !product) {

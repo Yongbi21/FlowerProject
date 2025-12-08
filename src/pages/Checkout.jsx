@@ -22,28 +22,64 @@ const Checkout = ({ setCart, user }) => {
     const [receiptPreview, setReceiptPreview] = useState(null);
 
     const [address, setAddress] = useState({
-        name: 'Maria Santos',
-        phone: '+63 912 345 6789',
-        street: '123 Sampaguita St., Brgy. Maligaya',
-        city: 'Quezon City',
-        province: 'Metro Manila',
-        zip: '1100'
+        name: '',
+        phone: '',
+        street: '',
+        city: '',
+        province: '',
+        zip: ''
     });
     const [savedAddresses, setSavedAddresses] = useState([]);
 
     useEffect(() => {
+        // Load addresses from profile (same key as Profile page uses)
         if (user?.email) {
             const saved = localStorage.getItem(`userAddresses_${user.email}`);
             if (saved) {
-                setSavedAddresses(JSON.parse(saved));
+                const parsedAddresses = JSON.parse(saved);
+                setSavedAddresses(parsedAddresses);
+                
+                // Set default address if available
+                const defaultAddress = parsedAddresses.find(addr => addr.isDefault) || parsedAddresses[0];
+                if (defaultAddress) {
+                    parseAddressToForm(defaultAddress);
+                    setSelectedAddressId(defaultAddress.id);
+                } else {
+                    // If no saved addresses, use user info from profile
+                    setAddress({
+                        name: user.name || '',
+                        phone: user.phone || '',
+                        street: '',
+                        city: '',
+                        province: '',
+                        zip: ''
+                    });
+                }
             } else {
                 setSavedAddresses([]);
+                // Use user info from profile if no saved addresses
+                setAddress({
+                    name: user.name || '',
+                    phone: user.phone || '',
+                    street: '',
+                    city: '',
+                    province: '',
+                    zip: ''
+                });
             }
         } else {
             // Fallback for guest or legacy
             const saved = localStorage.getItem('userAddresses');
             if (saved) {
-                setSavedAddresses(JSON.parse(saved));
+                const parsedAddresses = JSON.parse(saved);
+                setSavedAddresses(parsedAddresses);
+                const defaultAddress = parsedAddresses.find(addr => addr.isDefault) || parsedAddresses[0];
+                if (defaultAddress) {
+                    parseAddressToForm(defaultAddress);
+                    setSelectedAddressId(defaultAddress.id);
+                }
+            } else {
+                setSavedAddresses([]);
             }
         }
     }, [user]);
@@ -51,15 +87,17 @@ const Checkout = ({ setCart, user }) => {
     const [showAddAddressModal, setShowAddAddressModal] = useState(false);
     const [newAddress, setNewAddress] = useState({
         label: '',
-        name: user?.name || '',
+        name: '',
         phone: '',
         address: ''
     });
 
     const parseAddressToForm = (addressObj) => {
         // Parse the address string into form fields
-        // Address format: "123 Sampaguita St., Brgy. Maligaya, Quezon City, Metro Manila 1100"
+        // Profile page stores address as just the street address string
         const addressStr = addressObj.address || '';
+        
+        // Try to parse if it contains commas (legacy format)
         const parts = addressStr.split(',').map(p => p.trim());
 
         let street = '';
@@ -96,12 +134,13 @@ const Checkout = ({ setCart, user }) => {
             street = parts[0];
             city = parts[1];
         } else {
+            // Profile page format: just street address
             street = addressStr;
         }
 
         setAddress({
-            name: addressObj.name || '',
-            phone: addressObj.phone || '',
+            name: addressObj.name || user?.name || '',
+            phone: addressObj.phone || user?.phone || '',
             street: street,
             city: city,
             province: province,
@@ -118,27 +157,26 @@ const Checkout = ({ setCart, user }) => {
     };
 
     const handleSaveNewAddress = () => {
-        if (!newAddress.label || !address.name || !address.phone || !address.street || !address.city) {
-            alert('Please fill in all required fields (Label, Name, Phone, Street, City)');
+        if (!newAddress.label || !address.name || !address.phone || !address.street) {
+            alert('Please fill in all required fields (Label, Name, Phone, Street)');
             return;
         }
 
-        // Construct full address string from form fields
-        const addressParts = [address.street];
-        if (address.city) addressParts.push(address.city);
-        if (address.province) addressParts.push(address.province);
-        const fullAddress = addressParts.join(', ') + (address.zip ? ` ${address.zip}` : '');
+        // Construct full address string from form fields (matching Profile page format)
+        const fullAddress = address.street;
 
-        // Create new address object
+        // Create new address object (matching Profile page structure)
         const newId = savedAddresses.length > 0 ? Math.max(...savedAddresses.map(a => a.id)) + 1 : 1;
         const addressToSave = {
             id: newId,
+            label: newAddress.label,
+            name: address.name,
             phone: address.phone,
             address: fullAddress,
             isDefault: savedAddresses.length === 0
         };
 
-        // Save to localStorage
+        // Save to localStorage (same key as Profile page)
         const updated = [...savedAddresses, addressToSave];
         setSavedAddresses(updated);
 
@@ -153,7 +191,7 @@ const Checkout = ({ setCart, user }) => {
         setSelectedAddressId(newId);
 
         // Reset form and close modal
-        setNewAddress({ label: '', name: user?.name || '', phone: '', address: '' });
+        setNewAddress({ label: '', name: '', phone: '', address: '' });
         setShowAddAddressModal(false);
     };
 
@@ -166,29 +204,7 @@ const Checkout = ({ setCart, user }) => {
         if (savedOrderType) {
             setOrderType(savedOrderType);
         }
-
-        // Load saved addresses
-        const addresses = JSON.parse(localStorage.getItem('userAddresses') || '[]');
-        if (addresses.length > 0) {
-            setSavedAddresses(addresses);
-            // Set default address if available
-            const defaultAddress = addresses.find(addr => addr.isDefault) || addresses[0];
-            if (defaultAddress) {
-                parseAddressToForm(defaultAddress);
-                setSelectedAddressId(defaultAddress.id);
-            }
-        } else {
-            // If no saved addresses, use default mock addresses
-            const mockAddresses = [
-                { id: 1, label: 'Home', name: 'Maria Santos', phone: '+63 912 345 6789', address: '123 Sampaguita St., Brgy. Maligaya, Quezon City, Metro Manila 1100', isDefault: true },
-                { id: 2, label: 'Office', name: 'Elliana Santos', phone: '+63 912 345 6789', address: '456 Rizal Avenue, Makati Business District, Makati City, Metro Manila 1200', isDefault: false },
-            ];
-            if (mockAddresses.length > 0) {
-                setSavedAddresses(mockAddresses);
-                parseAddressToForm(mockAddresses[0]);
-                setSelectedAddressId(mockAddresses[0].id);
-            }
-        }
+        // Address loading is now handled in the user effect above
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
@@ -392,29 +408,50 @@ const Checkout = ({ setCart, user }) => {
                                     Delivery Address
                                 </h5>
 
-                                {savedAddresses.length > 0 && (
-                                    <div className="mb-3">
-                                        <label className="form-label small text-muted fw-bold">Choose from Saved Addresses</label>
-                                        <select
-                                            className="form-select"
-                                            value={selectedAddressId || ''}
-                                            onChange={(e) => {
-                                                if (e.target.value) {
-                                                    handleAddressSelect(parseInt(e.target.value));
-                                                } else {
-                                                    setSelectedAddressId(null);
-                                                }
-                                            }}
-                                        >
-                                            <option value="">Enter new address</option>
-                                            {savedAddresses.map(addr => (
-                                                <option key={addr.id} value={addr.id}>
-                                                    {addr.label} {addr.isDefault && '(Default)'} - {addr.address}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                )}
+                                <div className="mb-3">
+                                    {savedAddresses.length > 0 ? (
+                                        <>
+                                            <label className="form-label small text-muted fw-bold">Choose from Saved Addresses</label>
+                                            <select
+                                                className="form-select"
+                                                value={selectedAddressId || ''}
+                                                onChange={(e) => {
+                                                    if (e.target.value) {
+                                                        handleAddressSelect(parseInt(e.target.value));
+                                                    } else {
+                                                        setSelectedAddressId(null);
+                                                        // Reset to user info if no address selected
+                                                        setAddress({
+                                                            name: user?.name || '',
+                                                            phone: user?.phone || '',
+                                                            street: '',
+                                                            city: '',
+                                                            province: '',
+                                                            zip: ''
+                                                        });
+                                                    }
+                                                }}
+                                            >
+                                                <option value="">Enter new address</option>
+                                                {savedAddresses.map(addr => (
+                                                    <option key={addr.id} value={addr.id}>
+                                                        {addr.label} {addr.isDefault && '(Default)'} - {addr.address}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </>
+                                    ) : (
+                                        <div className="alert alert-info">
+                                            <i className="fas fa-info-circle me-2"></i>
+                                            No saved addresses. 
+                                            {user ? (
+                                                <span> Go to <Link to="/profile" style={{ color: 'var(--shop-pink)' }}>Profile</Link> to add addresses, or fill in the form below.</span>
+                                            ) : (
+                                                <span> Please fill in your delivery address below.</span>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
 
                                 <div className="row g-3">
                                     <div className="col-md-6">
@@ -721,7 +758,7 @@ const Checkout = ({ setCart, user }) => {
                         </div>
                         <div className="modal-body-custom">
                             <div className="form-group">
-                                <label className="form-label">Label</label>
+                                <label className="form-label">Label <span className="text-danger">*</span></label>
                                 <input
                                     type="text"
                                     className="form-control-custom"
@@ -731,30 +768,33 @@ const Checkout = ({ setCart, user }) => {
                                 />
                             </div>
                             <div className="form-group">
-                                <label className="form-label">Full Name</label>
+                                <label className="form-label">Full Name <span className="text-danger">*</span></label>
                                 <input
                                     type="text"
                                     className="form-control-custom"
                                     value={address.name}
                                     onChange={e => setAddress({ ...address, name: e.target.value })}
+                                    placeholder={user?.name || 'Enter full name'}
                                 />
                             </div>
                             <div className="form-group">
-                                <label className="form-label">Phone Number</label>
+                                <label className="form-label">Phone Number <span className="text-danger">*</span></label>
                                 <input
                                     type="tel"
                                     className="form-control-custom"
                                     value={address.phone}
                                     onChange={e => setAddress({ ...address, phone: e.target.value })}
+                                    placeholder={user?.phone || 'Enter phone number'}
                                 />
                             </div>
                             <div className="form-group">
-                                <label className="form-label">Street Address</label>
+                                <label className="form-label">Street Address <span className="text-danger">*</span></label>
                                 <input
                                     type="text"
                                     className="form-control-custom"
                                     value={address.street}
                                     onChange={e => setAddress({ ...address, street: e.target.value })}
+                                    placeholder="e.g., 123 Sampaguita St., Brgy. Maligaya"
                                 />
                             </div>
                             <div className="row">
@@ -766,6 +806,7 @@ const Checkout = ({ setCart, user }) => {
                                             className="form-control-custom"
                                             value={address.city}
                                             onChange={e => setAddress({ ...address, city: e.target.value })}
+                                            placeholder="e.g., Quezon City"
                                         />
                                     </div>
                                 </div>
@@ -777,6 +818,7 @@ const Checkout = ({ setCart, user }) => {
                                             className="form-control-custom"
                                             value={address.province}
                                             onChange={e => setAddress({ ...address, province: e.target.value })}
+                                            placeholder="e.g., Metro Manila"
                                         />
                                     </div>
                                 </div>
@@ -788,6 +830,7 @@ const Checkout = ({ setCart, user }) => {
                                     className="form-control-custom"
                                     value={address.zip}
                                     onChange={e => setAddress({ ...address, zip: e.target.value })}
+                                    placeholder="e.g., 1100"
                                 />
                             </div>
                         </div>

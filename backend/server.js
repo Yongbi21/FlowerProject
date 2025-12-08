@@ -130,15 +130,32 @@ const startServer = async () => {
             process.exit(1);
         }
 
-        // Start server
-        app.listen(PORT, () => {
+        // Get network IP address dynamically
+        const os = require('os');
+        const networkInterfaces = os.networkInterfaces();
+        let networkIP = 'localhost';
+        
+        // Find the first non-internal IPv4 address
+        for (const interfaceName of Object.keys(networkInterfaces)) {
+            for (const iface of networkInterfaces[interfaceName]) {
+                if (iface.family === 'IPv4' && !iface.internal) {
+                    networkIP = iface.address;
+                    break;
+                }
+            }
+            if (networkIP !== 'localhost') break;
+        }
+
+        // Start server - listen on all interfaces (0.0.0.0) for mobile access
+        app.listen(PORT, '0.0.0.0', () => {
             console.log('');
             console.log('🌸 ========================================');
             console.log('🌸  FlowerForge API Server');
             console.log('🌸 ========================================');
             console.log(`🌸  Environment: ${process.env.NODE_ENV || 'development'}`);
             console.log(`🌸  Port: ${PORT}`);
-            console.log(`🌸  URL: http://localhost:${PORT}`);
+            console.log(`🌸  Local URL: http://localhost:${PORT}`);
+            console.log(`🌸  Network URL: http://${networkIP}:${PORT}`);
             console.log('🌸 ========================================');
             console.log('');
         });

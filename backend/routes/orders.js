@@ -7,19 +7,53 @@ const { auth } = require('../middleware/auth');
 router.get('/', auth, async (req, res) => {
     try {
         const { status } = req.query;
-        let query = 'SELECT * FROM orders WHERE user_id = ?';
+        let query = `
+            SELECT o.*, 
+                   r.type as request_type,
+                   r.data as request_data,
+                   r.photo_url as request_photo_url,
+                   r.event_type,
+                   r.event_date
+            FROM orders o
+            LEFT JOIN requests r ON o.request_id = r.id
+            WHERE o.user_id = ?
+        `;
         const params = [req.user.id];
         
         if (status) {
-            query += ' AND status = ?';
+            query += ' AND o.status = ?';
             params.push(status);
         }
         
-        query += ' ORDER BY created_at DESC';
+        query += ' ORDER BY o.created_at DESC';
         
         const [orders] = await pool.query(query, params);
-        res.json({ success: true, orders });
+        
+        // Parse request data if it exists and fetch order items
+        const ordersWithRequestData = await Promise.all(orders.map(async (order) => {
+            if (order.request_data) {
+                try {
+                    order.request_data = typeof order.request_data === 'string' 
+                        ? JSON.parse(order.request_data) 
+                        : order.request_data;
+                } catch (e) {
+                    console.error('Error parsing request data:', e);
+                }
+            }
+            
+            // Fetch order items
+            const [items] = await pool.query(
+                'SELECT * FROM order_items WHERE order_id = ?',
+                [order.id]
+            );
+            order.items = items;
+            
+            return order;
+        }));
+        
+        res.json({ success: true, orders: ordersWithRequestData });
     } catch (error) {
+        console.error('Get orders error:', error);
         res.status(500).json({ success: false, message: 'Server error' });
     }
 });

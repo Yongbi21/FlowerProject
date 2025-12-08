@@ -8,7 +8,7 @@ const RequestSuccessModal = ({ show, onClose, message, photo }) => {
 
     const handleViewOrders = () => {
         onClose();
-        navigate('/my-orders');
+        navigate('/profile');
     };
 
     return (

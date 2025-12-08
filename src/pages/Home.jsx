@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import '../styles/Home.css';
-import { productAPI } from '../config/api';
+// Removed API import - using localStorage instead
 import eventImg from '../assets/pictures/EVENTSPECIFIC.jpg';
 import customImg from '../assets/pictures/CUSTOMIZED.jpg';
 import specialImg from '../assets/pictures/SPECIALORDERPAGE.jpg';
@@ -114,58 +114,33 @@ const Home = ({ addToCart }) => {
             }
         }
 
-        // Fetch products from API
-        fetchProducts();
+        // Load products from localStorage or initialize with default products
+        loadProducts();
     }, []);
 
-    const fetchProducts = async () => {
+    const loadProducts = () => {
         try {
-            console.log('Fetching products from API...');
-            const response = await productAPI.getAll();
-            console.log('API Response:', response.data);
-
-            if (response.data && response.data.products) {
-                console.log(`Found ${response.data.products.length} products from API`);
-                // Map API products with local images
-                const apiProducts = response.data.products.map(p => {
-                    // Find matching local product by name to get the image
-                    const localProduct = products.find(lp => lp.name === p.name);
-                    return {
-                        id: p.id, // Use database ID
-                        name: p.name,
-                        price: p.price,
-                        category: getCategoryName(p.category_id),
-                        image: localProduct ? localProduct.image : p.image_url,
-                        stock: p.stock_quantity
-                    };
-                });
-                setDisplayProducts(apiProducts);
+            // Check if products exist in localStorage
+            const savedProducts = localStorage.getItem('products');
+            
+            if (savedProducts) {
+                // Use products from localStorage
+                const parsedProducts = JSON.parse(savedProducts);
+                setDisplayProducts(parsedProducts);
+                console.log(`Loaded ${parsedProducts.length} products from localStorage`);
             } else {
-                console.log('No products in API response, using local products');
-                // Fallback to local products if API fails
+                // Initialize localStorage with default products
+                localStorage.setItem('products', JSON.stringify(products));
                 setDisplayProducts(products);
+                console.log(`Initialized ${products.length} products in localStorage`);
             }
         } catch (error) {
-            console.error('Error fetching products:', error);
-            console.error('Error details:', error.response?.data || error.message);
-            // Fallback to local products
-            console.log('Using local fallback products');
+            console.error('Error loading products:', error);
+            // Fallback to default products
             setDisplayProducts(products);
         } finally {
             setLoading(false);
         }
-    };
-
-    const getCategoryName = (categoryId) => {
-        const categoryMap = {
-            1: 'All Souls Day',
-            2: 'Get Well Soon',
-            3: 'Graduation',
-            4: 'Mothers Day',
-            5: 'Sympathy',
-            6: 'Valentines'
-        };
-        return categoryMap[categoryId] || 'Other';
     };
 
     const handleAddToCart = (product, e) => {

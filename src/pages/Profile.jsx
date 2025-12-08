@@ -14,7 +14,7 @@ const orderTabs = [
 ];
 
 const menuItems = [
-    { id: 'orders', label: 'My Orders', icon: 'fa-box', link: '/my-orders' },
+    { id: 'orders', label: 'My Orders', icon: 'fa-box' },
     { id: 'messages', label: 'Messages', icon: 'fa-comments' },
     { id: 'addresses', label: 'Addresses', icon: 'fa-map-marker-alt' },
     { id: 'settings', label: 'Account Settings', icon: 'fa-cog' },
@@ -233,7 +233,7 @@ const Profile = ({ user, logout }) => {
             icon: 'fa-times-circle',
             timestamp: new Date().toISOString(),
             read: false,
-            link: '/my-orders'
+            link: '/profile'
         };
         localStorage.setItem('notifications', JSON.stringify([newNotification, ...notifications]));
 

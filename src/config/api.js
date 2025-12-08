@@ -122,6 +122,8 @@ export const adminAPI = {
     getAllOrders: (params) => api.get('/admin/orders', { params }),
     updateOrderStatus: (id, status) => api.put(`/admin/orders/${id}/status`, { status }),
     updatePaymentStatus: (id, payment_status) => api.put(`/admin/orders/${id}/payment-status`, { payment_status }),
+    acceptOrder: (id) => api.post(`/admin/orders/${id}/accept`),
+    declineOrder: (id, reason) => api.post(`/admin/orders/${id}/decline`, { reason }),
 
     // Sales
     getSalesSummary: (params) => api.get('/admin/sales/summary', { params }),

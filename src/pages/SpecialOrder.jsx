@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import RequestSuccessModal from '../components/RequestSuccessModal';
+import { requestAPI, uploadAPI } from '../config/api';
 import '../styles/SpecialOrder.css';
 
 const initialFormState = {
@@ -57,58 +58,72 @@ const SpecialOrder = () => {
 
     const handleSubmit = async (event) => {
         event.preventDefault();
-        
-        // Convert file to base64 for storage
-        let photoBase64 = null;
-        if (formData.inspirationFile) {
-            const reader = new FileReader();
-            photoBase64 = await new Promise((resolve) => {
-                reader.onloadend = () => resolve(reader.result);
-                reader.readAsDataURL(formData.inspirationFile);
+
+        try {
+            let photoUrl = null;
+
+            // Upload photo if selected
+            if (formData.inspirationFile) {
+                try {
+                    const uploadResponse = await uploadAPI.image(formData.inspirationFile);
+                    if (uploadResponse.data.success) {
+                        photoUrl = uploadResponse.data.url;
+                    }
+                } catch (uploadError) {
+                    console.error('Error uploading image:', uploadError);
+                    setStatus({
+                        type: 'error',
+                        message: 'Failed to upload image. Please try again or try a smaller image.'
+                    });
+                    return;
+                }
+            }
+
+            const requestData = {
+                type: 'special_order',
+                data: {
+                    recipientName: formData.recipientName,
+                    occasion: formData.occasion,
+                    otherOccasion: formData.otherOccasion,
+                    preferences: formData.preferences,
+                    addon: formData.addon,
+                    message: formData.message
+                },
+                photo_url: photoUrl,
+                notes: formData.message || `Special Order for ${formData.recipientName || 'recipient'}`
+            };
+
+            const response = await requestAPI.create(requestData);
+
+            if (response.data.success) {
+                // Create notification
+                const notifications = JSON.parse(localStorage.getItem('notifications') || '[]');
+                const newNotification = {
+                    id: `notif-${Date.now()}`,
+                    type: 'request',
+                    title: 'Special Order Request Submitted!',
+                    message: `Your special order for ${formData.recipientName || 'recipient'} has been submitted and is pending approval.`,
+                    icon: 'fa-gift',
+                    timestamp: new Date().toISOString(),
+                    read: false,
+                    link: '/my-orders'
+                };
+                localStorage.setItem('notifications', JSON.stringify([newNotification, ...notifications]));
+
+                setShowModal(true);
+                setFormData(initialFormState);
+                setImagePreview(null);
+                if (fileInputRef.current) {
+                    fileInputRef.current.value = '';
+                }
+                setStatus(null);
+            }
+        } catch (error) {
+            console.error('Error submitting special order:', error);
+            setStatus({
+                type: 'error',
+                message: 'Failed to submit special order. Please try again.'
             });
-        }
-
-        // Save request to localStorage
-        const requests = JSON.parse(localStorage.getItem('requests') || '[]');
-        const requestId = `special-${Date.now()}`;
-        const newRequest = {
-            id: requestId,
-            type: 'special_order',
-            status: 'pending',
-            paymentStatus: 'to_pay', // Requests default to 'to_pay' until admin confirms
-            recipientName: formData.recipientName,
-            occasion: formData.occasion,
-            otherOccasion: formData.otherOccasion,
-            preferences: formData.preferences,
-            addon: formData.addon,
-            message: formData.message,
-            photo: photoBase64,
-            requestDate: new Date().toISOString(),
-            price: 0, // Price to be determined by admin
-        };
-        requests.push(newRequest);
-        localStorage.setItem('requests', JSON.stringify(requests));
-
-        // Create notification
-        const notifications = JSON.parse(localStorage.getItem('notifications') || '[]');
-        const newNotification = {
-            id: `notif-${Date.now()}`,
-            type: 'request',
-            title: 'Special Order Request Submitted!',
-            message: `Your special order for ${formData.recipientName || 'recipient'} has been submitted and is pending approval.`,
-            icon: 'fa-gift',
-            timestamp: new Date().toISOString(),
-            read: false,
-            link: '/my-orders'
-        };
-        localStorage.setItem('notifications', JSON.stringify([newNotification, ...notifications]));
-
-        setShowModal(true);
-        setFormData(initialFormState);
-        setImagePreview(null);
-
-        if (fileInputRef.current) {
-            fileInputRef.current.value = '';
         }
     };
 

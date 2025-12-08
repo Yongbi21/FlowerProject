@@ -21,9 +21,25 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
-import { productAPI, adminAPI, categoryAPI } from '../config/api';
+import { productAPI, adminAPI, categoryAPI, BASE_URL } from '../config/api';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+
+// Helper function to format timestamp with date and time
+const formatTimestamp = (dateString) => {
+  if (!dateString) return 'N/A';
+  try {
+    const date = new Date(dateString);
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${day}/${month}/${year} ${hours}:${minutes}`;
+  } catch (e) {
+    return dateString;
+  }
+};
 
 const AdminDashboard = () => {
   const navigation = useNavigation();
@@ -78,6 +94,11 @@ const AdminDashboard = () => {
   };
 
   const renderTabContent = () => {
+    // Prevent employees from accessing admin-only tabs
+    if (userRole === 'employee' && (activeTab === 'sales' || activeTab === 'about' || activeTab === 'contact' || activeTab === 'employees')) {
+      return <CatalogueTab />;
+    }
+
     switch (activeTab) {
       case 'catalogue':
         return <CatalogueTab />;
@@ -260,10 +281,12 @@ const AdminDashboard = () => {
                 <Text style={styles.menuItemText}>Messaging</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.menuItem} onPress={() => { setActiveTab('sales'); setMenuVisible(false); }}>
-                <Ionicons name="cash-outline" size={20} color="#333" />
-                <Text style={styles.menuItemText}>Sales</Text>
-              </TouchableOpacity>
+              {userRole === 'admin' && (
+                <TouchableOpacity style={styles.menuItem} onPress={() => { setActiveTab('sales'); setMenuVisible(false); }}>
+                  <Ionicons name="cash-outline" size={20} color="#333" />
+                  <Text style={styles.menuItemText}>Sales</Text>
+                </TouchableOpacity>
+              )}
 
               {userRole === 'admin' && (
                 <>
@@ -444,7 +467,7 @@ const CatalogueTab = () => {
       category_id: product.category_id?.toString() || '1',
       stock_quantity: product.stock_quantity?.toString() || '0',
       description: product.description || '',
-      image: product.image_url ? { uri: product.image_url.startsWith('http') ? product.image_url : `http://192.168.111.94:5000${product.image_url}` } : null,
+      image: product.image_url ? { uri: product.image_url.startsWith('http') ? product.image_url : `${BASE_URL}${product.image_url}` } : null,
     });
     setModalVisible(true);
   };
@@ -490,7 +513,7 @@ const CatalogueTab = () => {
       <View style={styles.imageContainer}>
         {item.image_url ? (
           <Image
-            source={{ uri: item.image_url.startsWith('http') ? item.image_url : `http://192.168.111.94:5000${item.image_url}` }}
+            source={{ uri: item.image_url.startsWith('http') ? item.image_url : `${BASE_URL}${item.image_url}` }}
             style={styles.productImage}
           />
         ) : (
@@ -800,6 +823,57 @@ const OrdersTab = () => {
     setRefreshing(false);
   };
 
+  const handleAccept = async (orderId) => {
+    if (orderId === 'sample-001') {
+      setOrders(prevOrders => prevOrders.map(order =>
+        order.id === 'sample-001' ? { ...order, status: 'accepted' } : order
+      ));
+      Alert.alert('Success', 'Order accepted');
+      return;
+    }
+
+    try {
+      await adminAPI.acceptOrder(orderId);
+      Alert.alert('Success', 'Order accepted');
+      await loadOrders();
+    } catch (error) {
+      console.error('Accept order error:', error);
+      Alert.alert('Error', error.response?.data?.message || 'Failed to accept order');
+    }
+  };
+
+  const handleDecline = async (orderId) => {
+    Alert.alert(
+      'Decline Order',
+      'Are you sure you want to decline this order?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Decline',
+          style: 'destructive',
+          onPress: async () => {
+            if (orderId === 'sample-001') {
+              setOrders(prevOrders => prevOrders.map(order =>
+                order.id === 'sample-001' ? { ...order, status: 'declined' } : order
+              ));
+              Alert.alert('Success', 'Order declined');
+              return;
+            }
+
+            try {
+              await adminAPI.declineOrder(orderId, 'Declined by admin');
+              Alert.alert('Success', 'Order declined');
+              await loadOrders();
+            } catch (error) {
+              console.error('Decline order error:', error);
+              Alert.alert('Error', error.response?.data?.message || 'Failed to decline order');
+            }
+          }
+        }
+      ]
+    );
+  };
+
   const handleStatusChange = async (orderId, newStatus) => {
     if (orderId === 'sample-001') {
       setOrders(prevOrders => prevOrders.map(order =>
@@ -814,7 +888,8 @@ const OrdersTab = () => {
       Alert.alert('Success', 'Order status updated');
       await loadOrders();
     } catch (error) {
-      Alert.alert('Error', 'Failed to update order status');
+      console.error('Update status error:', error);
+      Alert.alert('Error', error.response?.data?.message || 'Failed to update order status');
     }
   };
 
@@ -876,9 +951,11 @@ const OrdersTab = () => {
         <View style={styles.orderHeader}>
           <View style={styles.orderHeaderLeft}>
             <Text style={styles.orderNumber}>Order #{item.order_number}</Text>
-            {item.order_date && (
+            {item.created_at ? (
+              <Text style={styles.orderDateBadge}>{formatTimestamp(item.created_at)}</Text>
+            ) : item.order_date ? (
               <Text style={styles.orderDateBadge}>{item.order_date}</Text>
-            )}
+            ) : null}
           </View>
         </View>
 
@@ -1006,27 +1083,65 @@ const OrdersTab = () => {
           </View>
         </View>
 
-        {/* Change Status Button */}
-        <TouchableOpacity
-          style={styles.changeStatusButton}
-          onPress={() => {
-            Alert.alert(
-              'Change Status',
-              'Select new status:',
-              [
-                { text: 'Pending', onPress: () => handleStatusChange(item.id, 'pending') },
-                { text: 'Processing', onPress: () => handleStatusChange(item.id, 'processing') },
-                { text: 'Out for Delivery', onPress: () => handleStatusChange(item.id, 'out_for_delivery') },
-                { text: 'Completed', onPress: () => handleStatusChange(item.id, 'completed') },
-                { text: 'Cancelled', onPress: () => handleStatusChange(item.id, 'cancelled') },
-                { text: 'Cancel', style: 'cancel' }
-              ]
-            );
-          }}
-        >
-          <Ionicons name="create-outline" size={16} color="#2196F3" />
-          <Text style={styles.changeStatusText}>Change Status</Text>
-        </TouchableOpacity>
+        {/* Action Buttons */}
+        {item.status === 'pending' ? (
+          <View style={styles.actionButtons}>
+            <TouchableOpacity
+              style={[styles.actionButton, styles.acceptButton]}
+              onPress={() => handleAccept(item.id)}
+            >
+              <Ionicons name="checkmark-circle-outline" size={18} color="#fff" />
+              <Text style={styles.buttonText}>Accept</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.actionButton, styles.rejectButton]}
+              onPress={() => handleDecline(item.id)}
+            >
+              <Ionicons name="close-circle-outline" size={18} color="#fff" />
+              <Text style={styles.buttonText}>Decline</Text>
+            </TouchableOpacity>
+          </View>
+        ) : item.status === 'accepted' ? (
+          <TouchableOpacity
+            style={styles.changeStatusButton}
+            onPress={() => {
+              Alert.alert(
+                'Change Status',
+                'Select new status:',
+                [
+                  { text: 'Processing', onPress: () => handleStatusChange(item.id, 'processing') },
+                  { text: 'Out for Delivery', onPress: () => handleStatusChange(item.id, 'out_for_delivery') },
+                  { text: 'Completed', onPress: () => handleStatusChange(item.id, 'completed') },
+                  { text: 'Cancelled', onPress: () => handleStatusChange(item.id, 'cancelled') },
+                  { text: 'Cancel', style: 'cancel' }
+                ]
+              );
+            }}
+          >
+            <Ionicons name="create-outline" size={16} color="#2196F3" />
+            <Text style={styles.changeStatusText}>Change Status</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={styles.changeStatusButton}
+            onPress={() => {
+              Alert.alert(
+                'Change Status',
+                'Select new status:',
+                [
+                  { text: 'Processing', onPress: () => handleStatusChange(item.id, 'processing') },
+                  { text: 'Out for Delivery', onPress: () => handleStatusChange(item.id, 'out_for_delivery') },
+                  { text: 'Completed', onPress: () => handleStatusChange(item.id, 'completed') },
+                  { text: 'Cancelled', onPress: () => handleStatusChange(item.id, 'cancelled') },
+                  { text: 'Cancel', style: 'cancel' }
+                ]
+              );
+            }}
+          >
+            <Ionicons name="create-outline" size={16} color="#2196F3" />
+            <Text style={styles.changeStatusText}>Change Status</Text>
+          </TouchableOpacity>
+        )}
       </View>
     );
   };
@@ -1464,12 +1579,12 @@ const RequestsTab = () => {
       </View>
 
       <Text style={styles.requestCustomer}>{item.user_name || 'Customer'}</Text>
-      <Text style={styles.requestDate}>{new Date(item.created_at).toLocaleDateString()}</Text>
+      <Text style={styles.requestDate}>{formatTimestamp(item.created_at)}</Text>
 
       {item.photo_url && (
         <View style={styles.requestPreviewImageContainer}>
           <Image
-            source={{ uri: item.photo_url.startsWith('http') ? item.photo_url : `http://192.168.111.94:5000${item.photo_url}` }}
+            source={{ uri: item.photo_url.startsWith('http') ? item.photo_url : `${BASE_URL}${item.photo_url}` }}
             style={styles.requestPreviewImage}
           />
           <Text style={styles.viewDetailsText}>View Details & Photo</Text>
@@ -1504,6 +1619,10 @@ const RequestsTab = () => {
                 <View style={styles.detailSection}>
                   <Text style={styles.detailLabel}>Type:</Text>
                   <Text style={styles.detailValue}>{selectedRequest.type}</Text>
+                </View>
+                <View style={styles.detailSection}>
+                  <Text style={styles.detailLabel}>Submitted:</Text>
+                  <Text style={styles.detailValue}>{formatTimestamp(selectedRequest.created_at)}</Text>
                 </View>
 
                 {/* Parse JSON data for details */}

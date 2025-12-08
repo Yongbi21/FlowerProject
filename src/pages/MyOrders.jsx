@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { orderAPI, requestAPI } from '../config/api';
 import '../styles/Shop.css';
 
 const orderTabs = [
@@ -32,79 +33,158 @@ const MyOrders = () => {
     const [totalUnreadMessages, setTotalUnreadMessages] = useState(0);
 
     useEffect(() => {
-        // Load all orders including regular orders, event bookings, special orders, and customized requests
-        const savedOrders = JSON.parse(localStorage.getItem('orders') || '[]');
-        const savedRequests = JSON.parse(localStorage.getItem('requests') || '[]');
+        // Check if user is logged in
+        const token = localStorage.getItem('token');
+        const currentUser = localStorage.getItem('currentUser');
         
-        // Combine regular orders with requests (bookings, special orders, customized)
-        const allOrders = [...savedOrders, ...savedRequests];
+        if (!token || !currentUser) {
+            // Not logged in - redirect to login
+            navigate('/login');
+            return;
+        }
         
-        // Enrich orders with status and paymentStatus if not present
-        const enrichedOrders = allOrders.map((order) => {
-            let enrichedOrder = { ...order };
-            
-            // Add paymentStatus if not present
-            if (!enrichedOrder.paymentStatus) {
-                // If payment method exists and is GCash, mark as waiting for confirmation; otherwise to_pay
-                if (enrichedOrder.payment && enrichedOrder.payment.id === 'gcash') {
-                    enrichedOrder.paymentStatus = 'waiting_for_confirmation';
-                } else {
-                    enrichedOrder.paymentStatus = 'to_pay';
-                }
+        // Load orders from API (always fresh data, filtered by user_id on backend)
+        loadOrders();
+    }, [navigate]);
+
+    const loadOrders = async () => {
+        try {
+            // Verify user is logged in before making API calls
+            const token = localStorage.getItem('token');
+            if (!token) {
+                navigate('/login');
+                return;
             }
             
-            // Add status if not present or update COD orders to processing
-            if (!enrichedOrder.status) {
-                // Determine status based on order type and date
-                if (enrichedOrder.type === 'booking' || enrichedOrder.type === 'special_order' || enrichedOrder.type === 'customized') {
-                    // New requests start as pending
-                    enrichedOrder.status = 'pending';
-                } else {
-                    // Regular orders use existing logic
-                    const orderDate = new Date(enrichedOrder.date || enrichedOrder.requestDate);
-                    const now = new Date();
-                    const hours = (now - orderDate) / (1000 * 60 * 60);
-                    
-                    if (hours < 2) {
-                        enrichedOrder.status = 'to_pay';
-                    } else if (hours < 8) {
-                        enrichedOrder.status = 'processing';
-                    } else {
-                        if (enrichedOrder.deliveryMethod === 'pickup') {
-                            if (hours < 12) {
-                                enrichedOrder.status = 'ready_for_pickup';
-                            } else if (hours < 24) {
-                                enrichedOrder.status = 'claimed';
-                            } else {
-                                enrichedOrder.status = 'completed';
-                            }
-                        } else {
-                            if (hours < 24) {
-                                enrichedOrder.status = 'to_receive';
-                            } else {
-                                enrichedOrder.status = 'completed';
-                            }
-                        }
-                    }
-                }
-            } else if (enrichedOrder.status === 'pending' && enrichedOrder.payment && enrichedOrder.payment.id === 'cod') {
-                // Move existing COD orders from pending to processing
-                enrichedOrder.status = 'processing';
-            }
+            // Load orders from API (backend filters by user_id from JWT token)
+            // The backend automatically filters orders by the authenticated user's ID
+            const ordersResponse = await orderAPI.getAll();
+            const apiOrders = ordersResponse.data.orders || [];
             
-            return enrichedOrder;
-        });
-        
-        // Sort by date (newest first)
-        enrichedOrders.sort((a, b) => {
-            const dateA = new Date(a.date || a.requestDate || 0);
-            const dateB = new Date(b.date || b.requestDate || 0);
-            return dateB - dateA;
-        });
-        
-        setOrders(enrichedOrders);
-        loadOrderMessages(enrichedOrders);
-    }, []);
+            // Load requests from API (backend filters by user_id from JWT token)
+            // The backend automatically filters requests by the authenticated user's ID
+            const requestsResponse = await requestAPI.getAll();
+            const apiRequests = requestsResponse.data.requests || [];
+            
+            console.log(`Loaded ${apiOrders.length} orders and ${apiRequests.length} requests for current user`);
+            
+            // Transform API orders to match the expected format
+            const transformedOrders = apiOrders.map(order => ({
+                id: order.id,
+                order_number: order.order_number,
+                date: order.created_at,
+                status: order.status, // pending, accepted, processing, etc.
+                payment_status: order.payment_status,
+                payment_method: order.payment_method,
+                delivery_method: order.delivery_method,
+                total: parseFloat(order.total || 0),
+                subtotal: parseFloat(order.subtotal || 0),
+                delivery_fee: parseFloat(order.delivery_fee || 0),
+                notes: order.notes,
+                items: order.items || [],
+                address_id: order.address_id,
+                request_id: order.request_id, // Link to booking request if exists
+                isFromRequest: !!order.request_id, // Flag to identify orders from requests (booking, inquiry, etc.)
+                // Include request data for all request types
+                type: order.request_type || null,
+                data: order.request_data || null,
+                photo_url: order.request_photo_url || null,
+                // Booking data
+                eventType: order.event_type || (order.request_data?.eventType || order.request_data?.event_type),
+                eventDate: order.event_date || order.request_data?.eventDate,
+                venue: order.request_data?.venue,
+                details: order.request_data?.details,
+                fullName: order.request_data?.fullName,
+                otherEventType: order.request_data?.otherEventType,
+                // Special order data
+                recipientName: order.request_data?.recipientName,
+                occasion: order.request_data?.occasion,
+                preferences: order.request_data?.preferences,
+                // Customized data
+                flower: order.request_data?.flower,
+                bundleSize: order.request_data?.bundleSize,
+                wrapper: order.request_data?.wrapper,
+                ribbon: order.request_data?.ribbon,
+                // Inquiry data
+                subject: order.request_data?.subject,
+                message: order.request_data?.message,
+                email: order.request_data?.email,
+                phone: order.request_data?.phone,
+                photo: order.request_photo_url
+            }));
+            
+            // Transform API requests to match the expected format
+            const transformedRequests = apiRequests.map(request => {
+                const requestData = typeof request.data === 'string' ? JSON.parse(request.data) : request.data;
+                return {
+                    id: `request-${request.id}`, // Prefix to avoid conflicts
+                    request_id: request.id,
+                    request_number: request.request_number,
+                    date: request.created_at,
+                    status: request.status === 'accepted' ? 'processing' : request.status, // Map accepted to processing for display
+                    type: request.type, // booking, customized, special_order
+                    payment_status: 'to_pay',
+                    total: parseFloat(request.final_price || request.estimated_price || 0),
+                    notes: request.notes,
+                    data: requestData,
+                    photo_url: request.photo_url,
+                    isRequest: true,
+                    // Extract specific fields for easier access
+                    eventType: requestData?.eventType || requestData?.event_type,
+                    eventDate: requestData?.eventDate || requestData?.event_date,
+                    venue: requestData?.venue,
+                    recipientName: requestData?.recipientName,
+                    occasion: requestData?.occasion,
+                    preferences: requestData?.preferences,
+                    flower: requestData?.flower,
+                    bundleSize: requestData?.bundleSize,
+                    wrapper: requestData?.wrapper,
+                    ribbon: requestData?.ribbon,
+                    // Inquiry fields
+                    subject: requestData?.subject,
+                    message: requestData?.message,
+                    email: requestData?.email,
+                    phone: requestData?.phone
+                };
+            });
+            
+            // Combine orders and requests
+            // If an order has a request_id, prefer the order (it's the actual order created from booking)
+            const allOrders = [...transformedOrders];
+            
+            // Add requests that don't have corresponding orders
+            transformedRequests.forEach(request => {
+                const hasOrder = allOrders.some(order => order.request_id === request.request_id);
+                if (!hasOrder) {
+                    allOrders.push(request);
+                }
+            });
+            
+            // Sort by date (newest first)
+            allOrders.sort((a, b) => {
+                const dateA = new Date(a.date || 0);
+                const dateB = new Date(b.date || 0);
+                return dateB - dateA;
+            });
+            
+            setOrders(allOrders);
+            loadOrderMessages(allOrders);
+        } catch (error) {
+            console.error('Error loading orders:', error);
+            // Don't use localStorage fallback - it contains data from all users
+            // Show empty state instead to prevent data leakage between accounts
+            setOrders([]);
+            loadOrderMessages([]);
+            
+            // Show error message to user
+            if (error.response?.status === 401) {
+                // Unauthorized - redirect to login
+                navigate('/login');
+            } else {
+                console.error('Failed to load orders from API. Please refresh the page.');
+            }
+        }
+    };
 
     const loadOrderMessages = (ordersList) => {
         const allMessages = JSON.parse(localStorage.getItem('messages') || '[]');
@@ -165,7 +245,20 @@ const MyOrders = () => {
 
     const filteredOrders = activeOrderTab === 'all' 
         ? orders 
-        : orders.filter(o => o.status === activeOrderTab);
+        : orders.filter(o => {
+            const status = o.status?.toLowerCase();
+            const tab = activeOrderTab.toLowerCase();
+            
+            // Map statuses to tabs
+            if (tab === 'pending') {
+                return status === 'pending';
+            } else if (tab === 'processing') {
+                // Processing tab should show both 'accepted' and 'processing' statuses
+                return status === 'processing' || status === 'accepted';
+            } else {
+                return status === tab;
+            }
+        });
 
     const getStatusBadgeClass = (status) => {
         const classes = {
@@ -213,107 +306,52 @@ const MyOrders = () => {
         setShowCancelModal(true);
     };
 
-    const handleConfirmCancel = () => {
+    const handleConfirmCancel = async () => {
         if (!orderToCancel) return;
 
-        // Create cancellation notification
-        const notifications = JSON.parse(localStorage.getItem('notifications') || '[]');
-        const orderTypeLabel = orderToCancel.type 
-            ? (orderToCancel.type === 'booking' ? 'Event Booking' 
-                : orderToCancel.type === 'special_order' ? 'Special Order' 
-                : orderToCancel.type === 'customized' ? 'Customized Bouquet' 
-                : 'Request')
-            : 'Order';
-        const orderId = orderToCancel.id ? `#${orderToCancel.id}` : '';
-        
-        const newNotification = {
-            id: `notif-${Date.now()}`,
-            type: 'cancellation',
-            title: `${orderTypeLabel} Cancelled`,
-            message: `Your ${orderTypeLabel.toLowerCase()} ${orderId} has been cancelled successfully.`,
-            icon: 'fa-times-circle',
-            timestamp: new Date().toISOString(),
-            read: false,
-            link: '/my-orders'
-        };
-        localStorage.setItem('notifications', JSON.stringify([newNotification, ...notifications]));
+        try {
+            // Cancel order via API
+            if (orderToCancel.isRequest) {
+                // Cancel request
+                await requestAPI.cancel(orderToCancel.request_id);
+            } else {
+                // Cancel order
+                await orderAPI.cancel(orderToCancel.id);
+            }
 
-        // Remove from appropriate storage
-        if (orderToCancel.type) {
-            // It's a request (booking, special_order, customized)
-            const requests = JSON.parse(localStorage.getItem('requests') || '[]');
-            const updatedRequests = requests.filter(req => req.id !== orderToCancel.id);
-            localStorage.setItem('requests', JSON.stringify(updatedRequests));
-        } else {
-            // It's a regular order
-            const savedOrders = JSON.parse(localStorage.getItem('orders') || '[]');
-            const updatedOrders = savedOrders.filter(ord => ord.id !== orderToCancel.id);
-            localStorage.setItem('orders', JSON.stringify(updatedOrders));
+            // Create cancellation notification
+            const notifications = JSON.parse(localStorage.getItem('notifications') || '[]');
+            const orderTypeLabel = orderToCancel.isFromBooking ? 'Event Booking' :
+                orderToCancel.type 
+                    ? (orderToCancel.type === 'booking' ? 'Event Booking' 
+                        : orderToCancel.type === 'special_order' ? 'Special Order' 
+                        : orderToCancel.type === 'customized' ? 'Customized Bouquet' 
+                        : 'Request')
+                    : 'Order';
+            const orderId = orderToCancel.order_number || orderToCancel.request_number || orderToCancel.id 
+                ? `#${orderToCancel.order_number || orderToCancel.request_number || orderToCancel.id}` 
+                : '';
+            
+            const newNotification = {
+                id: `notif-${Date.now()}`,
+                type: 'cancellation',
+                title: `${orderTypeLabel} Cancelled`,
+                message: `Your ${orderTypeLabel.toLowerCase()} ${orderId} has been cancelled successfully.`,
+                icon: 'fa-times-circle',
+                timestamp: new Date().toISOString(),
+                read: false,
+                link: '/my-orders'
+            };
+            localStorage.setItem('notifications', JSON.stringify([newNotification, ...notifications]));
+
+            // Reload orders from API
+            await loadOrders();
+            setShowCancelModal(false);
+            setOrderToCancel(null);
+        } catch (error) {
+            console.error('Error cancelling order:', error);
+            alert('Failed to cancel order. Please try again.');
         }
-
-        // Reload orders from localStorage
-        const savedOrders = JSON.parse(localStorage.getItem('orders') || '[]');
-        const savedRequests = JSON.parse(localStorage.getItem('requests') || '[]');
-        const allOrders = [...savedOrders, ...savedRequests];
-        
-        // Apply enrichment logic
-        const enrichedOrders = allOrders.map((order) => {
-            let enrichedOrder = { ...order };
-            
-            if (!enrichedOrder.paymentStatus) {
-                if (enrichedOrder.payment && enrichedOrder.payment.id === 'gcash') {
-                    enrichedOrder.paymentStatus = 'waiting_for_confirmation';
-                } else {
-                    enrichedOrder.paymentStatus = 'to_pay';
-                }
-            }
-            
-            if (!enrichedOrder.status) {
-                if (enrichedOrder.type === 'booking' || enrichedOrder.type === 'special_order' || enrichedOrder.type === 'customized') {
-                    enrichedOrder.status = 'pending';
-                } else {
-                    const orderDate = new Date(enrichedOrder.date || enrichedOrder.requestDate);
-                    const now = new Date();
-                    const hours = (now - orderDate) / (1000 * 60 * 60);
-                    
-                    if (hours < 2) {
-                        enrichedOrder.status = 'to_pay';
-                    } else if (hours < 8) {
-                        enrichedOrder.status = 'processing';
-                    } else {
-                        if (enrichedOrder.deliveryMethod === 'pickup') {
-                            if (hours < 12) {
-                                enrichedOrder.status = 'ready_for_pickup';
-                            } else if (hours < 24) {
-                                enrichedOrder.status = 'claimed';
-                            } else {
-                                enrichedOrder.status = 'completed';
-                            }
-                        } else {
-                            if (hours < 24) {
-                                enrichedOrder.status = 'to_receive';
-                            } else {
-                                enrichedOrder.status = 'completed';
-                            }
-                        }
-                    }
-                }
-            } else if (enrichedOrder.status === 'pending' && enrichedOrder.payment && enrichedOrder.payment.id === 'cod') {
-                enrichedOrder.status = 'processing';
-            }
-            
-            return enrichedOrder;
-        });
-        
-        enrichedOrders.sort((a, b) => {
-            const dateA = new Date(a.date || a.requestDate || 0);
-            const dateB = new Date(b.date || b.requestDate || 0);
-            return dateB - dateA;
-        });
-        
-        setOrders(enrichedOrders);
-        setShowCancelModal(false);
-        setOrderToCancel(null);
     };
 
     const getOrderTypeLabel = (type) => {
@@ -600,10 +638,13 @@ const MyOrders = () => {
                                 <div className="order-card-header">
                                     <div className="d-flex align-items-center gap-3">
                                         <div className="order-id">
-                                            {order.type === 'booking' && 'Event Booking'}
+                                            {order.isFromRequest && order.order_number && `Order #${order.order_number}`}
+                                            {order.isFromRequest && !order.order_number && (order.type === 'inquiry' ? 'Inquiry' : order.type === 'booking' ? 'Event Booking' : 'Request')}
+                                            {order.type === 'booking' && !order.isFromRequest && 'Event Booking'}
                                             {order.type === 'special_order' && 'Special Order'}
                                             {order.type === 'customized' && 'Customized Bouquet'}
-                                            {!order.type && `Order #${order.id || index + 1}`}
+                                            {order.type === 'inquiry' && 'Inquiry'}
+                                            {!order.type && !order.isFromRequest && `Order #${order.order_number || order.id || index + 1}`}
                                         </div>
                                         {order.type && (
                                             <span className="badge bg-info text-white">
@@ -650,7 +691,7 @@ const MyOrders = () => {
                                 </div>
                                 <div className="order-card-body">
                                     {/* Display order items or request details */}
-                                    {order.items && order.items.length > 0 ? (
+                                    {order.items && order.items.length > 0 && !order.isFromRequest ? (
                                         <>
                                             {order.items.slice(0, 2).map((item, idx) => (
                                                 <div key={idx} className="order-item">
@@ -681,9 +722,9 @@ const MyOrders = () => {
                                     ) : (
                                         // Display request details for bookings, special orders, and customized
                                         <div className="order-item">
-                                            {order.photo && (
+                                            {(order.photo || order.photo_url) && (
                                                 <img 
-                                                    src={order.photo} 
+                                                    src={order.photo || order.photo_url} 
                                                     alt="Request preview"
                                                     className="order-item-img"
                                                     style={{ objectFit: 'cover' }}
@@ -692,8 +733,11 @@ const MyOrders = () => {
                                             )}
                                             <div className="flex-grow-1">
                                                 <div className="order-item-name">
-                                                    {order.type === 'booking' && order.eventType && (
-                                                        <>{order.eventType} Event</>
+                                                    {order.type === 'booking' && (order.data?.eventType || order.eventType || order.data?.otherEventType) && (
+                                                        <>{(order.data?.eventType || order.eventType || order.data?.otherEventType)} Event</>
+                                                    )}
+                                                    {order.type === 'booking' && !order.data?.eventType && !order.eventType && !order.data?.otherEventType && (
+                                                        <>Event Booking</>
                                                     )}
                                                     {order.type === 'special_order' && (
                                                         <>Special Order Request</>
@@ -701,29 +745,68 @@ const MyOrders = () => {
                                                     {order.type === 'customized' && (
                                                         <>Customized Bouquet Request</>
                                                     )}
-                                                    {!order.type && 'Order Item'}
+                                                    {order.type === 'inquiry' && (
+                                                        <>Inquiry: {order.data?.subject || order.data?.message || 'General Inquiry'}</>
+                                                    )}
+                                                    {!order.type && !order.isFromRequest && 'Order Item'}
                                                 </div>
-                                                {order.type === 'booking' && order.venue && (
+                                                {order.type === 'booking' && (order.data?.venue || order.venue) && (
                                                     <div className="order-item-variant">
                                                         <i className="fas fa-map-marker-alt me-1"></i>
-                                                        {order.venue}
+                                                        {order.data?.venue || order.venue}
                                                     </div>
                                                 )}
-                                                {order.type === 'special_order' && order.recipientName && (
+                                                {order.type === 'booking' && (order.data?.eventDate || order.eventDate) && (
+                                                    <div className="order-item-variant">
+                                                        <i className="fas fa-calendar me-1"></i>
+                                                        {new Date(order.data?.eventDate || order.eventDate).toLocaleDateString()}
+                                                    </div>
+                                                )}
+                                                {order.type === 'booking' && (order.data?.details || order.notes) && (
+                                                    <div className="order-item-variant" style={{ fontSize: '0.85rem', color: '#666' }}>
+                                                        <i className="fas fa-info-circle me-1"></i>
+                                                        {(order.data?.details || order.notes || '').length > 80 
+                                                            ? `${(order.data?.details || order.notes || '').substring(0, 80)}...` 
+                                                            : (order.data?.details || order.notes || '')}
+                                                    </div>
+                                                )}
+                                                {order.type === 'inquiry' && order.data?.message && (
+                                                    <div className="order-item-variant">
+                                                        <i className="fas fa-comment me-1"></i>
+                                                        {order.data.message.length > 100 ? `${order.data.message.substring(0, 100)}...` : order.data.message}
+                                                    </div>
+                                                )}
+                                                {order.type === 'special_order' && (order.recipientName || order.data?.recipientName) && (
                                                     <div className="order-item-variant">
                                                         <i className="fas fa-user me-1"></i>
-                                                        For: {order.recipientName}
+                                                        For: {order.recipientName || order.data?.recipientName}
                                                     </div>
                                                 )}
-                                                {order.type === 'customized' && order.flower && (
+                                                {order.type === 'special_order' && (order.occasion || order.data?.occasion) && (
+                                                    <div className="order-item-variant">
+                                                        <i className="fas fa-calendar-alt me-1"></i>
+                                                        Occasion: {order.occasion || order.data?.occasion}
+                                                    </div>
+                                                )}
+                                                {order.type === 'customized' && (order.flower || order.data?.flower) && (
                                                     <div className="order-item-variant">
                                                         <i className="fas fa-seedling me-1"></i>
-                                                        {order.flower.name} - {order.bundleSize} stems
+                                                        {(order.flower || order.data?.flower)?.name || 'Custom Bouquet'} - {order.bundleSize || order.data?.bundleSize || 'N/A'} stems
                                                     </div>
                                                 )}
                                             </div>
                                             <div className="order-item-price">
-                                                ₱{(order.price || order.total || 0).toLocaleString()}
+                                                {order.total > 0 ? `₱${order.total.toLocaleString()}` : <span className="text-muted small">Price to be determined</span>}
+                                            </div>
+                                        </div>
+                                    )}
+                                    
+                                    {/* Show additional booking information */}
+                                    {order.type === 'booking' && order.data?.fullName && (
+                                        <div className="mt-3 pt-3 border-top">
+                                            <div className="small text-muted">
+                                                <i className="fas fa-user me-2"></i>
+                                                <strong>Contact:</strong> {order.data.fullName}
                                             </div>
                                         </div>
                                     )}

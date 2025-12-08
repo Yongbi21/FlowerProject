@@ -407,12 +407,12 @@ const OrdersTab = () => {
     const handleDecline = (order) => {
         if (window.confirm('Are you sure you want to decline this order?')) {
             if (order.type) {
+                // It's a request - delete it when declined
                 const requests = JSON.parse(localStorage.getItem('requests') || '[]');
-                const updated = requests.map(r => 
-                    r.id === order.id ? { ...r, status: 'cancelled', declinedAt: new Date().toISOString() } : r
-                );
+                const updated = requests.filter(r => r.id !== order.id);
                 localStorage.setItem('requests', JSON.stringify(updated));
             } else {
+                // Regular order - update status
                 const savedOrders = JSON.parse(localStorage.getItem('orders') || '[]');
                 const updated = savedOrders.map(o => 
                     o.id === order.id ? { ...o, status: 'cancelled', declinedAt: new Date().toISOString() } : o
@@ -474,6 +474,29 @@ const OrdersTab = () => {
             localStorage.setItem('orders', JSON.stringify(updated));
         }
         loadOrders();
+    };
+
+    const handleDelete = (order) => {
+        const orderType = order.type === 'inquiry' ? 'inquiry' : 
+                         order.type === 'booking' ? 'event booking' :
+                         order.type === 'special_order' ? 'special order' :
+                         order.type === 'customized' ? 'customized bouquet' :
+                         'order';
+        
+        if (window.confirm(`Are you sure you want to delete this ${orderType}? This action cannot be undone.`)) {
+            if (order.type) {
+                // It's a request (inquiry, booking, special_order, customized)
+                const requests = JSON.parse(localStorage.getItem('requests') || '[]');
+                const updated = requests.filter(r => r.id !== order.id);
+                localStorage.setItem('requests', JSON.stringify(updated));
+            } else {
+                // It's a regular order
+                const savedOrders = JSON.parse(localStorage.getItem('orders') || '[]');
+                const updated = savedOrders.filter(o => o.id !== order.id);
+                localStorage.setItem('orders', JSON.stringify(updated));
+            }
+            loadOrders();
+        }
     };
 
     const createNotification = (order, type) => {
@@ -573,6 +596,7 @@ const OrdersTab = () => {
                                             {order.type === 'booking' && 'Event Booking'}
                                             {order.type === 'special_order' && 'Special Order'}
                                             {order.type === 'customized' && 'Customized'}
+                                            {order.type === 'inquiry' && 'Inquiry'}
                                             {!order.type && 'Regular Order'}
                                         </td>
                                         <td>
@@ -645,6 +669,13 @@ const OrdersTab = () => {
                                             >
                                                 View
                                             </button>
+                                            <button 
+                                                className="btn btn-sm btn-danger"
+                                                onClick={() => handleDelete(order)}
+                                                title="Delete"
+                                            >
+                                                <i className="fas fa-trash"></i>
+                                            </button>
                                         </td>
                                     </tr>
                                 );
@@ -670,6 +701,7 @@ const OrdersTab = () => {
                                         selectedOrder.type === 'booking' ? 'Event Booking' :
                                         selectedOrder.type === 'special_order' ? 'Special Order' :
                                         selectedOrder.type === 'customized' ? 'Customized Bouquet' :
+                                        selectedOrder.type === 'inquiry' ? 'Inquiry' :
                                         'Regular Order'
                                     }
                                 </div>
@@ -796,32 +828,46 @@ const OrdersTab = () => {
                                 <strong>Total:</strong> ₱{(selectedOrder.total || selectedOrder.price || 0).toLocaleString()}
                             </div>
                         </div>
-                        <div className="modal-footer">
-                            {selectedOrder.status === 'pending' && (
-                                <>
-                                    <button 
-                                        className="btn btn-success"
-                                        onClick={() => {
-                                            handleAccept(selectedOrder);
-                                            setShowOrderModal(false);
-                                        }}
-                                    >
-                                        Accept
-                                    </button>
-                                    <button 
-                                        className="btn btn-danger"
-                                        onClick={() => {
-                                            handleDecline(selectedOrder);
-                                            setShowOrderModal(false);
-                                        }}
-                                    >
-                                        Decline
-                                    </button>
-                                </>
-                            )}
-                            <button className="btn btn-secondary" onClick={() => setShowOrderModal(false)}>
-                                Close
-                            </button>
+                        <div className="modal-footer d-flex justify-content-between">
+                            <div>
+                                <button 
+                                    className="btn btn-danger"
+                                    onClick={() => {
+                                        handleDelete(selectedOrder);
+                                        setShowOrderModal(false);
+                                    }}
+                                    title="Permanently delete this item"
+                                >
+                                    <i className="fas fa-trash me-1"></i>Delete
+                                </button>
+                            </div>
+                            <div>
+                                {selectedOrder.status === 'pending' && (
+                                    <>
+                                        <button 
+                                            className="btn btn-success me-2"
+                                            onClick={() => {
+                                                handleAccept(selectedOrder);
+                                                setShowOrderModal(false);
+                                            }}
+                                        >
+                                            Accept
+                                        </button>
+                                        <button 
+                                            className="btn btn-warning me-2"
+                                            onClick={() => {
+                                                handleDecline(selectedOrder);
+                                                setShowOrderModal(false);
+                                            }}
+                                        >
+                                            Decline
+                                        </button>
+                                    </>
+                                )}
+                                <button className="btn btn-secondary" onClick={() => setShowOrderModal(false)}>
+                                    Close
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
