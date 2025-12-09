@@ -332,6 +332,8 @@ const CatalogueTab = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false); // New state
+  const [productToDeleteId, setProductToDeleteId] = useState(null);   // New state
   const [formData, setFormData] = useState({
     name: '',
     price: '',
@@ -353,7 +355,9 @@ const CatalogueTab = () => {
         categoryAPI.getAll()
       ]);
 
-      setProducts(productsRes.data.products || []);
+      setProducts(
+        (productsRes.data.products || []).sort((a, b) => b.id - a.id)
+      );
       setCategories([{ id: 0, name: 'All' }, ...(categoriesRes.data.categories || [])]);
     } catch (error) {
       console.error('Error loading data:', error);
@@ -370,33 +374,43 @@ const CatalogueTab = () => {
   };
 
   const pickImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 1,
-    });
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 1,
+      });
 
-    if (!result.canceled) {
-      setFormData({ ...formData, image: result.assets[0] });
+      if (!result.canceled) {
+        setFormData({ ...formData, image: result.assets[0] });
+      }
+    } catch (error) {
+      console.error('Error launching image library:', error);
+      Alert.alert('Error', 'Failed to open image library. Please try again.');
     }
   };
 
   const takePhoto = async () => {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Camera permission is required to take photos');
-      return;
-    }
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Camera permission is required to take photos');
+        return;
+      }
 
-    const result = await ImagePicker.launchCameraAsync({
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 1,
-    });
+      const result = await ImagePicker.launchCameraAsync({
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 1,
+      });
 
-    if (!result.canceled) {
-      setFormData({ ...formData, image: result.assets[0] });
+      if (!result.canceled) {
+        setFormData({ ...formData, image: result.assets[0] });
+      }
+    } catch (error) {
+      console.error('Error launching camera:', error);
+      Alert.alert('Error', 'Failed to open camera. Please try again.');
     }
   };
 
@@ -419,19 +433,16 @@ const CatalogueTab = () => {
       data.append('description', formData.description || '');
       data.append('category_id', formData.category_id || '1');
 
-      if (formData.image) {
-        // If it's a new image object from picker
-        if (formData.image.uri) {
-          const filename = formData.image.uri.split('/').pop();
-          const match = /\.(\w+)$/.exec(filename);
-          const type = match ? `image/${match[1]}` : `image/jpeg`;
+      if (formData.image && formData.image.uri) {
+        const filename = formData.image.uri.split('/').pop();
+        const match = /\.(\w+)$/.exec(filename);
+        const type = match ? `image/${match[1]}` : `image/jpeg`;
 
-          data.append('image', {
-            uri: formData.image.uri,
-            name: filename,
-            type: type,
-          });
-        }
+        data.append('image', {
+          uri: formData.image.uri,
+          name: filename,
+          type: type,
+        });
       }
 
       const config = {
@@ -441,7 +452,10 @@ const CatalogueTab = () => {
       };
 
       if (editingProduct) {
-        await productAPI.update(editingProduct.id, data, config);
+        if (editingProduct.image_url) {
+            data.append('image_url_hidden', editingProduct.image_url);
+        }
+        await productAPI.update(editingProduct.id, data);
         Alert.alert('Success', 'Product updated successfully');
       } else {
         await productAPI.create(data, config);
@@ -473,26 +487,8 @@ const CatalogueTab = () => {
   };
 
   const handleDelete = (productId) => {
-    Alert.alert(
-      'Delete Product',
-      'Are you sure you want to delete this product?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await productAPI.delete(productId);
-              Alert.alert('Success', 'Product deleted');
-              await loadData();
-            } catch (error) {
-              Alert.alert('Error', 'Failed to delete product');
-            }
-          }
-        }
-      ]
-    );
+    setProductToDeleteId(productId);
+    setDeleteModalVisible(true);
   };
 
   const resetForm = () => {
@@ -674,6 +670,15 @@ const CatalogueTab = () => {
                 ))}
               </View>
 
+              <Text style={styles.inputLabel}>Description</Text>
+              <TextInput
+                style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
+                placeholder="Enter product description"
+                value={formData.description}
+                onChangeText={(text) => setFormData({ ...formData, description: text })}
+                multiline
+              />
+
               <Text style={styles.inputLabel}>Product Image</Text>
               <TouchableOpacity style={styles.imageUploadBox} onPress={pickImage}>
                 {formData.image ? (
@@ -713,6 +718,48 @@ const CatalogueTab = () => {
                 <Text style={styles.buttonText}>
                   {loading ? 'Saving...' : 'Add Product'}
                 </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal visible={deleteModalVisible} animationType="fade" transparent>
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Confirm Deletion</Text>
+              <TouchableOpacity onPress={() => setDeleteModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#333" />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.modalText}>Are you sure you want to delete this product?</Text>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => setDeleteModalVisible(false)}
+              >
+                <Text style={styles.buttonText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalButton, styles.deleteButton]}
+                onPress={async () => {
+                  setDeleteModalVisible(false);
+                  if (productToDeleteId) {
+                    try {
+                      await productAPI.delete(productToDeleteId);
+                      Alert.alert('Success', 'Product deleted');
+                      await loadData();
+                    } catch (error) {
+                      Alert.alert('Error', 'Failed to delete product');
+                    }
+                  }
+                }}
+              >
+                <Text style={styles.buttonText}>Delete</Text>
               </TouchableOpacity>
             </View>
           </View>
