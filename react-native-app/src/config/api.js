@@ -1,155 +1,289 @@
-import axios from 'axios';
+// AsyncStorage API - replaces backend API calls for React Native
+// This file provides AsyncStorage-based implementations of all API methods
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// API Base URL - Update this with your computer's IP address for mobile testing
-// For local testing: Use your computer's IP (e.g., 192.168.1.100)
-// For production: Use your deployed backend URL
-const BASE_URL = 'http://10.36.28.250:5000'; // Your computer's IP - Update if your IP changes
-const API_URL = `${BASE_URL}/api`;
+// Helper to generate unique IDs
+const generateId = () => `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
-// Create axios instance
-const api = axios.create({
-    baseURL: API_URL,
-    headers: {
-        'Content-Type': 'application/json'
-    },
-    timeout: 10000 // 10 seconds - reduced for faster error feedback
-});
-
-// Add token to requests automatically
-api.interceptors.request.use(
-    async (config) => {
-        const fullUrl = config.baseURL + config.url;
-        console.log('🌐 Making request to:', fullUrl);
-        console.log('📡 Base URL:', BASE_URL);
-        const token = await AsyncStorage.getItem('token');
-        if (token) {
-            config.headers.Authorization = `Bearer ${token}`;
-        }
-        return config;
-    },
-    (error) => {
-        console.error('Request interceptor error:', error);
-        return Promise.reject(error);
-    }
-);
-
-// Handle response errors
-api.interceptors.response.use(
-    (response) => response,
-    async (error) => {
-        if (error.response?.status === 401) {
-            // Unauthorized - clear token
-            await AsyncStorage.removeItem('token');
-            await AsyncStorage.removeItem('currentUser');
-        }
-        
-        // Enhanced error logging for debugging
-        if (error.code === 'ECONNABORTED') {
-            console.error('Request timeout - Server took too long to respond');
-            console.error('Server URL:', API_URL);
-        } else if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
-            console.error('Connection error - Cannot reach server at:', API_URL);
-            console.error('Base URL:', BASE_URL);
-            console.error('Error code:', error.code);
-            console.error('Make sure:');
-            console.error('1. Backend server is running on port 5000');
-            console.error('2. Your device is on the same network');
-            console.error('3. IP address is correct:', BASE_URL);
-            console.error('4. Firewall allows connections on port 5000');
-        } else if (error.request && !error.response) {
-            console.error('Network error - No response from server');
-            console.error('Request URL:', error.config?.url);
-            console.error('Base URL:', BASE_URL);
-            console.error('Full error:', JSON.stringify(error, null, 2));
-        }
-        
-        return Promise.reject(error);
-    }
-);
-
-// API Methods
-export const authAPI = {
-    adminLogin: (data) => api.post('/auth/admin/login', data),
-    changePassword: (data) => api.post('/auth/change-password', data),
-    getMe: () => api.get('/auth/me')
-};
-
+// Products API
 export const productAPI = {
-    getAll: (params) => api.get('/products', { params }),
-    getById: (id) => api.get(`/products/${id}`),
-    create: (data, config) => api.post('/products', data, config),
-    update: (id, data, config) => api.put(`/products/${id}`, data, config),
-    delete: (id) => api.delete(`/products/${id}`)
-};
+    getAll: async (params) => {
+        const products = JSON.parse(await AsyncStorage.getItem('products') || '[]');
+        let filtered = products.filter(p => p.is_active);
 
-export const categoryAPI = {
-    getAll: () => api.get('/categories')
-};
+        if (params?.category_id) {
+            filtered = filtered.filter(p => p.category_id === parseInt(params.category_id));
+        }
 
-export const orderAPI = {
-    getAll: (params) => api.get('/admin/orders', { params })
-};
+        return { data: filtered };
+    },
 
-export const adminAPI = {
-    // Orders
-    getAllOrders: (params) => api.get('/admin/orders', { params }),
-    updateOrderStatus: (id, status) => api.put(`/admin/orders/${id}/status`, { status }),
-    updatePaymentStatus: (id, payment_status) => api.put(`/admin/orders/${id}/payment-status`, { payment_status }),
-    acceptOrder: (id) => api.post(`/admin/orders/${id}/accept`),
-    declineOrder: (id, reason) => api.post(`/admin/orders/${id}/decline`, { reason }),
+    getById: async (id) => {
+        const products = JSON.parse(await AsyncStorage.getItem('products') || '[]');
+        const product = products.find(p => p.id === parseInt(id));
+        return { data: product };
+    },
 
-    // Sales
-    getSalesSummary: (params) => api.get('/admin/sales/summary', { params }),
+    create: async (data) => {
+        const products = JSON.parse(await AsyncStorage.getItem('products') || '[]');
+        const newProduct = { ...data, id: Date.now(), is_active: true };
+        products.push(newProduct);
+        await AsyncStorage.setItem('products', JSON.stringify(products));
+        return { data: newProduct };
+    },
 
-    // Requests
-    getAllRequests: (params) => api.get('/admin/requests', { params }),
-    provideQuote: (id, data) => api.put(`/admin/requests/${id}/quote`, data),
-    acceptRequest: (id) => api.put(`/admin/requests/${id}/accept`),
-    updateRequestStatus: (id, status) => api.put(`/admin/requests/${id}/status`, { status }),
+    update: async (id, data) => {
+        const products = JSON.parse(await AsyncStorage.getItem('products') || '[]');
+        const index = products.findIndex(p => p.id === parseInt(id));
+        if (index !== -1) {
+            products[index] = { ...products[index], ...data };
+            await AsyncStorage.setItem('products', JSON.stringify(products));
+            return { data: products[index] };
+        }
+        return { data: null };
+    },
 
-    // Stock
-    getAllStock: () => api.get('/admin/stock'),
-    createStock: (data) => api.post('/admin/stock', data),
-    updateStock: (id, data) => api.put(`/admin/stock/${id}`, data),
-    deleteStock: (id) => api.delete(`/admin/stock/${id}`),
-
-    // Messages
-    getAllMessages: () => api.get('/admin/messages'),
-    sendMessage: (data) => api.post('/admin/messages', data),
-
-    // Notifications
-    getAllNotifications: () => api.get('/admin/notifications'),
-    sendNotification: (data) => api.post('/admin/notifications', data),
-    deleteNotification: (id) => api.delete(`/admin/notifications/${id}`),
-
-    // Content Management
-    getAbout: () => api.get('/admin/content/about'),
-    updateAbout: (data) => api.put('/admin/content/about', data),
-    getContact: () => api.get('/admin/content/contact'),
-    updateContact: (data) => api.put('/admin/content/contact', data),
-
-    // Employee Management
-    getEmployees: () => api.get('/admin/employees'),
-    addEmployee: (data) => api.post('/admin/employees', data),
-    deleteEmployee: (id) => api.delete(`/admin/employees/${id}`)
-};
-
-export const uploadAPI = {
-    image: (file) => {
-        const formData = new FormData();
-        formData.append('image', {
-            uri: file.uri,
-            type: file.type || 'image/jpeg',
-            name: file.fileName || 'photo.jpg'
-        });
-        return api.post('/upload/image', formData, {
-            headers: {
-                'Content-Type': 'multipart/form-data'
-            }
-        });
+    delete: async (id) => {
+        const products = JSON.parse(await AsyncStorage.getItem('products') || '[]');
+        const filtered = products.filter(p => p.id !== parseInt(id));
+        await AsyncStorage.setItem('products', JSON.stringify(filtered));
+        return { data: { success: true } };
     }
 };
 
-export default api;
-export { BASE_URL };
+// Categories API
+export const categoryAPI = {
+    getAll: async () => {
+        const categories = JSON.parse(await AsyncStorage.getItem('categories') || '[]');
+        return { data: categories.filter(c => c.is_active) };
+    }
+};
+
+// Orders API
+export const orderAPI = {
+    getAll: async (params) => {
+        const orders = JSON.parse(await AsyncStorage.getItem('orders') || '[]');
+        return { data: orders };
+    }
+};
+
+// Auth API - using AsyncStorage for demo/local mode
+export const authAPI = {
+    adminLogin: async (data) => {
+        // For demo: accept any admin login with local storage
+        const adminUser = {
+            id: 1,
+            email: data.email,
+            name: 'Admin',
+            role: 'admin'
+        };
+        const token = 'local-admin-token';
+        return { data: { token, user: adminUser } };
+    },
+
+    changePassword: async (data) => {
+        return { data: { success: true, message: 'Password changed successfully' } };
+    },
+
+    getMe: async () => {
+        const user = await AsyncStorage.getItem('currentUser');
+        return { data: user ? JSON.parse(user) : null };
+    }
+};
+
+// Admin API - AsyncStorage-based admin operations
+export const adminAPI = {
+    getAllOrders: async (params) => {
+        const orders = JSON.parse(await AsyncStorage.getItem('orders') || '[]');
+        return { data: orders };
+    },
+
+    updateOrderStatus: async (id, status) => {
+        const orders = JSON.parse(await AsyncStorage.getItem('orders') || '[]');
+        const index = orders.findIndex(o => o.id === id);
+        if (index !== -1) {
+            orders[index].status = status;
+            await AsyncStorage.setItem('orders', JSON.stringify(orders));
+        }
+        return { data: { success: true } };
+    },
+
+    updatePaymentStatus: async (id, payment_status) => {
+        const orders = JSON.parse(await AsyncStorage.getItem('orders') || '[]');
+        const index = orders.findIndex(o => o.id === id);
+        if (index !== -1) {
+            orders[index].payment_status = payment_status;
+            await AsyncStorage.setItem('orders', JSON.stringify(orders));
+        }
+        return { data: { success: true } };
+    },
+
+    acceptOrder: async (id) => {
+        const orders = JSON.parse(await AsyncStorage.getItem('orders') || '[]');
+        const index = orders.findIndex(o => o.id === id);
+        if (index !== -1) {
+            orders[index].status = 'accepted';
+            await AsyncStorage.setItem('orders', JSON.stringify(orders));
+        }
+        return { data: { success: true } };
+    },
+
+    declineOrder: async (id, reason) => {
+        const orders = JSON.parse(await AsyncStorage.getItem('orders') || '[]');
+        const index = orders.findIndex(o => o.id === id);
+        if (index !== -1) {
+            orders[index].status = 'declined';
+            orders[index].decline_reason = reason;
+            await AsyncStorage.setItem('orders', JSON.stringify(orders));
+        }
+        return { data: { success: true } };
+    },
+
+    getSalesSummary: async (params) => {
+        const orders = JSON.parse(await AsyncStorage.getItem('orders') || '[]');
+        const summary = {
+            total_sales: orders.reduce((sum, o) => sum + (o.total || 0), 0),
+            total_orders: orders.length,
+            pending_orders: orders.filter(o => o.status === 'pending').length
+        };
+        return { data: summary };
+    },
+
+    getAllRequests: async (params) => {
+        const requests = JSON.parse(await AsyncStorage.getItem('requests') || '[]');
+        return { data: requests || [] };
+    },
+
+    provideQuote: async (id, data) => {
+        const requests = JSON.parse(await AsyncStorage.getItem('requests') || '[]');
+        const index = requests.findIndex(r => r.id === id);
+        if (index !== -1) {
+            requests[index] = { ...requests[index], ...data, status: 'quoted' };
+            await AsyncStorage.setItem('requests', JSON.stringify(requests));
+        }
+        return { data: { success: true } };
+    },
+
+    acceptRequest: async (id) => {
+        const requests = JSON.parse(await AsyncStorage.getItem('requests') || '[]');
+        const index = requests.findIndex(r => r.id === id);
+        if (index !== -1) {
+            requests[index].status = 'accepted';
+            await AsyncStorage.setItem('requests', JSON.stringify(requests));
+        }
+        return { data: { success: true } };
+    },
+
+    updateRequestStatus: async (id, status) => {
+        const requests = JSON.parse(await AsyncStorage.getItem('requests') || '[]');
+        const index = requests.findIndex(r => r.id === id);
+        if (index !== -1) {
+            requests[index].status = status;
+            await AsyncStorage.setItem('requests', JSON.stringify(requests));
+        }
+        return { data: { success: true } };
+    },
+
+    getAllStock: async () => {
+        const stock = JSON.parse(await AsyncStorage.getItem('stock') || '[]');
+        return { data: stock };
+    },
+
+    createStock: async (data) => {
+        const stock = JSON.parse(await AsyncStorage.getItem('stock') || '[]');
+        const newStock = { ...data, id: Date.now() };
+        stock.push(newStock);
+        await AsyncStorage.setItem('stock', JSON.stringify(stock));
+        return { data: newStock };
+    },
+
+    updateStock: async (id, data) => {
+        const stock = JSON.parse(await AsyncStorage.getItem('stock') || '[]');
+        const index = stock.findIndex(s => s.id === id);
+        if (index !== -1) {
+            stock[index] = { ...stock[index], ...data };
+            await AsyncStorage.setItem('stock', JSON.stringify(stock));
+            return { data: stock[index] };
+        }
+        return { data: null };
+    },
+
+    deleteStock: async (id) => {
+        const stock = JSON.parse(await AsyncStorage.getItem('stock') || '[]');
+        const filtered = stock.filter(s => s.id !== id);
+        await AsyncStorage.setItem('stock', JSON.stringify(filtered));
+        return { data: { success: true } };
+    },
+
+    getAllMessages: async () => {
+        return { data: [] };
+    },
+
+    sendMessage: async (data) => {
+        return { data: { id: Date.now(), ...data } };
+    },
+
+    getAllNotifications: async () => {
+        return { data: [] };
+    },
+
+    sendNotification: async (data) => {
+        return { data: { id: Date.now(), ...data } };
+    },
+
+    deleteNotification: async (id) => {
+        return { data: { success: true } };
+    },
+
+    getAbout: async () => {
+        return { data: { title: 'About Us', description: 'FlowerForge' } };
+    },
+
+    updateAbout: async (data) => {
+        return { data: { success: true } };
+    },
+
+    getContact: async () => {
+        return { data: { phone: '+63 912 345 6789', email: 'info@flowerforge.com' } };
+    },
+
+    updateContact: async (data) => {
+        return { data: { success: true } };
+    },
+
+    getEmployees: async () => {
+        return { data: [] };
+    },
+
+    addEmployee: async (data) => {
+        return { data: { id: Date.now(), ...data } };
+    },
+
+    deleteEmployee: async (id) => {
+        return { data: { success: true } };
+    }
+};
+
+// Upload API - mock for local development
+export const uploadAPI = {
+    image: async (file) => {
+        // In a real app, you'd use FileSystem to handle uploads
+        // For demo, just return a placeholder URL
+        const url = `/uploads/local-${Date.now()}.jpg`;
+        return { data: { url } };
+    }
+};
+
+// Base URL export (not used in local mode but kept for compatibility)
+export const BASE_URL = 'local-storage';
+
+// Default export
+export default {
+    productAPI,
+    categoryAPI,
+    orderAPI,
+    authAPI,
+    adminAPI,
+    uploadAPI,
+    BASE_URL
+};

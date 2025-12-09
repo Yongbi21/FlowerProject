@@ -36,26 +36,10 @@ const Wishlist = ({ cart, addToCart }) => {
     };
 
     const removeFromWishlist = async (item) => {
-        if (isLoggedIn) {
-            try {
-                // Assuming item has productId or we use item.id if it's from API
-                const idToRemove = item.product_id || item.id;
-                // Wait, wishlistAPI.remove takes productId? Let's check api.js
-                // api.js: remove: (productId) => api.delete(`/wishlist/remove/${productId}`)
-                // If item comes from API, it might have product_id. If local, it has name/id.
-                // Let's assume item.id is the product id for now or we need to find it.
-                // Actually, local wishlist items only have name, price, image. No ID!
-                // This is a problem for migration. But for new API items, they should have ID.
-                await wishlistAPI.remove(item.product_id || item.id);
-                fetchWishlist();
-            } catch (error) {
-                console.error('Error removing from wishlist:', error);
-            }
-        } else {
-            const newItems = wishlistItems.filter(i => i.name !== item.name);
-            setWishlistItems(newItems);
-            localStorage.setItem('wishlist', JSON.stringify(newItems));
-        }
+        // Always use localStorage-based removal (name-based filtering)
+        const newItems = wishlistItems.filter(i => i.name !== item.name);
+        setWishlistItems(newItems);
+        localStorage.setItem('wishlist', JSON.stringify(newItems));
     };
 
     const handleAddToCart = (item) => {

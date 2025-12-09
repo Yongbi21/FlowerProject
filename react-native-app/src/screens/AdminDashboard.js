@@ -737,81 +737,10 @@ const OrdersTab = () => {
     setLoading(true);
     try {
       const response = await adminAPI.getAllOrders();
-      const apiOrders = response.data.orders || [];
-
-      // Get today's date in the format: 04/12/2024
-      const today = new Date();
-      const day = String(today.getDate()).padStart(2, '0');
-      const month = String(today.getMonth() + 1).padStart(2, '0');
-      const year = today.getFullYear();
-      const formattedDate = `${day}/${month}/${year}`;
-
-      // Add sample order with detailed information matching the image
-      const sampleOrder = {
-        id: 'sample-001',
-        order_number: 'ORD-20251204-3154',
-        order_date: formattedDate,
-        customer_name: 'Rhiannah Niño Fernandez',
-        customer_email: 'rhiannah.fernandez@gmail.com',
-        created_at: new Date().toISOString(),
-        status: 'pending',
-        payment_status: 'pending',
-        payment_method: 'GCash',
-        delivery_method: 'delivery',
-        delivery_address: {
-          recipient: 'Maria Santos',
-          phone: '0997 234 6789',
-          street: '123 Sampaguita St.',
-          city: 'Zamboanga City',
-          province: 'Zamboanga del Sur',
-          barangay: 'Pasonanca'
-        },
-        items: [
-          { name: 'Sunny Recovery', quantity: 1, price: 450.00 }
-        ],
-        subtotal: 450.00,
-        delivery_fee: 250.00,
-        total: 700.00,
-        isSample: true
-      };
-
-      setOrders([sampleOrder, ...apiOrders]);
+      setOrders(response.data || []);
     } catch (error) {
       console.error('Error loading orders:', error);
-      const today = new Date();
-      const day = String(today.getDate()).padStart(2, '0');
-      const month = String(today.getMonth() + 1).padStart(2, '0');
-      const year = today.getFullYear();
-      const formattedDate = `${day}/${month}/${year}`;
-
-      const sampleOrder = {
-        id: 'sample-001',
-        order_number: 'ORD-20251204-3154',
-        order_date: formattedDate,
-        customer_name: 'Rhiannah Niño Fernandez',
-        customer_email: 'rhiannah.fernandez@gmail.com',
-        created_at: new Date().toISOString(),
-        status: 'pending',
-        payment_status: 'pending',
-        payment_method: 'GCash',
-        delivery_method: 'delivery',
-        delivery_address: {
-          recipient: 'Maria Santos',
-          phone: '0997 234 6789',
-          street: '123 Sampaguita St.',
-          city: 'Zamboanga City',
-          province: 'Zamboanga del Sur',
-          barangay: 'Pasonanca'
-        },
-        items: [
-          { name: 'Sunny Recovery', quantity: 1, price: 450.00 }
-        ],
-        subtotal: 450.00,
-        delivery_fee: 250.00,
-        total: 700.00,
-        isSample: true
-      };
-      setOrders([sampleOrder]);
+      setOrders([]);
     } finally {
       setLoading(false);
     }
