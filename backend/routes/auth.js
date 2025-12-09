@@ -5,6 +5,8 @@ const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
 const { pool } = require('../config/database');
 const { auth } = require('../middleware/auth');
+const { handleError, notFound, badRequest, forbidden, unauthorized } = require('../utils/errorHandler');
+const { success, created } = require('../utils/response');
 
 // =====================================================
 // CUSTOMER AUTHENTICATION
@@ -23,10 +25,7 @@ router.post('/register', [
         // Validate input
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({
-                success: false,
-                errors: errors.array()
-            });
+            return badRequest(res, errors.array()[0].msg);
         }
 
         const { email, password, name, phone } = req.body;
@@ -38,10 +37,7 @@ router.post('/register', [
         );
 
         if (existing.length > 0) {
-            return res.status(400).json({
-                success: false,
-                message: 'Email already registered'
-            });
+            return badRequest(res, 'Email already registered');
         }
 
         // Hash password
@@ -73,11 +69,7 @@ router.post('/register', [
             token
         });
     } catch (error) {
-        console.error('Registration error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Server error during registration'
-        });
+        handleError(res, error, 'Registration error');
     }
 });
 
@@ -91,10 +83,7 @@ router.post('/login', [
     try {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({
-                success: false,
-                errors: errors.array()
-            });
+            return badRequest(res, errors.array()[0].msg);
         }
 
         const { email, password } = req.body;
@@ -106,29 +95,20 @@ router.post('/login', [
         );
 
         if (users.length === 0) {
-            return res.status(401).json({
-                success: false,
-                message: 'Invalid credentials'
-            });
+            return unauthorized(res, 'Invalid credentials');
         }
 
         const user = users[0];
 
         // Check if account is active
         if (!user.is_active) {
-            return res.status(403).json({
-                success: false,
-                message: 'Account is deactivated'
-            });
+            return forbidden(res, 'Account is deactivated');
         }
 
         // Verify password
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) {
-            return res.status(401).json({
-                success: false,
-                message: 'Invalid credentials'
-            });
+            return unauthorized(res, 'Invalid credentials');
         }
 
         // Generate JWT
@@ -149,11 +129,7 @@ router.post('/login', [
             token
         });
     } catch (error) {
-        console.error('Login error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Server error during login'
-        });
+        handleError(res, error, 'Login error');
     }
 });
 
@@ -171,10 +147,7 @@ router.post('/admin/login', [
     try {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({
-                success: false,
-                errors: errors.array()
-            });
+            return badRequest(res, errors.array()[0].msg);
         }
 
         const { email, password } = req.body;
@@ -186,29 +159,20 @@ router.post('/admin/login', [
         );
 
         if (admins.length === 0) {
-            return res.status(401).json({
-                success: false,
-                message: 'Invalid credentials'
-            });
+            return unauthorized(res, 'Invalid credentials');
         }
 
         const admin = admins[0];
 
         // Check if account is active
         if (!admin.is_active) {
-            return res.status(403).json({
-                success: false,
-                message: 'Account is deactivated'
-            });
+            return forbidden(res, 'Account is deactivated');
         }
 
         // Verify password
         const isMatch = await bcrypt.compare(password, admin.password);
         if (!isMatch) {
-            return res.status(401).json({
-                success: false,
-                message: 'Invalid credentials'
-            });
+            return unauthorized(res, 'Invalid credentials');
         }
 
         // Generate JWT
@@ -229,11 +193,7 @@ router.post('/admin/login', [
             token
         });
     } catch (error) {
-        console.error('Admin login error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Server error during login'
-        });
+        handleError(res, error, 'Admin login error');
     }
 });
 
@@ -251,10 +211,7 @@ router.post('/change-password', auth, [
     try {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({
-                success: false,
-                errors: errors.array()
-            });
+            return badRequest(res, errors.array()[0].msg);
         }
 
         const { currentPassword, newPassword } = req.body;
@@ -267,19 +224,13 @@ router.post('/change-password', auth, [
         );
 
         if (users.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: 'User not found'
-            });
+            return notFound(res, 'User not found');
         }
 
         // Verify current password
         const isMatch = await bcrypt.compare(currentPassword, users[0].password);
         if (!isMatch) {
-            return res.status(401).json({
-                success: false,
-                message: 'Current password is incorrect'
-            });
+            return unauthorized(res, 'Current password is incorrect');
         }
 
         // Hash new password
@@ -292,16 +243,9 @@ router.post('/change-password', auth, [
             [hashedPassword, userId]
         );
 
-        res.json({
-            success: true,
-            message: 'Password changed successfully'
-        });
+        success(res, null, 'Password changed successfully');
     } catch (error) {
-        console.error('Change password error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Server error'
-        });
+        handleError(res, error, 'Change password error');
     }
 });
 
@@ -316,22 +260,12 @@ router.get('/me', auth, async (req, res) => {
         );
 
         if (users.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: 'User not found'
-            });
+            return notFound(res, 'User not found');
         }
 
-        res.json({
-            success: true,
-            user: users[0]
-        });
+        success(res, { user: users[0] });
     } catch (error) {
-        console.error('Get user error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Server error'
-        });
+        handleError(res, error, 'Get user error');
     }
 });
 

@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const { pool } = require('../config/database');
 const { auth } = require('../middleware/auth');
+const { handleError } = require('../utils/errorHandler');
+const { success } = require('../utils/response');
 
 // Get wishlist
 router.get('/', auth, async (req, res) => {
@@ -13,10 +15,10 @@ router.get('/', auth, async (req, res) => {
             WHERE w.user_id = ?
             ORDER BY w.created_at DESC
         `, [req.user.id]);
-        
-        res.json({ success: true, wishlist: items });
+
+        success(res, { wishlist: items });
     } catch (error) {
-        res.status(500).json({ success: false, message: 'Server error' });
+        handleError(res, error, 'Get wishlist error');
     }
 });
 
@@ -24,14 +26,14 @@ router.get('/', auth, async (req, res) => {
 router.post('/add', auth, async (req, res) => {
     try {
         const { product_id } = req.body;
-        
+
         await pool.query(`
             INSERT IGNORE INTO wishlists (user_id, product_id) VALUES (?, ?)
         `, [req.user.id, product_id]);
-        
-        res.json({ success: true, message: 'Added to wishlist' });
+
+        success(res, null, 'Added to wishlist');
     } catch (error) {
-        res.status(500).json({ success: false, message: 'Server error' });
+        handleError(res, error, 'Add to wishlist error');
     }
 });
 
@@ -39,9 +41,9 @@ router.post('/add', auth, async (req, res) => {
 router.delete('/remove/:product_id', auth, async (req, res) => {
     try {
         await pool.query('DELETE FROM wishlists WHERE user_id = ? AND product_id = ?', [req.user.id, req.params.product_id]);
-        res.json({ success: true, message: 'Removed from wishlist' });
+        success(res, null, 'Removed from wishlist');
     } catch (error) {
-        res.status(500).json({ success: false, message: 'Server error' });
+        handleError(res, error, 'Remove from wishlist error');
     }
 });
 

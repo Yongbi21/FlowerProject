@@ -3,6 +3,8 @@ const router = express.Router();
 const { pool } = require('../config/database');
 const { adminAuth, adminOnly } = require('../middleware/auth');
 const bcrypt = require('bcryptjs');
+const { handleError, notFound, badRequest } = require('../utils/errorHandler');
+const { success, created } = require('../utils/response');
 
 // Get all orders (Admin/Employee)
 router.get('/orders', adminAuth, async (req, res) => {
@@ -23,9 +25,9 @@ router.get('/orders', adminAuth, async (req, res) => {
         query += ' ORDER BY o.created_at DESC';
 
         const [orders] = await pool.query(query, params);
-        res.json({ success: true, orders });
+        success(res, { orders });
     } catch (error) {
-        res.status(500).json({ success: false, message: 'Server error' });
+        handleError(res, error, 'Get orders error');
     }
 });
 
@@ -34,28 +36,24 @@ router.post('/orders/:id/accept', adminAuth, async (req, res) => {
     try {
         // Check if order exists and is pending
         const [orders] = await pool.query('SELECT status FROM orders WHERE id = ?', [req.params.id]);
-        
+
         if (orders.length === 0) {
-            return res.status(404).json({ success: false, message: 'Order not found' });
+            return notFound(res, 'Order not found');
         }
-        
+
         if (orders[0].status !== 'pending') {
-            return res.status(400).json({ 
-                success: false, 
-                message: 'Only pending orders can be accepted' 
-            });
+            return badRequest(res, 'Only pending orders can be accepted');
         }
-        
+
         // Update order to accepted status and set accepted_at timestamp
         await pool.query(
             'UPDATE orders SET status = ?, accepted_at = NOW() WHERE id = ?',
             ['accepted', req.params.id]
         );
-        
-        res.json({ success: true, message: 'Order accepted' });
+
+        success(res, null, 'Order accepted');
     } catch (error) {
-        console.error('Accept order error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        handleError(res, error, 'Accept order error');
     }
 });
 
@@ -63,31 +61,27 @@ router.post('/orders/:id/accept', adminAuth, async (req, res) => {
 router.post('/orders/:id/decline', adminAuth, async (req, res) => {
     try {
         const { reason } = req.body;
-        
+
         // Check if order exists and is pending
         const [orders] = await pool.query('SELECT status FROM orders WHERE id = ?', [req.params.id]);
-        
+
         if (orders.length === 0) {
-            return res.status(404).json({ success: false, message: 'Order not found' });
+            return notFound(res, 'Order not found');
         }
-        
+
         if (orders[0].status !== 'pending') {
-            return res.status(400).json({ 
-                success: false, 
-                message: 'Only pending orders can be declined' 
-            });
+            return badRequest(res, 'Only pending orders can be declined');
         }
-        
+
         // Update order to declined status
         await pool.query(
             'UPDATE orders SET status = ?, decline_reason = ? WHERE id = ?',
             ['declined', reason || null, req.params.id]
         );
-        
-        res.json({ success: true, message: 'Order declined' });
+
+        success(res, null, 'Order declined');
     } catch (error) {
-        console.error('Decline order error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        handleError(res, error, 'Decline order error');
     }
 });
 
@@ -95,32 +89,28 @@ router.post('/orders/:id/decline', adminAuth, async (req, res) => {
 router.put('/orders/:id/status', adminAuth, async (req, res) => {
     try {
         const { status } = req.body;
-        
+
         // Check current order status
         const [orders] = await pool.query('SELECT status, accepted_at FROM orders WHERE id = ?', [req.params.id]);
-        
+
         if (orders.length === 0) {
-            return res.status(404).json({ success: false, message: 'Order not found' });
+            return notFound(res, 'Order not found');
         }
-        
+
         const currentOrder = orders[0];
-        
+
         // Prevent moving to 'processing' unless order is 'accepted'
         if (status === 'processing') {
             if (currentOrder.status !== 'accepted') {
-                return res.status(400).json({ 
-                    success: false, 
-                    message: 'Order must be accepted before it can be moved to processing. Please accept the order first.' 
-                });
+                return badRequest(res, 'Order must be accepted before it can be moved to processing. Please accept the order first.');
             }
         }
-        
+
         // Allow other status transitions
         await pool.query('UPDATE orders SET status = ? WHERE id = ?', [status, req.params.id]);
-        res.json({ success: true, message: 'Status updated' });
+        success(res, null, 'Status updated');
     } catch (error) {
-        console.error('Update order status error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        handleError(res, error, 'Update order status error');
     }
 });
 
@@ -129,9 +119,9 @@ router.put('/orders/:id/payment-status', adminAuth, async (req, res) => {
     try {
         const { payment_status } = req.body;
         await pool.query('UPDATE orders SET payment_status = ? WHERE id = ?', [payment_status, req.params.id]);
-        res.json({ success: true, message: 'Payment status updated' });
+        success(res, null, 'Payment status updated');
     } catch (error) {
-        res.status(500).json({ success: false, message: 'Server error' });
+        handleError(res, error, 'Update payment status error');
     }
 });
 
@@ -139,9 +129,9 @@ router.put('/orders/:id/payment-status', adminAuth, async (req, res) => {
 router.get('/sales/summary', adminOnly, async (req, res) => {
     try {
         const [summary] = await pool.query('SELECT * FROM order_statistics');
-        res.json({ success: true, summary: summary[0] });
+        success(res, { summary: summary[0] });
     } catch (error) {
-        res.status(500).json({ success: false, message: 'Server error' });
+        handleError(res, error, 'Get sales summary error');
     }
 });
 
@@ -164,10 +154,9 @@ router.get('/stock', adminAuth, async (req, res) => {
         query += ' ORDER BY category, name';
 
         const [stock] = await pool.query(query, params);
-        res.json({ success: true, stock });
+        success(res, { stock });
     } catch (error) {
-        console.error('Get stock error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        handleError(res, error, 'Get stock error');
     }
 });
 
@@ -177,10 +166,7 @@ router.post('/stock', adminAuth, async (req, res) => {
         const { name, category, quantity, price, unit, reorder_level, is_available } = req.body;
 
         if (!name || !category) {
-            return res.status(400).json({
-                success: false,
-                message: 'Name and category are required'
-            });
+            return badRequest(res, 'Name and category are required');
         }
 
         const [result] = await pool.query(
@@ -194,8 +180,7 @@ router.post('/stock', adminAuth, async (req, res) => {
             stock: { id: result.insertId, name, category, quantity, price, unit, reorder_level, is_available }
         });
     } catch (error) {
-        console.error('Create stock error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        handleError(res, error, 'Create stock error');
     }
 });
 
@@ -210,16 +195,12 @@ router.put('/stock/:id', adminAuth, async (req, res) => {
         );
 
         if (result.affectedRows === 0) {
-            return res.status(404).json({
-                success: false,
-                message: 'Stock item not found'
-            });
+            return notFound(res, 'Stock item not found');
         }
 
-        res.json({ success: true, message: 'Stock item updated' });
+        success(res, null, 'Stock item updated');
     } catch (error) {
-        console.error('Update stock error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        handleError(res, error, 'Update stock error');
     }
 });
 
@@ -229,16 +210,12 @@ router.delete('/stock/:id', adminAuth, async (req, res) => {
         const [result] = await pool.query('DELETE FROM stock WHERE id = ?', [req.params.id]);
 
         if (result.affectedRows === 0) {
-            return res.status(404).json({
-                success: false,
-                message: 'Stock item not found'
-            });
+            return notFound(res, 'Stock item not found');
         }
 
-        res.json({ success: true, message: 'Stock item deleted' });
+        success(res, null, 'Stock item deleted');
     } catch (error) {
-        console.error('Delete stock error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        handleError(res, error, 'Delete stock error');
     }
 });
 
@@ -267,10 +244,9 @@ router.get('/messages', adminAuth, async (req, res) => {
         `;
 
         const [conversations] = await pool.query(query);
-        res.json({ success: true, conversations });
+        success(res, { conversations });
     } catch (error) {
-        console.error('Get messages error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        handleError(res, error, 'Get messages error');
     }
 });
 
@@ -280,10 +256,7 @@ router.post('/messages', adminAuth, async (req, res) => {
         const { user_id, content, order_id } = req.body;
 
         if (!user_id || !content) {
-            return res.status(400).json({
-                success: false,
-                message: 'User ID and content are required'
-            });
+            return badRequest(res, 'User ID and content are required');
         }
 
         const [result] = await pool.query(
@@ -297,8 +270,7 @@ router.post('/messages', adminAuth, async (req, res) => {
             message_id: result.insertId
         });
     } catch (error) {
-        console.error('Send message error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        handleError(res, error, 'Send message error');
     }
 });
 
@@ -316,10 +288,9 @@ router.get('/notifications', adminAuth, async (req, res) => {
             ORDER BY n.created_at DESC 
             LIMIT 50
         `);
-        res.json({ success: true, notifications });
+        success(res, { notifications });
     } catch (error) {
-        console.error('Get notifications error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        handleError(res, error, 'Get notifications error');
     }
 });
 
@@ -329,10 +300,7 @@ router.post('/notifications', adminAuth, async (req, res) => {
         const { user_id, title, message, type } = req.body;
 
         if (!title || !message) {
-            return res.status(400).json({
-                success: false,
-                message: 'Title and message are required'
-            });
+            return badRequest(res, 'Title and message are required');
         }
 
         // If user_id is provided, send to specific user. If not, maybe broadcast? 
@@ -351,8 +319,7 @@ router.post('/notifications', adminAuth, async (req, res) => {
             notification: { id: result.insertId, user_id, title, message, type, created_at: new Date() }
         });
     } catch (error) {
-        console.error('Send notification error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        handleError(res, error, 'Send notification error');
     }
 });
 
@@ -360,10 +327,9 @@ router.post('/notifications', adminAuth, async (req, res) => {
 router.delete('/notifications/:id', adminAuth, async (req, res) => {
     try {
         await pool.query('DELETE FROM notifications WHERE id = ?', [req.params.id]);
-        res.json({ success: true, message: 'Notification deleted' });
+        success(res, null, 'Notification deleted');
     } catch (error) {
-        console.error('Delete notification error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        handleError(res, error, 'Delete notification error');
     }
 });
 
@@ -375,10 +341,9 @@ router.delete('/notifications/:id', adminAuth, async (req, res) => {
 router.get('/content/about', async (req, res) => {
     try {
         const [content] = await pool.query('SELECT * FROM about_content WHERE id = 1');
-        res.json({ success: true, content: content[0] });
+        success(res, { content: content[0] });
     } catch (error) {
-        console.error('Get about error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        handleError(res, error, 'Get about error');
     }
 });
 
@@ -390,10 +355,9 @@ router.put('/content/about', adminAuth, async (req, res) => {
             'UPDATE about_content SET description = ?, mission = ?, vision = ? WHERE id = 1',
             [description, mission, vision]
         );
-        res.json({ success: true, message: 'About content updated' });
+        success(res, null, 'About content updated');
     } catch (error) {
-        console.error('Update about error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        handleError(res, error, 'Update about error');
     }
 });
 
@@ -401,10 +365,9 @@ router.put('/content/about', adminAuth, async (req, res) => {
 router.get('/content/contact', async (req, res) => {
     try {
         const [info] = await pool.query('SELECT * FROM contact_info WHERE id = 1');
-        res.json({ success: true, info: info[0] });
+        success(res, { info: info[0] });
     } catch (error) {
-        console.error('Get contact error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        handleError(res, error, 'Get contact error');
     }
 });
 
@@ -416,10 +379,9 @@ router.put('/content/contact', adminAuth, async (req, res) => {
             'UPDATE contact_info SET address = ?, phone = ?, email = ?, map_url = ? WHERE id = 1',
             [address, phone, email, map_url]
         );
-        res.json({ success: true, message: 'Contact info updated' });
+        success(res, null, 'Contact info updated');
     } catch (error) {
-        console.error('Update contact error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        handleError(res, error, 'Update contact error');
     }
 });
 
@@ -432,10 +394,9 @@ router.get('/employees', adminAuth, async (req, res) => {
     try {
         // Fetch from admins table where role is employee
         const [employees] = await pool.query('SELECT id, name, email, role, created_at FROM admins WHERE role = "employee"');
-        res.json({ success: true, employees });
+        success(res, { employees });
     } catch (error) {
-        console.error('Get employees error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        handleError(res, error, 'Get employees error');
     }
 });
 
@@ -445,13 +406,13 @@ router.post('/employees', adminAuth, async (req, res) => {
         const { name, email, password } = req.body;
 
         if (!name || !email || !password) {
-            return res.status(400).json({ success: false, message: 'All fields are required' });
+            return badRequest(res, 'All fields are required');
         }
 
         // Check if email exists
         const [existing] = await pool.query('SELECT id FROM admins WHERE email = ?', [email]);
         if (existing.length > 0) {
-            return res.status(400).json({ success: false, message: 'Email already exists' });
+            return badRequest(res, 'Email already exists');
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
@@ -463,8 +424,7 @@ router.post('/employees', adminAuth, async (req, res) => {
 
         res.status(201).json({ success: true, message: 'Employee added successfully' });
     } catch (error) {
-        console.error('Add employee error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        handleError(res, error, 'Add employee error');
     }
 });
 
@@ -472,10 +432,9 @@ router.post('/employees', adminAuth, async (req, res) => {
 router.delete('/employees/:id', adminAuth, async (req, res) => {
     try {
         await pool.query('DELETE FROM admins WHERE id = ? AND role = "employee"', [req.params.id]);
-        res.json({ success: true, message: 'Employee deleted' });
+        success(res, null, 'Employee deleted');
     } catch (error) {
-        console.error('Delete employee error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        handleError(res, error, 'Delete employee error');
     }
 });
 
@@ -492,10 +451,9 @@ router.get('/requests', adminAuth, async (req, res) => {
             LEFT JOIN users u ON r.user_id = u.id 
             ORDER BY r.created_at DESC
         `);
-        res.json({ success: true, requests });
+        success(res, { requests });
     } catch (error) {
-        console.error('Get requests error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        handleError(res, error, 'Get requests error');
     }
 });
 
@@ -503,27 +461,23 @@ router.get('/requests', adminAuth, async (req, res) => {
 router.put('/requests/:id/status', adminAuth, async (req, res) => {
     try {
         const { status } = req.body;
-        
+
         // If status is 'declined' or 'cancelled', delete the request instead of updating
         if (status === 'declined' || status === 'cancelled') {
             const [result] = await pool.query('DELETE FROM requests WHERE id = ?', [req.params.id]);
-            
+
             if (result.affectedRows === 0) {
-                return res.status(404).json({
-                    success: false,
-                    message: 'Request not found'
-                });
+                return notFound(res, 'Request not found');
             }
-            
-            return res.json({ success: true, message: 'Request deleted' });
+
+            return success(res, null, 'Request deleted');
         }
-        
+
         // For other statuses, update normally
         await pool.query('UPDATE requests SET status = ? WHERE id = ?', [status, req.params.id]);
-        res.json({ success: true, message: 'Status updated' });
+        success(res, null, 'Status updated');
     } catch (error) {
-        console.error('Update request status error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        handleError(res, error, 'Update request status error');
     }
 });
 

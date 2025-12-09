@@ -1,26 +1,33 @@
 const jwt = require('jsonwebtoken');
 
+// Helper function to verify and extract token
+const verifyToken = (req) => {
+    const token = req.header('Authorization')?.replace('Bearer ', '');
+
+    if (!token) {
+        const error = new Error('No authentication token, access denied');
+        error.status = 401;
+        throw error;
+    }
+
+    try {
+        return jwt.verify(token, process.env.JWT_SECRET);
+    } catch (err) {
+        const error = new Error('Token is not valid');
+        error.status = 401;
+        throw error;
+    }
+};
+
 // Middleware to verify JWT token
 const auth = async (req, res, next) => {
     try {
-        // Get token from header
-        const token = req.header('Authorization')?.replace('Bearer ', '');
-
-        if (!token) {
-            return res.status(401).json({
-                success: false,
-                message: 'No authentication token, access denied'
-            });
-        }
-
-        // Verify token
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        req.user = decoded;
+        req.user = verifyToken(req);
         next();
     } catch (error) {
-        res.status(401).json({
+        res.status(error.status || 401).json({
             success: false,
-            message: 'Token is not valid'
+            message: error.message
         });
     }
 };
@@ -28,31 +35,21 @@ const auth = async (req, res, next) => {
 // Middleware to verify admin/employee role
 const adminAuth = async (req, res, next) => {
     try {
-        const token = req.header('Authorization')?.replace('Bearer ', '');
-
-        if (!token) {
-            return res.status(401).json({
-                success: false,
-                message: 'No authentication token, access denied'
-            });
-        }
-
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        req.user = verifyToken(req);
 
         // Check if user is admin or employee
-        if (decoded.role !== 'admin' && decoded.role !== 'employee') {
+        if (req.user.role !== 'admin' && req.user.role !== 'employee') {
             return res.status(403).json({
                 success: false,
                 message: 'Access denied. Admin privileges required.'
             });
         }
 
-        req.user = decoded;
         next();
     } catch (error) {
-        res.status(401).json({
+        res.status(error.status || 401).json({
             success: false,
-            message: 'Token is not valid'
+            message: error.message
         });
     }
 };
@@ -60,31 +57,21 @@ const adminAuth = async (req, res, next) => {
 // Middleware to verify admin role only
 const adminOnly = async (req, res, next) => {
     try {
-        const token = req.header('Authorization')?.replace('Bearer ', '');
-
-        if (!token) {
-            return res.status(401).json({
-                success: false,
-                message: 'No authentication token, access denied'
-            });
-        }
-
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        req.user = verifyToken(req);
 
         // Check if user is admin
-        if (decoded.role !== 'admin') {
+        if (req.user.role !== 'admin') {
             return res.status(403).json({
                 success: false,
                 message: 'Access denied. Admin only.'
             });
         }
 
-        req.user = decoded;
         next();
     } catch (error) {
-        res.status(401).json({
+        res.status(error.status || 401).json({
             success: false,
-            message: 'Token is not valid'
+            message: error.message
         });
     }
 };

@@ -2,6 +2,9 @@ const express = require('express');
 const router = express.Router();
 const { pool } = require('../config/database');
 const { auth } = require('../middleware/auth');
+const { handleError, notFound, badRequest } = require('../utils/errorHandler');
+const { success } = require('../utils/response');
+const { requirePositive } = require('../utils/validation');
 
 // @route   GET /api/cart
 // @desc    Get user's cart
@@ -31,17 +34,9 @@ router.get('/', auth, async (req, res) => {
         const subtotal = items.reduce((sum, item) => sum + parseFloat(item.subtotal), 0);
         const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
 
-        res.json({
-            success: true,
-            cart: {
-                items,
-                subtotal,
-                itemCount
-            }
-        });
+        success(res, { cart: { items, subtotal, itemCount } });
     } catch (error) {
-        console.error('Get cart error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        handleError(res, error, 'Get cart error');
     }
 });
 
@@ -53,10 +48,7 @@ router.post('/add', auth, async (req, res) => {
         const { product_id, quantity = 1, customization } = req.body;
 
         if (!product_id) {
-            return res.status(400).json({
-                success: false,
-                message: 'Product ID is required'
-            });
+            return badRequest(res, 'Product ID is required');
         }
 
         // Check if product exists and is active
@@ -66,25 +58,16 @@ router.post('/add', auth, async (req, res) => {
         );
 
         if (products.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: 'Product not found'
-            });
+            return notFound(res, 'Product not found');
         }
 
         if (!products[0].is_active) {
-            return res.status(400).json({
-                success: false,
-                message: 'Product is not available'
-            });
+            return badRequest(res, 'Product is not available');
         }
 
         // Check stock
         if (products[0].stock_quantity < quantity) {
-            return res.status(400).json({
-                success: false,
-                message: 'Insufficient stock'
-            });
+            return badRequest(res, 'Insufficient stock');
         }
 
         // Add or update cart item
@@ -103,14 +86,9 @@ router.post('/add', auth, async (req, res) => {
             [req.user.id]
         );
 
-        res.json({
-            success: true,
-            message: 'Added to cart',
-            cartCount: countResult[0].count || 0
-        });
+        success(res, { cartCount: countResult[0].count || 0 }, 'Added to cart');
     } catch (error) {
-        console.error('Add to cart error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        handleError(res, error, 'Add to cart error');
     }
 });
 
@@ -121,12 +99,7 @@ router.put('/:id', auth, async (req, res) => {
     try {
         const { quantity } = req.body;
 
-        if (quantity < 1) {
-            return res.status(400).json({
-                success: false,
-                message: 'Quantity must be at least 1'
-            });
-        }
+        requirePositive(quantity, 'Quantity');
 
         // Get current cart item with product info
         const [items] = await pool.query(`
@@ -137,18 +110,12 @@ router.put('/:id', auth, async (req, res) => {
         `, [req.params.id, req.user.id]);
 
         if (items.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: 'Cart item not found'
-            });
+            return notFound(res, 'Cart item not found');
         }
 
         // Check stock
         if (items[0].stock_quantity < quantity) {
-            return res.status(400).json({
-                success: false,
-                message: 'Insufficient stock'
-            });
+            return badRequest(res, 'Insufficient stock');
         }
 
         await pool.query(
@@ -156,10 +123,9 @@ router.put('/:id', auth, async (req, res) => {
             [quantity, req.params.id, req.user.id]
         );
 
-        res.json({ success: true, message: 'Cart updated' });
+        success(res, null, 'Cart updated');
     } catch (error) {
-        console.error('Update cart error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        handleError(res, error, 'Update cart error');
     }
 });
 
@@ -174,16 +140,12 @@ router.delete('/:id', auth, async (req, res) => {
         );
 
         if (result.affectedRows === 0) {
-            return res.status(404).json({
-                success: false,
-                message: 'Cart item not found'
-            });
+            return notFound(res, 'Cart item not found');
         }
 
-        res.json({ success: true, message: 'Removed from cart' });
+        success(res, null, 'Removed from cart');
     } catch (error) {
-        console.error('Remove from cart error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        handleError(res, error, 'Remove from cart error');
     }
 });
 
@@ -193,10 +155,9 @@ router.delete('/:id', auth, async (req, res) => {
 router.delete('/', auth, async (req, res) => {
     try {
         await pool.query('DELETE FROM cart_items WHERE user_id = ?', [req.user.id]);
-        res.json({ success: true, message: 'Cart cleared' });
+        success(res, null, 'Cart cleared');
     } catch (error) {
-        console.error('Clear cart error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        handleError(res, error, 'Clear cart error');
     }
 });
 
@@ -210,13 +171,9 @@ router.get('/count', auth, async (req, res) => {
             [req.user.id]
         );
 
-        res.json({
-            success: true,
-            count: result[0].count
-        });
+        success(res, { count: result[0].count });
     } catch (error) {
-        console.error('Get cart count error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        handleError(res, error, 'Get cart count error');
     }
 });
 

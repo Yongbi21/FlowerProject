@@ -1,6 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const { pool } = require('../config/database');
+const upload = require('../middleware/upload');
+const { handleError, notFound, badRequest } = require('../utils/errorHandler');
+const { success, created } = require('../utils/response');
 
 // @route   GET /api/products
 // @desc    Get all products
@@ -22,7 +25,6 @@ router.get('/', async (req, res) => {
             query += ' AND c.slug = ?';
             params.push(category);
         }
-
         if (search) {
             query += ' AND p.name LIKE ?';
             params.push(`%${search}%`);
@@ -49,8 +51,7 @@ router.get('/', async (req, res) => {
         const [countResult] = await pool.query(countQuery, countParams);
         const total = countResult[0].total;
 
-        res.json({
-            success: true,
+        success(res, {
             products,
             pagination: {
                 total,
@@ -60,11 +61,7 @@ router.get('/', async (req, res) => {
             }
         });
     } catch (error) {
-        console.error('Get products error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Server error'
-        });
+        handleError(res, error, 'Get products error');
     }
 });
 
@@ -81,10 +78,7 @@ router.get('/:id', async (req, res) => {
         `, [req.params.id]);
 
         if (products.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: 'Product not found'
-            });
+            return notFound(res, 'Product not found');
         }
 
         // Get reviews
@@ -110,20 +104,11 @@ router.get('/:id', async (req, res) => {
             review_count: ratingResult[0].review_count
         };
 
-        res.json({
-            success: true,
-            product
-        });
+        success(res, { product });
     } catch (error) {
-        console.error('Get product error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Server error'
-        });
+        handleError(res, error, 'Get product error');
     }
 });
-
-const upload = require('../middleware/upload');
 
 // @route   POST /api/products
 // @desc    Create new product (Admin only)
@@ -134,10 +119,7 @@ router.post('/', upload.single('image'), async (req, res) => {
         const image_url = req.file ? `/uploads/${req.file.filename}` : null;
 
         if (!name || !price) {
-            return res.status(400).json({
-                success: false,
-                message: 'Please provide name and price'
-            });
+            return badRequest(res, 'Please provide name and price');
         }
 
         const [result] = await pool.query(
@@ -145,9 +127,7 @@ router.post('/', upload.single('image'), async (req, res) => {
             [name, description || '', price, category_id || 1, stock_quantity || 0, image_url]
         );
 
-        res.status(201).json({
-            success: true,
-            message: 'Product created successfully',
+        created(res, {
             product: {
                 id: result.insertId,
                 name,
@@ -157,13 +137,9 @@ router.post('/', upload.single('image'), async (req, res) => {
                 stock_quantity,
                 image_url
             }
-        });
+        }, 'Product created successfully');
     } catch (error) {
-        console.error('Create product error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Server error'
-        });
+        handleError(res, error, 'Create product error');
     }
 });
 
@@ -173,7 +149,7 @@ router.post('/', upload.single('image'), async (req, res) => {
 router.put('/:id', upload.single('image'), async (req, res) => {
     try {
         const { name, description, price, category_id, stock_quantity } = req.body;
-        let image_url = req.body.image_url; // Keep existing image if not updated
+        let image_url = req.body.image_url;
 
         if (req.file) {
             image_url = `/uploads/${req.file.filename}`;
@@ -185,22 +161,12 @@ router.put('/:id', upload.single('image'), async (req, res) => {
         );
 
         if (result.affectedRows === 0) {
-            return res.status(404).json({
-                success: false,
-                message: 'Product not found'
-            });
+            return notFound(res, 'Product not found');
         }
 
-        res.json({
-            success: true,
-            message: 'Product updated successfully'
-        });
+        success(res, null, 'Product updated successfully');
     } catch (error) {
-        console.error('Update product error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Server error'
-        });
+        handleError(res, error, 'Update product error');
     }
 });
 
@@ -215,22 +181,12 @@ router.delete('/:id', async (req, res) => {
         );
 
         if (result.affectedRows === 0) {
-            return res.status(404).json({
-                success: false,
-                message: 'Product not found'
-            });
+            return notFound(res, 'Product not found');
         }
 
-        res.json({
-            success: true,
-            message: 'Product deleted successfully'
-        });
+        success(res, null, 'Product deleted successfully');
     } catch (error) {
-        console.error('Delete product error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Server error'
-        });
+        handleError(res, error, 'Delete product error');
     }
 });
 

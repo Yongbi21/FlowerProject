@@ -10,6 +10,7 @@ async function setupDatabase() {
         console.log('🔄 Connecting to MySQL server...');
 
         // First, connect without specifying a database
+        // Use same configuration as config/database.js
         connection = await mysql.createConnection({
             host: process.env.DB_HOST || 'localhost',
             port: process.env.DB_PORT || 3306,
@@ -21,7 +22,7 @@ async function setupDatabase() {
         console.log('✅ Connected to MySQL server');
 
         // Read the schema file
-        const schemaPath = path.join(__dirname, '../database/schema.sql');
+        const schemaPath = path.join(__dirname, '../database/schema_complete.sql');
         const schema = fs.readFileSync(schemaPath, 'utf8');
 
         console.log('🔄 Creating database and tables...');

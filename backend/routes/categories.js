@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const { pool } = require('../config/database');
+const { handleError } = require('../utils/errorHandler');
+const { success } = require('../utils/response');
 
 // @route   GET /api/categories
 // @desc    Get all categories
@@ -15,16 +17,9 @@ router.get('/', async (req, res) => {
             ORDER BY c.name
         `);
 
-        res.json({
-            success: true,
-            categories
-        });
+        success(res, { categories });
     } catch (error) {
-        console.error('Get categories error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Server error'
-        });
+        handleError(res, error, 'Get categories error');
     }
 });
 

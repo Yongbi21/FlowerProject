@@ -49,12 +49,12 @@ CLOUDINARY_API_SECRET=your_api_secret
 2. Run the schema file:
 
 ```bash
-mysql -u root -p < database/schema.sql
+mysql -u root -p < database/schema_complete.sql
 ```
 
 Or manually:
 ```sql
-source C:/Users/kaitlyn/Downloads/FlowerForgeOfficial-main 4/backend/database/schema.sql
+source /path/to/backend/database/schema_complete.sql
 ```
 
 ### Step 4: Create Admin Account
@@ -124,7 +124,7 @@ backend/
 │   ├── admin.js             # Admin routes
 │   └── upload.js            # File upload
 ├── database/
-│   └── schema.sql           # Database schema
+│   └── schema_complete.sql  # Database schema (complete)
 ├── uploads/                 # Uploaded files
 ├── .env.example             # Environment template
 ├── .env                     # Your environment (create this)

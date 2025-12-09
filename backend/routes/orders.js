@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const { pool } = require('../config/database');
 const { auth } = require('../middleware/auth');
+const { handleError, notFound } = require('../utils/errorHandler');
+const { success, created } = require('../utils/response');
 
 // Get user orders
 router.get('/', auth, async (req, res) => {
@@ -19,42 +21,41 @@ router.get('/', auth, async (req, res) => {
             WHERE o.user_id = ?
         `;
         const params = [req.user.id];
-        
+
         if (status) {
             query += ' AND o.status = ?';
             params.push(status);
         }
-        
+
         query += ' ORDER BY o.created_at DESC';
-        
+
         const [orders] = await pool.query(query, params);
-        
+
         // Parse request data if it exists and fetch order items
         const ordersWithRequestData = await Promise.all(orders.map(async (order) => {
             if (order.request_data) {
                 try {
-                    order.request_data = typeof order.request_data === 'string' 
-                        ? JSON.parse(order.request_data) 
+                    order.request_data = typeof order.request_data === 'string'
+                        ? JSON.parse(order.request_data)
                         : order.request_data;
                 } catch (e) {
                     console.error('Error parsing request data:', e);
                 }
             }
-            
+
             // Fetch order items
             const [items] = await pool.query(
                 'SELECT * FROM order_items WHERE order_id = ?',
                 [order.id]
             );
             order.items = items;
-            
+
             return order;
         }));
-        
-        res.json({ success: true, orders: ordersWithRequestData });
+
+        success(res, { orders: ordersWithRequestData });
     } catch (error) {
-        console.error('Get orders error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        handleError(res, error, 'Get orders error');
     }
 });
 
@@ -62,7 +63,7 @@ router.get('/', auth, async (req, res) => {
 router.post('/', auth, async (req, res) => {
     try {
         const { items, delivery_method, address_id, payment_method, notes, receipt_url } = req.body;
-        
+
         // Calculate totals
         let subtotal = 0;
         for (const item of items) {
@@ -71,10 +72,10 @@ router.post('/', auth, async (req, res) => {
                 subtotal += products[0].price * item.quantity;
             }
         }
-        
+
         const delivery_fee = delivery_method === 'delivery' ? 100 : 0;
         const total = subtotal + delivery_fee;
-        
+
         // Create order
         const [result] = await pool.query(`
             INSERT INTO orders (user_id, status, payment_status, payment_method, delivery_method, address_id, subtotal, delivery_fee, total, notes, receipt_url)
@@ -91,9 +92,9 @@ router.post('/', auth, async (req, res) => {
             notes || null,
             receipt_url || null
         ]);
-        
+
         const orderId = result.insertId;
-        
+
         // Insert order items
         for (const item of items) {
             const [products] = await pool.query('SELECT name, price FROM products WHERE id = ?', [item.product_id]);
@@ -111,12 +112,11 @@ router.post('/', auth, async (req, res) => {
                 ]);
             }
         }
-        
+
         // Get order number
         const [orders] = await pool.query('SELECT order_number FROM orders WHERE id = ?', [orderId]);
-        
-        res.status(201).json({
-            success: true,
+
+        created(res, {
             order: {
                 id: orderId,
                 order_number: orders[0].order_number,
@@ -124,8 +124,7 @@ router.post('/', auth, async (req, res) => {
             }
         });
     } catch (error) {
-        console.error('Create order error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        handleError(res, error, 'Create order error');
     }
 });
 
@@ -138,22 +137,16 @@ router.get('/:id', auth, async (req, res) => {
             LEFT JOIN addresses a ON o.address_id = a.id
             WHERE o.id = ? AND o.user_id = ?
         `, [req.params.id, req.user.id]);
-        
+
         if (orders.length === 0) {
-            return res.status(404).json({ success: false, message: 'Order not found' });
+            return notFound(res, 'Order not found');
         }
-        
+
         const [items] = await pool.query('SELECT * FROM order_items WHERE order_id = ?', [req.params.id]);
-        
-        res.json({
-            success: true,
-            order: {
-                ...orders[0],
-                items
-            }
-        });
+
+        success(res, { order: { ...orders[0], items } });
     } catch (error) {
-        res.status(500).json({ success: false, message: 'Server error' });
+        handleError(res, error, 'Get order details error');
     }
 });
 
@@ -163,10 +156,10 @@ router.put('/:id/cancel', auth, async (req, res) => {
         await pool.query(`
             UPDATE orders SET status = 'cancelled' WHERE id = ? AND user_id = ? AND status IN ('pending', 'processing')
         `, [req.params.id, req.user.id]);
-        
-        res.json({ success: true, message: 'Order cancelled' });
+
+        success(res, null, 'Order cancelled');
     } catch (error) {
-        res.status(500).json({ success: false, message: 'Server error' });
+        handleError(res, error, 'Cancel order error');
     }
 });
 
