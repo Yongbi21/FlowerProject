@@ -122,7 +122,7 @@ const Home = ({ addToCart }) => {
         try {
             // Check if products exist in localStorage
             const savedProducts = localStorage.getItem('products');
-            
+
             if (savedProducts) {
                 // Use products from localStorage
                 const parsedProducts = JSON.parse(savedProducts);
@@ -162,7 +162,13 @@ const Home = ({ addToCart }) => {
             newWishlist = wishlist.filter(item => item.name !== product.name);
             setPopupMessage('Removed from Wishlist');
         } else {
-            newWishlist = [...wishlist, { name: product.name, price: product.price, image: product.image }];
+            newWishlist = [...wishlist, {
+                id: product.id,
+                product_id: product.id,
+                name: product.name,
+                price: product.price,
+                image: product.image
+            }];
             setPopupMessage('Added to Wishlist');
         }
 

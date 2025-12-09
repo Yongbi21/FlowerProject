@@ -19,7 +19,6 @@ import OrderTracking from './pages/OrderTracking'
 import Profile from './pages/Profile'
 import MyOrders from './pages/MyOrders'
 import Notifications from './pages/Notifications'
-import AdminDashboard from './pages/AdminDashboard'
 
 // Removed cartAPI import - using localStorage instead for demo
 
@@ -134,7 +133,6 @@ function AppContent() {
         <Route path="/my-orders" element={<MyOrders />} />
         <Route path="/notifications" element={<Notifications />} />
         <Route path="/events" element={<div className="container py-5"><h2>Events Page</h2></div>} />
-        <Route path="/admin/dashboard" element={<AdminDashboard />} />
       </Routes>
 
       {showNavbar && <Footer />}

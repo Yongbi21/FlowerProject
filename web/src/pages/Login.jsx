@@ -16,26 +16,15 @@ const Login = ({ onLogin }) => {
         setLoading(true);
 
         try {
-            // Try admin login first
-            let response;
-            try {
-                response = await authAPI.adminLogin({ email, password });
+            // Customer login for web app
+            const response = await authAPI.login({ email, password });
 
-                // Admin/Employee login successful
-                const { user, token } = response.data;
-                onLogin(user, token);
-                navigate('/admin/dashboard');
-                return;
-            } catch (adminError) {
-                // If admin login fails, try customer login
-                response = await authAPI.login({ email, password });
+            // Login successful
+            const { user, token } = response.data;
+            onLogin(user, token);
 
-                // Customer login successful
-                const { user, token } = response.data;
-                onLogin(user, token);
-                navigate('/');
-                return;
-            }
+            // Always redirect to home page for customers
+            navigate('/');
         } catch (err) {
             console.error('Login error:', err);
             setError(err.response?.data?.message || 'Invalid email or password');
