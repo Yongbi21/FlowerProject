@@ -340,9 +340,10 @@ export const adminAPI = {
         const { data: orders, error } = await query;
 
         if (error) {
-            console.error('Error fetching orders:', error);
+            console.error('Supabase query error for orders:', error);
             return { data: [] };
         }
+        console.log('Raw orders data from Supabase:', JSON.stringify(orders, null, 2));
 
         const formattedOrders = orders.map(order => {
             const customerName = order.users ? order.users.name : 'N/A';
@@ -367,6 +368,7 @@ export const adminAPI = {
                 order_items: undefined, // Remove the raw order_items object
             };
         });
+        console.log('Formatted orders data for UI:', JSON.stringify(formattedOrders, null, 2));
 
         return { data: formattedOrders };
     },

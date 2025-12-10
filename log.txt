@@ -1,57 +1,44 @@
-| column_name     | data_type                | is_nullable | column_default                     |
-| --------------- | ------------------------ | ----------- | ---------------------------------- |
-| user_id         | uuid                     | NO          | null                               |
-| delivery_method | USER-DEFINED             | NO          | null                               |
-| status          | USER-DEFINED             | NO          | null                               |
-| created_at      | timestamp with time zone | YES         | CURRENT_TIMESTAMP                  |
-| id              | integer                  | NO          | nextval('orders_id_seq'::regclass) |
-| address_id      | integer                  | YES         | null                               |
-| subtotal        | numeric                  | NO          | null                               |
-| shipping_fee    | numeric                  | NO          | null                               |
-| total           | numeric                  | NO          | null                               |
-| payment_status  | USER-DEFINED             | NO          | null                               |
-| order_number    | character varying        | NO          | null                               |
-| receipt_url     | character varying        | YES         | null                               |
-| payment_method  | character varying        | NO          | null                               |
-| pickup_time     | character varying        | YES         | null                               |
-
-
-
-| column_name | data_type         | is_nullable | column_default                          |
-| ----------- | ----------------- | ----------- | --------------------------------------- |
-| quantity    | integer           | NO          | null                                    |
-| order_id    | integer           | NO          | null                                    |
-| product_id  | integer           | NO          | null                                    |
-| id          | integer           | NO          | nextval('order_items_id_seq'::regclass) |
-| price       | numeric           | NO          | null                                    |
-| name        | character varying | NO          | null                                    |
-| image_url   | character varying | YES         | null                                    |
-
-
-
-| column_name | data_type         | is_nullable | column_default                          |
-| ----------- | ----------------- | ----------- | --------------------------------------- |
-| quantity    | integer           | NO          | null                                    |
-| order_id    | integer           | NO          | null                                    |
-| product_id  | integer           | NO          | null                                    |
-| id          | integer           | NO          | nextval('order_items_id_seq'::regclass) |
-| price       | numeric           | NO          | null                                    |
-| name        | character varying | NO          | null                                    |
-| image_url   | character varying | YES         | null                                    |
-
-
-
-| constraint_name         | constraint_type | column_name  | foreign_table | foreign_column |
-| ----------------------- | --------------- | ------------ | ------------- | -------------- |
-| orders_pkey             | PRIMARY KEY     | id           | orders        | id             |
-| orders_order_number_key | UNIQUE          | order_number | orders        | order_number   |
-| orders_address_id_fkey  | FOREIGN KEY     | address_id   | addresses     | id             |
-| orders_user_id_fkey     | FOREIGN KEY     | user_id      | users         | id             |
-
-
-
-| constraint_name             | constraint_type | column_name | foreign_table | foreign_column |
-| --------------------------- | --------------- | ----------- | ------------- | -------------- |
-| order_items_pkey            | PRIMARY KEY     | id          | order_items   | id             |
-| order_items_order_id_fkey   | FOREIGN KEY     | order_id    | orders        | id             |
-| order_items_product_id_fkey | FOREIGN KEY     | product_id  | products      | id             |
+C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-native-web\dist\modules\warnOnce\index.js:24 props.pointerEvents is deprecated. Use style.pointerEvents
+warnOnce @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-native-web\dist\modules\warnOnce\index.js:24
+C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\src\screens\LoginScreen.js:37 Login successful! Object
+C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-native-web\dist\modules\warnOnce\index.js:24 Image: style.resizeMode is deprecated. Please use props.resizeMode.
+warnOnce @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-native-web\dist\modules\warnOnce\index.js:24
+C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\src\config\api.js:319 Raw orders data from Supabase: [
+  {
+    "id": 32,
+    "order_number": "JFS-09964054-1765387526959",
+    "address_id": 1,
+    "subtotal": 1,
+    "shipping_fee": 100,
+    "total": 101,
+    "payment_method": "gcash",
+    "payment_status": "waiting_for_confirmation",
+    "delivery_method": "delivery",
+    "pickup_time": null,
+    "receipt_url": "https://luzcecstkebntjnfonwv.supabase.co/storage/v1/object/public/receipts/public/09964054-b01d-40f9-85ee-e51fb9b3776a-1765387525627.png",
+    "status": "pending",
+    "created_at": "2025-12-10T17:27:52.981849+00:00",
+    "user_id": "09964054-b01d-40f9-85ee-e51fb9b3776a"
+  },
+  {
+    "id": 31,
+    "order_number": "JFS-09964054-1765386570421",
+    "address_id": null,
+    "subtotal": 1350,
+    "shipping_fee": 0,
+    "total": 1350,
+    "payment_method": "cod",
+    "payment_status": "to_pay",
+    "delivery_method": "pickup",
+    "pickup_time": "9:00 AM",
+    "receipt_url": null,
+    "status": "pending",
+    "created_at": "2025-12-10T17:11:56.450181+00:00",
+    "user_id": "09964054-b01d-40f9-85ee-e51fb9b3776a"
+  }
+]
+C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\src\screens\AdminDashboard.js:847 Error loading orders: TypeError: Cannot read properties of undefined (reading 'map')
+    at C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\src\config\api.js:326:45
+    at Array.map (<anonymous>)
+    at Object.getAllOrders (C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\src\config\api.js:321:40)
+    at async loadOrders (C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\src\screens\AdminDashboard.js:839:32)

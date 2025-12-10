@@ -833,19 +833,23 @@ const OrdersTab = () => {
     loadOrders();
   }, []);
 
-  const loadOrders = async () => {
-    setLoading(true);
-    try {
-      const response = await adminAPI.getAllOrders();
-      setOrders(response.data || []);
-    } catch (error) {
-      console.error('Error loading orders:', error);
-      setOrders([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+      const loadOrders = async () => {
+          setLoading(true);
+          try {
+              const response = await adminAPI.getAllOrders();
+              console.log('Response from adminAPI.getAllOrders in AdminDashboard:', JSON.stringify(response.data, null, 2));
+  
+              if (!response.data || response.data.length === 0) {
+                  console.warn('adminAPI.getAllOrders returned no data or empty array.');
+              }
+              setOrders(response.data || []);
+          } catch (error) {
+              console.error('Error loading orders:', error);
+              setOrders([]);
+          } finally {
+              setLoading(false);
+          }
+      };
   const onRefresh = async () => {
     setRefreshing(true);
     await loadOrders();
