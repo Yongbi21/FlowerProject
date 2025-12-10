@@ -301,49 +301,134 @@ export const authAPI = {
 // Admin API - AsyncStorage-based admin operations
 export const adminAPI = {
     getAllOrders: async (params) => {
-        const orders = JSON.parse(await AsyncStorage.getItem('orders') || '[]');
-        return { data: orders };
+        let query = supabase
+            .from('orders')
+            .select(`
+                id,
+                created_at,
+                order_number,
+                status,
+                payment_status,
+                payment_method,
+                total,
+                subtotal,
+                delivery_fee,
+                delivery_method,
+                delivery_address,
+                order_type,
+                users (
+                    name,
+                    email,
+                    phone
+                ),
+                order_items (
+                    product_id,
+                    quantity,
+                    price,
+                    products (
+                        name,
+                        image_url
+                    )
+                )
+            `)
+            .order('created_at', { ascending: false });
+
+        if (params?.status) {
+            query = query.eq('status', params.status);
+        }
+
+        const { data: orders, error } = await query;
+
+        if (error) {
+            console.error('Error fetching orders:', error);
+            return { data: [] };
+        }
+
+        const formattedOrders = orders.map(order => {
+            const customerName = order.users ? order.users.name : 'N/A';
+            const customerEmail = order.users ? order.users.email : 'N/A';
+            const customerPhone = order.users ? order.users.phone : 'N/A';
+            
+            const items = order.order_items.map(item => ({
+                product_id: item.product_id,
+                quantity: item.quantity,
+                price: item.price,
+                name: item.products ? item.products.name : 'Unknown Product',
+                image_url: item.products ? item.products.image_url : null,
+            }));
+
+            return {
+                ...order,
+                customer_name: customerName,
+                customer_email: customerEmail,
+                customer_phone: customerPhone,
+                items: items,
+                users: undefined, // Remove the raw users object
+                order_items: undefined, // Remove the raw order_items object
+            };
+        });
+
+        return { data: formattedOrders };
     },
 
     updateOrderStatus: async (id, status) => {
-        const orders = JSON.parse(await AsyncStorage.getItem('orders') || '[]');
-        const index = orders.findIndex(o => o.id === id);
-        if (index !== -1) {
-            orders[index].status = status;
-            await AsyncStorage.setItem('orders', JSON.stringify(orders));
+        const { data, error } = await supabase
+            .from('orders')
+            .update({ status: status })
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (error) {
+            console.error('Error updating order status:', error);
+            throw error;
         }
-        return { data: { success: true } };
+        return { data: { success: true, order: data } };
     },
 
-    updatePaymentStatus: async (id, payment_status) => {
-        const orders = JSON.parse(await AsyncStorage.getItem('orders') || '[]');
-        const index = orders.findIndex(o => o.id === id);
-        if (index !== -1) {
-            orders[index].payment_status = payment_status;
-            await AsyncStorage.setItem('orders', JSON.stringify(orders));
+    updateOrderPaymentMethod: async (id, newPaymentMethod) => {
+        const { data, error } = await supabase
+            .from('orders')
+            .update({ payment_method: newPaymentMethod })
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (error) {
+            console.error('Error updating order payment method:', error);
+            throw error;
         }
-        return { data: { success: true } };
+        return { data: { success: true, order: data } };
     },
 
     acceptOrder: async (id) => {
-        const orders = JSON.parse(await AsyncStorage.getItem('orders') || '[]');
-        const index = orders.findIndex(o => o.id === id);
-        if (index !== -1) {
-            orders[index].status = 'accepted';
-            await AsyncStorage.setItem('orders', JSON.stringify(orders));
+        const { data, error } = await supabase
+            .from('orders')
+            .update({ status: 'accepted' })
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (error) {
+            console.error('Error accepting order:', error);
+            throw error;
         }
-        return { data: { success: true } };
+        return { data: { success: true, order: data } };
     },
 
     declineOrder: async (id, reason) => {
-        const orders = JSON.parse(await AsyncStorage.getItem('orders') || '[]');
-        const index = orders.findIndex(o => o.id === id);
-        if (index !== -1) {
-            orders[index].status = 'declined';
-            orders[index].decline_reason = reason;
-            await AsyncStorage.setItem('orders', JSON.stringify(orders));
+        const { data, error } = await supabase
+            .from('orders')
+            .update({ status: 'declined', decline_reason: reason })
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (error) {
+            console.error('Error declining order:', error);
+            throw error;
         }
-        return { data: { success: true } };
+        return { data: { success: true, order: data } };
     },
 
     getSalesSummary: async (params) => {
