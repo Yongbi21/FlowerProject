@@ -334,6 +334,7 @@ const CatalogueTab = () => {
   const [editingProduct, setEditingProduct] = useState(null);
   const [deleteModalVisible, setDeleteModalVisible] = useState(false); // New state
   const [productToDeleteId, setProductToDeleteId] = useState(null);   // New state
+  const [categoryModalVisible, setCategoryModalVisible] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     price: '',
@@ -350,15 +351,29 @@ const CatalogueTab = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [productsRes, categoriesRes] = await Promise.all([
-        productAPI.getAll(),
-        categoryAPI.getAll()
-      ]);
+      const productsRes = await productAPI.getAll();
 
-      setProducts(
-        (productsRes.data.products || []).sort((a, b) => b.id - a.id)
-      );
-      setCategories([{ id: 0, name: 'All' }, ...(categoriesRes.data.categories || [])]);
+      const staticCategories = [
+        { id: 1, name: 'Sympathy' },
+        { id: 2, name: 'Graduation' },
+        { id: 3, name: 'All Souls Day' },
+        { id: 4, name: 'Valentines' },
+        { id: 5, name: 'Get Well Soon' },
+        { id: 6, name: 'Mothers Day' },
+      ];
+      const categoriesWithAll = [{ id: 0, name: 'All' }, ...staticCategories];
+      setCategories(categoriesWithAll);
+
+      const productsWithCategoryNames = (productsRes.data.products || []).map(product => {
+        const category = staticCategories.find(c => c.id == product.category_id);
+        return {
+          ...product,
+          category_name: category ? category.name : 'Uncategorized'
+        };
+      }).sort((a, b) => b.id - a.id);
+
+      setProducts(productsWithCategoryNames);
+
     } catch (error) {
       console.error('Error loading data:', error);
       Alert.alert('Error', 'Failed to load products');
@@ -371,6 +386,11 @@ const CatalogueTab = () => {
     setRefreshing(true);
     await loadData();
     setRefreshing(false);
+  };
+
+  const getCategoryName = (categoryId) => {
+    const category = categories.find(c => c.id == categoryId);
+    return category ? category.name : 'Select a category';
   };
 
   const pickImage = async () => {
@@ -418,47 +438,61 @@ const CatalogueTab = () => {
     ? products
     : products.filter(p => p.category_name === selectedCategory);
 
+  const handleNumericInput = (field, text) => {
+    const numericText = text.replace(/[^0-9.]/g, '');
+    setFormData({ ...formData, [field]: numericText });
+  };
+
+  const handleIntegerInput = (field, text) => {
+    const numericText = text.replace(/[^0-9]/g, '');
+    setFormData({ ...formData, [field]: numericText });
+  };
+
   const handleSubmit = async () => {
-    if (!formData.name || !formData.price) {
-      Alert.alert('Error', 'Please fill in Product Name and Price');
+    const { name, price, stock_quantity, category_id } = formData;
+    const errors = [];
+
+    if (!name.trim()) {
+      errors.push('• Product Name is required.');
+    }
+    if (!price) {
+      errors.push('• Price is required.');
+    } else if (!/^\d+(\.\d{1,2})?$/.test(price)) {
+      errors.push('• Price must be a valid number (e.g., 100 or 100.99).');
+    }
+    if (!stock_quantity) {
+      errors.push('• Quantity is required.');
+    } else if (!/^\d+$/.test(stock_quantity)) {
+      errors.push('• Quantity must be a whole number.');
+    }
+    if (!category_id) {
+      errors.push('• Category is required.');
+    }
+
+    if (errors.length > 0) {
+      Alert.alert('Please fix the following issues:', errors.join('\n'));
       return;
     }
 
     setLoading(true);
     try {
-      const data = new FormData();
-      data.append('name', formData.name);
-      data.append('price', formData.price);
-      data.append('stock_quantity', formData.stock_quantity || '0');
-      data.append('description', formData.description || '');
-      data.append('category_id', formData.category_id || '1');
-
-      if (formData.image && formData.image.uri) {
-        const filename = formData.image.uri.split('/').pop();
-        const match = /\.(\w+)$/.exec(filename);
-        const type = match ? `image/${match[1]}` : `image/jpeg`;
-
-        data.append('image', {
-          uri: formData.image.uri,
-          name: filename,
-          type: type,
-        });
-      }
-
-      const config = {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
+      const productData = {
+        name: formData.name,
+        price: formData.price,
+        stock_quantity: formData.stock_quantity || '0',
+        description: formData.description || '',
+        category_id: formData.category_id || '1',
+        image: formData.image, // Pass the image object from the state
       };
 
       if (editingProduct) {
         if (editingProduct.image_url) {
-            data.append('image_url_hidden', editingProduct.image_url);
+          productData.image_url_hidden = editingProduct.image_url;
         }
-        await productAPI.update(editingProduct.id, data);
+        await productAPI.update(editingProduct.id, productData);
         Alert.alert('Success', 'Product updated successfully');
       } else {
-        await productAPI.create(data, config);
+        await productAPI.create(productData);
         Alert.alert('Success', 'Product added successfully');
       }
 
@@ -467,7 +501,7 @@ const CatalogueTab = () => {
       await loadData();
     } catch (error) {
       console.error('Error saving product:', error);
-      Alert.alert('Error', error.response?.data?.message || 'Failed to save product');
+      Alert.alert('Error', error.message || 'Failed to save product');
     } finally {
       setLoading(false);
     }
@@ -637,7 +671,7 @@ const CatalogueTab = () => {
                 placeholder="Enter price"
                 keyboardType="numeric"
                 value={formData.price}
-                onChangeText={(text) => setFormData({ ...formData, price: text })}
+                onChangeText={(text) => handleNumericInput('price', text)}
               />
 
               <Text style={styles.inputLabel}>Quantity *</Text>
@@ -646,29 +680,19 @@ const CatalogueTab = () => {
                 placeholder="Enter quantity"
                 keyboardType="numeric"
                 value={formData.stock_quantity}
-                onChangeText={(text) => setFormData({ ...formData, stock_quantity: text })}
+                onChangeText={(text) => handleIntegerInput('stock_quantity', text)}
               />
 
               <Text style={styles.inputLabel}>Category *</Text>
-              <View style={styles.categoryGrid}>
-                {categories.filter(c => c.id !== 0).map((cat) => (
-                  <TouchableOpacity
-                    key={cat.id}
-                    style={[
-                      styles.modalCategoryChip,
-                      formData.category_id == cat.id && styles.modalCategoryChipActive
-                    ]}
-                    onPress={() => setFormData({ ...formData, category_id: cat.id })}
-                  >
-                    <Text style={[
-                      styles.modalCategoryChipText,
-                      formData.category_id == cat.id && styles.modalCategoryChipTextActive
-                    ]}>
-                      {cat.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+              <TouchableOpacity
+                style={styles.dropdownInput}
+                onPress={() => setCategoryModalVisible(true)}
+              >
+                <Text style={styles.dropdownInputText}>
+                  {getCategoryName(formData.category_id)}
+                </Text>
+                <Ionicons name="chevron-down" size={20} color="#666" />
+              </TouchableOpacity>
 
               <Text style={styles.inputLabel}>Description</Text>
               <TextInput
@@ -722,6 +746,35 @@ const CatalogueTab = () => {
             </View>
           </View>
         </View>
+      </Modal>
+
+      {/* Category Picker Modal */}
+      <Modal visible={categoryModalVisible} animationType="fade" transparent>
+        <TouchableOpacity style={styles.modalContainer} onPress={() => setCategoryModalVisible(false)} activeOpacity={1}>
+          <View style={[styles.modalContent, { maxHeight: '50%' }]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Category</Text>
+              <TouchableOpacity onPress={() => setCategoryModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#333" />
+              </TouchableOpacity>
+            </View>
+            <FlatList
+              data={categories.filter(c => c.id !== 0)}
+              keyExtractor={(item) => item.id.toString()}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.categoryPickerItem}
+                  onPress={() => {
+                    setFormData({ ...formData, category_id: item.id });
+                    setCategoryModalVisible(false);
+                  }}
+                >
+                  <Text style={styles.categoryPickerItemText}>{item.name}</Text>
+                </TouchableOpacity>
+              )}
+            />
+          </View>
+        </TouchableOpacity>
       </Modal>
 
       {/* Delete Confirmation Modal */}
@@ -3370,6 +3423,31 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: '#e0e0e0',
     marginVertical: 10,
+  },
+  dropdownInput: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    backgroundColor: '#fff',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  dropdownInputText: {
+    fontSize: 16,
+    color: '#333',
+  },
+  categoryPickerItem: {
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  categoryPickerItemText: {
+    fontSize: 16,
+    color: '#333',
   },
   // New styles for enhanced order display
   orderTypeBadge: {

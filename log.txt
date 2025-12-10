@@ -1,0 +1,62 @@
+Checkout.jsx:11 Uncaught ReferenceError: useNavigate is not defined
+    at Checkout (Checkout.jsx:11:22)
+    at react-stack-bottom-frame (react-dom-client.development.js:23863:20)
+    at renderWithHooks (react-dom-client.development.js:5529:22)
+    at updateFunctionComponent (react-dom-client.development.js:8897:19)
+    at beginWork (react-dom-client.development.js:10522:18)
+    at runWithFiberInDEV (react-dom-client.development.js:1519:30)
+    at performUnitOfWork (react-dom-client.development.js:15132:22)
+    at workLoopSync (react-dom-client.development.js:14956:41)
+    at renderRootSync (react-dom-client.development.js:14936:11)
+    at performWorkOnRoot (react-dom-client.development.js:14462:44)
+Checkout @ Checkout.jsx:11
+react-stack-bottom-frame @ react-dom-client.development.js:23863
+renderWithHooks @ react-dom-client.development.js:5529
+updateFunctionComponent @ react-dom-client.development.js:8897
+beginWork @ react-dom-client.development.js:10522
+runWithFiberInDEV @ react-dom-client.development.js:1519
+performUnitOfWork @ react-dom-client.development.js:15132
+workLoopSync @ react-dom-client.development.js:14956
+renderRootSync @ react-dom-client.development.js:14936
+performWorkOnRoot @ react-dom-client.development.js:14462
+performWorkOnRootViaSchedulerTask @ react-dom-client.development.js:16216
+performWorkUntilDeadline @ scheduler.development.js:45
+<Checkout> (async)
+exports.jsxDEV @ react-jsx-dev-runtime.development.js:346
+AppContent @ App.jsx:167
+react-stack-bottom-frame @ react-dom-client.development.js:23863
+renderWithHooksAgain @ react-dom-client.development.js:5629
+renderWithHooks @ react-dom-client.development.js:5541
+updateFunctionComponent @ react-dom-client.development.js:8897
+beginWork @ react-dom-client.development.js:10522
+runWithFiberInDEV @ react-dom-client.development.js:1519
+performUnitOfWork @ react-dom-client.development.js:15132
+workLoopSync @ react-dom-client.development.js:14956
+renderRootSync @ react-dom-client.development.js:14936
+performWorkOnRoot @ react-dom-client.development.js:14462
+performWorkOnRootViaSchedulerTask @ react-dom-client.development.js:16216
+performWorkUntilDeadline @ scheduler.development.js:45
+<AppContent> (async)
+exports.jsxDEV @ react-jsx-dev-runtime.development.js:346
+App @ App.jsx:184
+react-stack-bottom-frame @ react-dom-client.development.js:23863
+renderWithHooksAgain @ react-dom-client.development.js:5629
+renderWithHooks @ react-dom-client.development.js:5541
+updateFunctionComponent @ react-dom-client.development.js:8897
+beginWork @ react-dom-client.development.js:10522
+runWithFiberInDEV @ react-dom-client.development.js:1519
+performUnitOfWork @ react-dom-client.development.js:15132
+workLoopSync @ react-dom-client.development.js:14956
+renderRootSync @ react-dom-client.development.js:14936
+performWorkOnRoot @ react-dom-client.development.js:14462
+performWorkOnRootViaSchedulerTask @ react-dom-client.development.js:16216
+performWorkUntilDeadline @ scheduler.development.js:45
+<App> (async)
+exports.jsxDEV @ react-jsx-dev-runtime.development.js:346
+(anonymous) @ main.jsx:15
+Show 38 more frames
+Show less
+App.jsx:167 An error occurred in the <Checkout> component.
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://react.dev/link/error-boundaries to learn more about error boundaries.

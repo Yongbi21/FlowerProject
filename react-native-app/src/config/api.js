@@ -60,11 +60,11 @@ export const productAPI = {
         return { data: formattedProduct };
     },
 
-    create: async (formData) => {
+    create: async (productData) => {
         let imageUrl = null;
-        const imageFile = formData.get('image'); // This should now be the full object from ImagePicker, not an intermediate one
+        const imageFile = productData.image;
 
-        console.log('productAPI.create: imageFile from formData (full object):', JSON.stringify(imageFile, null, 2)); // Log imageFile
+        console.log('productAPI.create: imageFile from productData:', JSON.stringify(imageFile, null, 2));
 
         if (imageFile && imageFile.uri) {
             try {
@@ -83,16 +83,16 @@ export const productAPI = {
                     xhr.send(null);
                 });
 
-                console.log('productAPI.create: Blob created via XHR:', blob); // Log the Blob
+                console.log('productAPI.create: Blob created via XHR:', blob);
 
-                const fileName = imageFile.name || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                const fileName = imageFile.fileName || imageFile.name || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
                 
                 const { data: uploadData, error: uploadError } = await supabase.storage
                     .from('product-images')
                     .upload(fileName, blob, {
                         cacheControl: '3600',
                         upsert: false,
-                        contentType: imageFile.type,
+                        contentType: imageFile.type || 'image/jpeg',
                     });
 
                 if (uploadError) {
@@ -100,20 +100,24 @@ export const productAPI = {
                     throw uploadError;
                 }
                 
+                if (!uploadData) {
+                    throw new Error("Upload succeeded but no data was returned");
+                }
+
                 const { data: publicUrlData } = supabase.storage.from('product-images').getPublicUrl(uploadData.path);
                 imageUrl = publicUrlData.publicUrl;
             } catch (e) {
                 console.error('productAPI.create: Exception during image handling:', e);
-                throw e; // Re-throw to propagate to handleSubmit catch block
+                throw e;
             }
         }
 
         const productToInsert = {
-            name: formData.get('name'),
-            price: parseFloat(formData.get('price')),
-            stock_quantity: parseInt(formData.get('stock_quantity'), 10),
-            description: formData.get('description'),
-            category_id: parseInt(formData.get('category_id'), 10),
+            name: productData.name,
+            price: parseFloat(productData.price),
+            stock_quantity: parseInt(productData.stock_quantity, 10),
+            description: productData.description,
+            category_id: parseInt(productData.category_id, 10),
             image_url: imageUrl,
             is_active: true,
         };
@@ -132,15 +136,15 @@ export const productAPI = {
         return { data: newProduct };
     },
 
-    update: async (id, formData) => {
-        let imageUrl = null;
-        let oldImageUrl = formData.get('image_url_hidden'); // Retrieve the old image URL if passed
+    update: async (id, productData) => {
+        let imageUrl = productData.image_url_hidden || null;
+        const oldImageUrl = productData.image_url_hidden;
 
-        const imageFile = formData.get('image');
-        console.log('productAPI.update: imageFile from formData (full object):', JSON.stringify(imageFile, null, 2));
+        const imageFile = productData.image;
+        console.log('productAPI.update: imageFile from productData:', JSON.stringify(imageFile, null, 2));
 
-        // If a new image is provided, upload it
-        if (imageFile && imageFile.uri) {
+        // If a new image is provided, and it's different from the old one, upload it
+        if (imageFile && imageFile.uri && imageFile.uri !== oldImageUrl) {
             try {
                 // Use XMLHttpRequest to get a blob from the local URI, more reliable for file://
                 const blob = await new Promise((resolve, reject) => {
@@ -159,19 +163,23 @@ export const productAPI = {
 
                 console.log('productAPI.update: Blob created via XHR:', blob);
 
-                const fileName = imageFile.name || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                const fileName = imageFile.fileName || imageFile.name || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
                 
                 const { data: uploadData, error: uploadError } = await supabase.storage
                     .from('product-images')
                     .upload(fileName, blob, {
                         cacheControl: '3600',
                         upsert: false,
-                        contentType: imageFile.type,
+                        contentType: imageFile.type || 'image/jpeg',
                     });
 
                 if (uploadError) {
                     console.error('Error uploading new image:', uploadError);
                     throw uploadError;
+                }
+
+                if (!uploadData) {
+                    throw new Error("Upload succeeded but no data was returned");
                 }
                 
                 const { data: publicUrlData } = supabase.storage.from('product-images').getPublicUrl(uploadData.path);
@@ -180,14 +188,15 @@ export const productAPI = {
                 // Optionally, delete the old image if a new one was successfully uploaded
                 if (oldImageUrl) {
                     try {
-                        const oldFileName = oldImageUrl.split('/').pop();
-                        // Assuming images are stored directly in 'product-images' bucket
-                        const { error: deleteError } = await supabase.storage
-                            .from('product-images')
-                            .remove([oldFileName]);
+                        const oldFileName = oldImageUrl.split('/').pop().split('?')[0]; // Handle Supabase URL query params
+                        if (oldFileName) {
+                            const { error: deleteError } = await supabase.storage
+                                .from('product-images')
+                                .remove([oldFileName]);
 
-                        if (deleteError) {
-                            console.warn('Could not delete old image from storage:', deleteError);
+                            if (deleteError) {
+                                console.warn('Could not delete old image from storage:', deleteError);
+                            }
                         }
                     } catch (deleteOldError) {
                         console.warn('Error processing old image for deletion:', deleteOldError);
@@ -198,20 +207,16 @@ export const productAPI = {
                 console.error('productAPI.update: Exception during image handling:', e);
                 throw e;
             }
-        } else if (oldImageUrl) {
-            // If no new image was provided, but there was an old one, keep it
-            imageUrl = oldImageUrl;
         }
 
-
         const productToUpdate = {
-            name: formData.get('name'),
-            price: parseFloat(formData.get('price')),
-            stock_quantity: parseInt(formData.get('stock_quantity'), 10),
-            description: formData.get('description'),
-            category_id: parseInt(formData.get('category_id'), 10),
+            name: productData.name,
+            price: parseFloat(productData.price),
+            stock_quantity: parseInt(productData.stock_quantity, 10),
+            description: productData.description,
+            category_id: parseInt(productData.category_id, 10),
             image_url: imageUrl, // Use the new or retained image URL
-            is_active: true, // Assuming active status remains true unless explicitly changed
+            is_active: true,
         };
 
         const { data: updatedProduct, error } = await supabase

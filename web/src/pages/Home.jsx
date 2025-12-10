@@ -45,55 +45,7 @@ import val9 from '../assets/pictures/occasions/VALENTINES9.png';
 
 
 
-const products = [
-    // All Souls Day
-    { id: 'as1', name: 'Peaceful Tribute', price: 1200, category: 'All Souls Day', image: allSouls1 },
-    { id: 'as2', name: 'Eternal Memory', price: 1350, category: 'All Souls Day', image: allSouls2 },
-    { id: 'as3', name: 'Solemn Respect', price: 1500, category: 'All Souls Day', image: allSouls3 },
-    { id: 'as4', name: 'White Remembrance', price: 1600, category: 'All Souls Day', image: allSouls4 },
-    { id: 'as5', name: 'Gentle Peace', price: 1450, category: 'All Souls Day', image: allSouls5 },
-
-    // Get Well Soon
-    { id: 'gw1', name: 'Sunny Recovery', price: 1300, category: 'Get Well Soon', image: getWell1 },
-    { id: 'gw2', name: 'Bright Spirits', price: 1250, category: 'Get Well Soon', image: getWell2 },
-    { id: 'gw3', name: 'Healing Thoughts', price: 1400, category: 'Get Well Soon', image: getWell3 },
-
-    // Graduation
-    { id: 'gr1', name: 'Victory Bloom', price: 1500, category: 'Graduation', image: grad1 },
-    { id: 'gr2', name: 'Success Bouquet', price: 1600, category: 'Graduation', image: grad2 },
-    { id: 'gr3', name: 'Bright Future', price: 1450, category: 'Graduation', image: grad3 },
-    { id: 'gr4', name: 'Achievement Rose', price: 1550, category: 'Graduation', image: grad4 },
-
-    // Mothers Day
-    { id: 'md1', name: 'Mom\'s Delight', price: 2000, category: 'Mothers Day', image: mothers1 },
-    { id: 'md2', name: 'Queen for a Day', price: 2200, category: 'Mothers Day', image: mothers2 },
-    { id: 'md3', name: 'Sweetest Love', price: 1800, category: 'Mothers Day', image: mothers3 },
-    { id: 'md4', name: 'Elegant Mom', price: 2500, category: 'Mothers Day', image: mothers4 },
-    { id: 'md5', name: 'Pink Appreciation', price: 1900, category: 'Mothers Day', image: mothers5 },
-    { id: 'md6', name: 'Mother\'s Grace', price: 2100, category: 'Mothers Day', image: mothers6 },
-    { id: 'md7', name: 'Loving Heart', price: 2300, category: 'Mothers Day', image: mothers7 },
-    { id: 'md8', name: 'Purest Love', price: 2400, category: 'Mothers Day', image: mothers8 },
-    { id: 'md9', name: 'Forever Mom', price: 2600, category: 'Mothers Day', image: mothers9 },
-
-    // Sympathy
-    { id: 'sy1', name: 'Deepest Sympathy', price: 1400, category: 'Sympathy', image: sympathy1 },
-    { id: 'sy2', name: 'Comforting Lilies', price: 1600, category: 'Sympathy', image: sympathy2 },
-    { id: 'sy3', name: 'Peaceful Rest', price: 1500, category: 'Sympathy', image: sympathy3 },
-    { id: 'sy4', name: 'In Loving Memory', price: 1700, category: 'Sympathy', image: sympathy4 },
-
-    // Valentines
-    { id: 'v1', name: 'Valentine\'s Passion', price: 2500, category: 'Valentines', image: val1 },
-    { id: 'v2', name: 'Romance Red', price: 2800, category: 'Valentines', image: val6 },
-    { id: 'v3', name: 'Sweetheart Rose', price: 2200, category: 'Valentines', image: val7 },
-    { id: 'v4', name: 'Be Mine', price: 2400, category: 'Valentines', image: val8 },
-    { id: 'v5', name: 'Love Struck', price: 2600, category: 'Valentines', image: val9 },
-    { id: 'v6', name: 'Cupid\'s Arrow', price: 2300, category: 'Valentines', image: val6 },
-    { id: 'v7', name: 'Endless Love', price: 3000, category: 'Valentines', image: val7 },
-    { id: 'v8', name: 'My Valentine', price: 2700, category: 'Valentines', image: val8 },
-    { id: 'v9', name: 'Forever Yours', price: 2900, category: 'Valentines', image: val9 },
-];
-
-const Home = ({ addToCart }) => {
+const Home = ({ addToCart, products, categories }) => {
     const navigate = useNavigate();
     const [selectedCategory, setSelectedCategory] = useState('All');
     const [searchTerm, setSearchTerm] = useState('');
@@ -101,8 +53,6 @@ const Home = ({ addToCart }) => {
     const [showWishlistPopup, setShowWishlistPopup] = useState(false);
     const [popupMessage, setPopupMessage] = useState('');
     const [showCartPopup, setShowCartPopup] = useState(false);
-    const [displayProducts, setDisplayProducts] = useState([]);
-    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         const savedWishlist = localStorage.getItem('wishlist');
@@ -113,40 +63,12 @@ const Home = ({ addToCart }) => {
                 console.error('Error parsing wishlist:', e);
             }
         }
-
-        // Load products from localStorage or initialize with default products
-        loadProducts();
     }, []);
-
-    const loadProducts = () => {
-        try {
-            // Check if products exist in localStorage
-            const savedProducts = localStorage.getItem('products');
-
-            if (savedProducts) {
-                // Use products from localStorage
-                const parsedProducts = JSON.parse(savedProducts);
-                setDisplayProducts(parsedProducts);
-                console.log(`Loaded ${parsedProducts.length} products from localStorage`);
-            } else {
-                // Initialize localStorage with default products
-                localStorage.setItem('products', JSON.stringify(products));
-                setDisplayProducts(products);
-                console.log(`Initialized ${products.length} products in localStorage`);
-            }
-        } catch (error) {
-            console.error('Error loading products:', error);
-            // Fallback to default products
-            setDisplayProducts(products);
-        } finally {
-            setLoading(false);
-        }
-    };
 
     const handleAddToCart = (product, e) => {
         e.preventDefault();
         e.stopPropagation();
-        addToCart(product.name, product.price, product.image, product.id);
+        addToCart(product.name, product.price, product.image_url, product.id);
         setShowCartPopup(true);
         setTimeout(() => setShowCartPopup(false), 2000);
     };
@@ -167,7 +89,7 @@ const Home = ({ addToCart }) => {
                 product_id: product.id,
                 name: product.name,
                 price: product.price,
-                image: product.image
+                image: product.image_url
             }];
             setPopupMessage('Added to Wishlist');
         }
@@ -182,19 +104,11 @@ const Home = ({ addToCart }) => {
     const isInWishlist = (productName) => {
         return wishlist.some(item => item.name === productName);
     };
-    const filteredProducts = displayProducts
-        .filter(product => product.name.toLowerCase().includes(searchTerm.toLowerCase()))
-        .filter(product => selectedCategory === 'All' || product.category === selectedCategory);
+    
+    const filteredProducts = products
+        .filter(product => product.name && product.name.toLowerCase().includes(searchTerm.toLowerCase()))
+        .filter(product => selectedCategory === 'All' || product.category_name === selectedCategory);
 
-    const categories = [
-        'All',
-        'Sympathy',
-        'Graduation',
-        'All Souls Day',
-        'Valentines',
-        'Get Well Soon',
-        'Mothers Day'
-    ];
 
     return (
         <div>
@@ -283,14 +197,21 @@ const Home = ({ addToCart }) => {
 
                 {/* Category Filters */}
                 <div className="category-nav text-center">
+                    <button
+                        type="button"
+                        className={`category-btn ${selectedCategory === 'All' ? 'active' : ''}`}
+                        onClick={() => setSelectedCategory('All')}
+                    >
+                        All
+                    </button>
                     {categories.map((category) => (
                         <button
-                            key={category}
+                            key={category.id}
                             type="button"
-                            className={`category-btn ${selectedCategory === category ? 'active' : ''}`}
-                            onClick={() => setSelectedCategory(category)}
+                            className={`category-btn ${selectedCategory === category.name ? 'active' : ''}`}
+                            onClick={() => setSelectedCategory(category.name)}
                         >
-                            {category}
+                            {category.name}
                         </button>
                     ))}
                 </div>
@@ -306,7 +227,13 @@ const Home = ({ addToCart }) => {
                                 <div className="product-card">
                                     <Link to={`/product/${product.id}`}>
                                         <div className="product-img-wrapper">
-                                            <img src={product.image} alt={product.name} />
+                                            <img 
+                                                src={product.image_url} 
+                                                alt={product.name} 
+                                                loading="lazy"
+                                                decoding="async"
+                                                height="250"
+                                            />
                                             <button
                                                 className={`wishlist-heart-btn ${isInWishlist(product.name) ? 'active' : ''}`}
                                                 onClick={(e) => toggleWishlist(product, e)}

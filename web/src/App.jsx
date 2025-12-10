@@ -20,6 +20,8 @@ import Profile from './pages/Profile'
 import MyOrders from './pages/MyOrders'
 import Notifications from './pages/Notifications'
 
+import { supabase } from './config/supabase';
+
 // Removed cartAPI import - using localStorage instead for demo
 
 function AppContent() {
@@ -27,7 +29,45 @@ function AppContent() {
   const isAuthRoute = ['/login', '/signup'].includes(location.pathname);
   const showNavbar = !isAuthRoute;
   const [user, setUser] = useState(null);
+  const [products, setProducts] = useState([]);
+  const [cart, setCart] = useState([]);
   const isLoggedIn = !!user;
+
+  const hardcodedCategories = [
+      { id: 1, name: 'Sympathy' },
+      { id: 2, name: 'Graduation' },
+      { id: 3, name: 'All Souls Day' },
+      { id: 4, name: 'Valentines' },
+      { id: 5, name: 'Get Well Soon' },
+      { id: 6, name: 'Mothers Day' },
+  ];
+
+  useEffect(() => {
+    const fetchData = async () => {
+      // Fetch Products
+      const { data: productsData, error: productsError } = await supabase
+        .from('products')
+        .select('*');
+      
+      if (productsError) {
+        console.error('Error fetching products:', productsError);
+      } else {
+        // Add category_name to each product
+        const productsWithCategories = productsData.map(product => {
+          const category = hardcodedCategories.find(c => c.id === product.category_id);
+          return {
+            ...product,
+            category_name: category ? category.name : 'Uncategorized'
+          };
+        });
+        
+        const sortedProducts = productsWithCategories.sort((a, b) => b.id - a.id);
+        setProducts(sortedProducts);
+      }
+    };
+
+    fetchData();
+  }, []);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -56,8 +96,6 @@ function AppContent() {
     setCart([]); // Clear cart state
     window.location.href = '/login'; // Force full page reload to clear any cached state
   };
-
-  const [cart, setCart] = useState([]);
 
   // Load cart from localStorage on mount
   useEffect(() => {
@@ -115,7 +153,7 @@ function AppContent() {
 
       <Routes>
         {/* Public Routes */}
-        <Route path="/" element={<Home addToCart={addToCart} />} />
+        <Route path="/" element={<Home addToCart={addToCart} products={products} categories={hardcodedCategories} />} />
         <Route path="/about" element={<About />} />
         <Route path="/contact" element={<Contact />} />
         <Route path="/wishlist" element={<Wishlist cart={cart} addToCart={addToCart} />} />

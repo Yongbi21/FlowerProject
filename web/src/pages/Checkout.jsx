@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import '../styles/Shop.css';
+import { supabase } from '../config/supabase';
+import qrCodeImage from '../assets/qr-code-1.jpg'; // Import the QR code image
 
 const paymentMethods = [
     { id: 'cod', name: 'Cash on Delivery', description: 'Pay when you receive', icon: 'fa-money-bill-wave' },
@@ -231,7 +233,7 @@ const Checkout = ({ setCart, user }) => {
         }
     };
 
-    const handlePlaceOrder = () => {
+    const handlePlaceOrder = async () => {
         if (deliveryMethod === 'pickup' && !selectedPickupTime) {
             alert('Please select a pickup time');
             return;
@@ -244,53 +246,98 @@ const Checkout = ({ setCart, user }) => {
 
         setIsProcessing(true);
 
-        setTimeout(() => {
-            const orderId = 'FLR' + Date.now().toString().slice(-8);
-            const orderData = {
-                id: orderId,
-                items: checkoutItems,
-                address: deliveryMethod === 'delivery' ? address : null,
-                payment: paymentMethods.find(p => p.id === selectedPayment),
-                paymentStatus: selectedPayment === 'cod' ? 'to_pay' : 'waiting_for_confirmation',
-                subtotal,
-                shippingFee,
-                total,
-                status: selectedPayment === 'cod' ? 'processing' : 'pending',
-                date: new Date().toISOString(),
-                orderType: orderType,
-                deliveryMethod: deliveryMethod,
-                pickupTime: deliveryMethod === 'pickup' ? selectedPickupTime : null,
-                receipt: selectedPayment === 'gcash' ? receiptPreview : null,
-            };
+        let uploadedReceiptUrl = null;
 
-            const existingOrders = JSON.parse(localStorage.getItem('orders') || '[]');
-            localStorage.setItem('orders', JSON.stringify([orderData, ...existingOrders]));
+        // Handle file upload if a receipt is present
+        if (receiptFile && selectedPayment === 'gcash') {
+            const fileExt = receiptFile.name.split('.').pop();
+            const fileName = `${user ? user.id : 'guest'}-${Date.now()}.${fileExt}`;
+            const filePath = `public/${fileName}`;
 
-            // Create notification
-            const notifications = JSON.parse(localStorage.getItem('notifications') || '[]');
-            const newNotification = {
-                id: `notif-${Date.now()}`,
-                type: 'order',
-                title: 'Order Placed Successfully!',
-                message: `Your order #${orderId} has been placed. ${selectedPayment === 'cod' ? 'Payment will be collected on delivery.' : 'Waiting for payment confirmation.'}`,
-                icon: 'fa-shopping-bag',
-                timestamp: new Date().toISOString(),
-                read: false,
-                link: `/order-tracking/${orderId}`
-            };
-            localStorage.setItem('notifications', JSON.stringify([newNotification, ...notifications]));
+            const { error: uploadError } = await supabase.storage
+                .from('receipts')
+                .upload(filePath, receiptFile);
 
-            const currentCart = JSON.parse(localStorage.getItem('cart') || '[]');
-            const checkoutItemNames = checkoutItems.map(item => item.name);
-            const remainingCart = currentCart.filter(item => !checkoutItemNames.includes(item.name));
-            localStorage.setItem('cart', JSON.stringify(remainingCart));
-            localStorage.removeItem('checkoutItems');
-            localStorage.removeItem('orderType');
+            if (uploadError) {
+                console.error('Error uploading receipt:', uploadError);
+                alert('There was an error uploading your receipt. Please try again.');
+                setIsProcessing(false);
+                return;
+            }
 
-            if (setCart) setCart(remainingCart);
+            // Get the public URL of the uploaded file
+            const { data: urlData } = supabase.storage
+                .from('receipts')
+                .getPublicUrl(filePath);
+            
+            if (!urlData || !urlData.publicUrl) {
+                console.error('Error getting public URL for receipt');
+                alert('Could not retrieve receipt URL. Please try again.');
+                setIsProcessing(false);
+                return;
+            }
+            
+            uploadedReceiptUrl = urlData.publicUrl;
+        }
 
-            navigate(`/order-success/${orderId}`);
-        }, 1500);
+        const newOrder = {
+            user_id: user ? user.id : null,
+            items: checkoutItems,
+            delivery_address: deliveryMethod === 'delivery' ? address : null,
+            payment_method: selectedPayment,
+            payment_status: selectedPayment === 'cod' ? 'unpaid' : 'paid',
+            subtotal: subtotal,
+            shipping_fee: shippingFee,
+            total_amount: total,
+            status: 'pending',
+            order_type: orderType,
+            delivery_method: deliveryMethod,
+            pickup_time: deliveryMethod === 'pickup' ? selectedPickupTime : null,
+            receipt_url: uploadedReceiptUrl,
+        };
+
+        const { data, error } = await supabase
+            .from('orders')
+            .insert([newOrder])
+            .select()
+            .single();
+
+        if (error) {
+            console.error('Error creating order:', error);
+            alert('There was an error placing your order. Please try again.');
+            setIsProcessing(false);
+            return;
+        }
+
+        // --- Success ---
+        const newOrderId = data.id;
+
+        // Create notification (can also be done with a DB trigger)
+        const notifications = JSON.parse(localStorage.getItem('notifications') || '[]');
+        const newNotification = {
+            id: `notif-${Date.now()}`,
+            type: 'order',
+            title: 'Order Placed Successfully!',
+            message: `Your order #${newOrderId} has been placed. ${selectedPayment === 'cod' ? 'Payment will be collected on delivery.' : 'Waiting for payment confirmation.'}`,
+            icon: 'fa-shopping-bag',
+            timestamp: new Date().toISOString(),
+            read: false,
+            link: `/order-tracking/${newOrderId}`
+        };
+        localStorage.setItem('notifications', JSON.stringify([newNotification, ...notifications]));
+
+        // Cleanup local storage and state
+        const currentCart = JSON.parse(localStorage.getItem('cart') || '[]');
+        const checkoutItemIds = checkoutItems.map(item => item.id);
+        const remainingCart = currentCart.filter(item => !checkoutItemIds.includes(item.id));
+        
+        localStorage.setItem('cart', JSON.stringify(remainingCart));
+        localStorage.removeItem('checkoutItems');
+        localStorage.removeItem('orderType');
+
+        if (setCart) setCart(remainingCart);
+
+        navigate(`/order-success/${newOrderId}`);
     };
 
     if (checkoutItems.length === 0 && !isProcessing) {
@@ -684,16 +731,11 @@ const Checkout = ({ setCart, user }) => {
                                         position: 'relative'
                                     }}
                                 >
-                                    {/* Placeholder QR Code - In production, this would be a real QR code */}
-                                    <div style={{ textAlign: 'center', padding: '20px' }}>
-                                        <i className="fas fa-qrcode" style={{ fontSize: '150px', color: '#333', opacity: 0.3 }}></i>
-                                        <div className="mt-2 small text-muted">
-                                            <div>GCash QR Code</div>
-                                            <div style={{ fontSize: '0.75rem', marginTop: '5px' }}>
-                                                Amount: ₱{total.toLocaleString()}
-                                            </div>
-                                        </div>
-                                    </div>
+                                    <img 
+                                        src={qrCodeImage} 
+                                        alt="GCash QR Code" 
+                                        style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: '10px' }} 
+                                    />
                                 </div>
                             </div>
                             <div className="p-3 rounded mb-3" style={{ background: '#f8f9fa' }}>
