@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { orderAPI, requestAPI } from '../config/api';
+import { supabase } from '../config/supabase';
 import '../styles/Shop.css';
 
 const orderTabs = [
@@ -33,43 +33,50 @@ const MyOrders = () => {
     const [totalUnreadMessages, setTotalUnreadMessages] = useState(0);
 
     useEffect(() => {
-        // Check if user is logged in
-        const token = localStorage.getItem('token');
-        const currentUser = localStorage.getItem('currentUser');
-        
-        if (!token || !currentUser) {
-            // Not logged in - redirect to login
-            navigate('/login');
-            return;
-        }
-        
-        // Load orders from API (always fresh data, filtered by user_id on backend)
-        loadOrders();
-    }, [navigate]);
-
-    const loadOrders = async () => {
-        try {
-            // Verify user is logged in before making API calls
-            const token = localStorage.getItem('token');
-            if (!token) {
+        const checkUser = async () => {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session) {
                 navigate('/login');
                 return;
             }
+            loadOrders(session.user.id); // Pass user ID to loadOrders
+        };
+        checkUser();
+    }, [navigate]);
+
+    const loadOrders = async (currentUserId) => {
+        try {
+            // Fetch orders from Supabase with order_items and address details
+            const { data: apiOrders, error: ordersError } = await supabase
+                .from('orders')
+                .select('*, order_items(*), addresses(*)') // Assuming 'order_items' is the table for items and 'addresses' for addresses
+                .eq('user_id', currentUserId)
+                .order('created_at', { ascending: false });
+
+            if (ordersError) {
+                console.error('Error fetching orders:', ordersError);
+                throw ordersError;
+            }
+
+            // Fetch requests from Supabase
+            const { data: apiRequests, error: requestsError } = await supabase
+                .from('requests')
+                .select('*')
+                .eq('user_id', currentUserId)
+                .order('created_at', { ascending: false });
+
+            if (requestsError) {
+                console.error('Error fetching requests:', requestsError);
+                throw requestsError;
+            }
             
-            // Load orders from API (backend filters by user_id from JWT token)
-            // The backend automatically filters orders by the authenticated user's ID
-            const ordersResponse = await orderAPI.getAll();
-            const apiOrders = ordersResponse.data.orders || [];
-            
-            // Load requests from API (backend filters by user_id from JWT token)
-            // The backend automatically filters requests by the authenticated user's ID
-            const requestsResponse = await requestAPI.getAll();
-            const apiRequests = requestsResponse.data.requests || [];
+            console.log('--- Supabase Orders API Response (apiOrders) ---', apiOrders);
+            console.log('--- Supabase Requests API Response (apiRequests) ---', apiRequests);
             
             console.log(`Loaded ${apiOrders.length} orders and ${apiRequests.length} requests for current user`);
-            
+
             // Transform API orders to match the expected format
-            const transformedOrders = apiOrders.map(order => ({
+            const transformedOrders = (apiOrders || []).map(order => ({
                 id: order.id,
                 order_number: order.order_number,
                 date: order.created_at,
@@ -81,8 +88,9 @@ const MyOrders = () => {
                 subtotal: parseFloat(order.subtotal || 0),
                 delivery_fee: parseFloat(order.delivery_fee || 0),
                 notes: order.notes,
-                items: order.items || [],
+                items: order.order_items || [], // Use order.order_items for the items
                 address_id: order.address_id,
+                address: order.addresses, // Use order.addresses for the address
                 request_id: order.request_id, // Link to booking request if exists
                 isFromRequest: !!order.request_id, // Flag to identify orders from requests (booking, inquiry, etc.)
                 // Include request data for all request types
@@ -102,9 +110,9 @@ const MyOrders = () => {
                 preferences: order.request_data?.preferences,
                 // Customized data
                 flower: order.request_data?.flower,
-                bundleSize: order.request_data?.bundleSize,
-                wrapper: order.request_data?.wrapper,
-                ribbon: order.request_data?.ribbon,
+                bundleSize: order.bundleSize,
+                wrapper: order.wrapper,
+                ribbon: order.ribbon,
                 // Inquiry data
                 subject: order.request_data?.subject,
                 message: order.request_data?.message,
@@ -112,9 +120,10 @@ const MyOrders = () => {
                 phone: order.request_data?.phone,
                 photo: order.request_photo_url
             }));
+            console.log('--- Transformed Orders (Status & Items) ---', transformedOrders.map(o => ({ id: o.id, status: o.status, items: o.items })));
             
             // Transform API requests to match the expected format
-            const transformedRequests = apiRequests.map(request => {
+            const transformedRequests = (apiRequests || []).map(request => {
                 const requestData = typeof request.data === 'string' ? JSON.parse(request.data) : request.data;
                 return {
                     id: `request-${request.id}`, // Prefix to avoid conflicts
@@ -123,7 +132,7 @@ const MyOrders = () => {
                     date: request.created_at,
                     status: request.status === 'accepted' ? 'processing' : request.status, // Map accepted to processing for display
                     type: request.type, // booking, customized, special_order
-                    payment_status: 'to_pay',
+                    payment_status: 'to_pay', // Assuming requests start with 'to_pay'
                     total: parseFloat(request.final_price || request.estimated_price || 0),
                     notes: request.notes,
                     data: requestData,
@@ -147,6 +156,7 @@ const MyOrders = () => {
                     phone: requestData?.phone
                 };
             });
+            console.log('--- Transformed Requests (Status) ---', transformedRequests.map(r => ({ id: r.id, status: r.status })));
             
             // Combine orders and requests
             // If an order has a request_id, prefer the order (it's the actual order created from booking)
@@ -167,21 +177,18 @@ const MyOrders = () => {
                 return dateB - dateA;
             });
             
+            console.log('--- Final All Orders before setOrders (Status) ---', allOrders.map(o => ({ id: o.id, status: o.status })));
             setOrders(allOrders);
             loadOrderMessages(allOrders);
         } catch (error) {
             console.error('Error loading orders:', error);
-            // Don't use localStorage fallback - it contains data from all users
-            // Show empty state instead to prevent data leakage between accounts
             setOrders([]);
             loadOrderMessages([]);
             
-            // Show error message to user
-            if (error.response?.status === 401) {
-                // Unauthorized - redirect to login
+            if (error.message?.includes('Authentication')) {
                 navigate('/login');
             } else {
-                console.error('Failed to load orders from API. Please refresh the page.');
+                console.error('Failed to load orders. Please refresh the page.');
             }
         }
     };
@@ -227,18 +234,19 @@ const MyOrders = () => {
 
         // Listen for message updates
         const handleMessageUpdate = () => {
-            loadOrderMessages(orders);
+            loadOrderMessages(orders); // orders is the state variable, already updated by loadOrders
         };
         
         window.addEventListener('messageUpdated', handleMessageUpdate);
         window.addEventListener('storage', (e) => {
             if (e.key === 'messages') {
-                loadOrderMessages(orders);
+                loadOrderMessages(orders); // orders is the state variable, already updated by loadOrders
             }
         });
 
         return () => {
             clearInterval(interval);
+            window.removeEventListener('storage', handleStorageChange);
             window.removeEventListener('messageUpdated', handleMessageUpdate);
         };
     }, [orders]);
@@ -248,6 +256,7 @@ const MyOrders = () => {
         : orders.filter(o => {
             const status = o.status?.toLowerCase();
             const tab = activeOrderTab.toLowerCase();
+            console.log(`Filtering: Order ID: ${o.id}, Status: ${status}, Active Tab: ${tab}`);
             
             // Map statuses to tabs
             if (tab === 'pending') {
@@ -310,13 +319,30 @@ const MyOrders = () => {
         if (!orderToCancel) return;
 
         try {
-            // Cancel order via API
             if (orderToCancel.isRequest) {
-                // Cancel request
-                await requestAPI.cancel(orderToCancel.request_id);
+                // Cancel request via Supabase
+                const { error } = await supabase
+                    .from('requests')
+                    .update({ status: 'cancelled' })
+                    .eq('id', orderToCancel.request_id);
+
+                if (error) {
+                    console.error('Error cancelling request:', error);
+                    alert('Failed to cancel request. Please try again.');
+                    return;
+                }
             } else {
-                // Cancel order
-                await orderAPI.cancel(orderToCancel.id);
+                // Cancel order via Supabase
+                const { error } = await supabase
+                    .from('orders')
+                    .update({ status: 'cancelled' })
+                    .eq('id', orderToCancel.id);
+
+                if (error) {
+                    console.error('Error cancelling order:', error);
+                    alert('Failed to cancel order. Please try again.');
+                    return;
+                }
             }
 
             // Create cancellation notification
@@ -344,8 +370,9 @@ const MyOrders = () => {
             };
             localStorage.setItem('notifications', JSON.stringify([newNotification, ...notifications]));
 
-            // Reload orders from API
-            await loadOrders();
+            // Reload orders from Supabase
+            const { data: { session } } = await supabase.auth.getSession();
+            loadOrders(session.user.id);
             setShowCancelModal(false);
             setOrderToCancel(null);
         } catch (error) {

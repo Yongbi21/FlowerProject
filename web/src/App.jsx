@@ -70,29 +70,35 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    const currentUser = localStorage.getItem('currentUser');
-    if (token && currentUser) {
-      setUser(JSON.parse(currentUser));
-    }
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  const login = (userData, token) => {
-    localStorage.setItem('token', token);
-    localStorage.setItem('currentUser', JSON.stringify(userData));
-    setUser(userData);
+  const login = () => {
+    // Old localStorage items for user will be cleared by logout or implicitly by new flow
+    // User state will be updated by the onAuthStateChange listener
   };
 
-  const logout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('currentUser');
+  const logout = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      console.error('Error logging out:', error.message);
+    }
     localStorage.removeItem('cart');
     // Clear all order/request data to prevent data leakage between accounts
     localStorage.removeItem('orders');
     localStorage.removeItem('requests');
     localStorage.removeItem('messages');
     localStorage.removeItem('notifications');
-    setUser(null);
     setCart([]); // Clear cart state
     window.location.href = '/login'; // Force full page reload to clear any cached state
   };

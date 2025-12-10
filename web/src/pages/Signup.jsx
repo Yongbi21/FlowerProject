@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { authAPI } from '../config/api';
+import { supabase } from '../config/supabase'; // Import supabase client
+// import { authAPI } from '../config/api'; // Remove authAPI
 import '../styles/Auth.css';
 
 const Signup = () => {
@@ -43,20 +44,78 @@ const Signup = () => {
         setLoading(true);
 
         try {
-            await authAPI.register({
+            const { data, error } = await supabase.auth.signUp({
                 email: formData.email,
                 password: formData.password,
-                name: `${formData.firstName} ${formData.lastName}`
+                options: {
+                    data: {
+                        name: `${formData.firstName} ${formData.lastName}` // Store full name in user metadata
+                    }
+                }
             });
 
+            if (error) {
+                throw error;
+            }
+
             // Registration successful
-            setSuccess('Registration successful! Redirecting to login...');
-            setTimeout(() => {
-                navigate('/login');
-            }, 2000);
+            // Supabase returns user and session, but for signup it often requires email confirmation
+            if (data.user && data.session) {
+                // User signed up and logged in (e.g., no email confirmation needed)
+                setSuccess('Registration successful! Redirecting to login...');
+                
+                // Insert user data into public.users table
+                const { error: userInsertError } = await supabase
+                    .from('users')
+                    .insert({
+                        id: data.user.id,
+                        name: `${formData.firstName} ${formData.lastName}`,
+                        email: formData.email,
+                        phone: null, // Phone is not collected in signup form
+                        role: 'customer' // Default role
+                    });
+
+                if (userInsertError) {
+                    console.error('Error inserting user into public.users:', userInsertError);
+                    setError('Registration failed: Could not save user profile. Please try again.');
+                    setLoading(false);
+                    return;
+                }
+
+                setTimeout(() => {
+                    navigate('/login');
+                }, 2000);
+            } else if (data.user && !data.session) {
+                // User signed up, but email confirmation is required
+                setSuccess('Registration successful! Please check your email to confirm your account before logging in.');
+
+                // Insert user data into public.users table (even if not yet confirmed, they exist)
+                const { error: userInsertError } = await supabase
+                    .from('users')
+                    .insert({
+                        id: data.user.id,
+                        name: `${formData.firstName} ${formData.lastName}`,
+                        email: formData.email,
+                        password: null,
+                        phone: null,
+                        role: 'customer'
+                    });
+                
+                if (userInsertError) {
+                    console.error('Error inserting user into public.users (email confirmation path):', userInsertError);
+                    // This error might not be critical enough to stop signup but should be logged.
+                    // For now, we'll let the user proceed to email confirmation message.
+                }
+
+                setTimeout(() => {
+                    navigate('/login');
+                }, 5000); // Give user more time to read message
+            } else {
+                setError('Registration failed. Please try again.');
+            }
         } catch (err) {
             console.error('Signup error:', err);
-            setError(err.response?.data?.message || 'Registration failed. Please try again.');
+            setError(err.message || 'Registration failed. Please try again.');
         } finally {
             setLoading(false);
         }

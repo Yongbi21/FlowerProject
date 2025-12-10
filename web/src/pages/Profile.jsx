@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import '../styles/Shop.css';
+import { supabase } from '../config/supabase';
+
 
 const orderTabs = [
     { id: 'all', label: 'All Orders' },
@@ -27,10 +29,7 @@ const Profile = ({ user, logout }) => {
     const [activeMenu, setActiveMenu] = useState('orders');
     const [activeOrderTab, setActiveOrderTab] = useState('all');
     const [orders, setOrders] = useState([]);
-    const [addresses, setAddresses] = useState(() => {
-        const saved = localStorage.getItem(`userAddresses_${user?.email}`);
-        return saved ? JSON.parse(saved) : [];
-    });
+    const [addresses, setAddresses] = useState([]);
     const [showAddressModal, setShowAddressModal] = useState(false);
     const [editingAddress, setEditingAddress] = useState(null);
     const [addressForm, setAddressForm] = useState({
@@ -39,118 +38,292 @@ const Profile = ({ user, logout }) => {
         phone: '',
         street: '',
         city: '',
-        province: '',
-        zip: ''
+        province: ''
     });
     const [messages, setMessages] = useState([]);
-    const [newMessage, setNewMessage] = useState('');
+    const [newMessage, setNewMessage] = '';
     const [showCancelModal, setShowCancelModal] = useState(false);
     const [orderToCancel, setOrderToCancel] = useState(null);
     const [showWaitingModal, setShowWaitingModal] = useState(false);
+
+    // Load orders and requests from Supabase
+    const loadOrders = async (currentUserId) => {
+        if (!currentUserId) return;
+
+        try {
+            // Fetch orders from Supabase with order_items and address details
+            const { data: apiOrders, error: ordersError } = await supabase
+                .from('orders')
+                .select('*, order_items(*), addresses(*)') // Assuming 'order_items' is the table for items and 'addresses' for addresses
+                .eq('user_id', currentUserId)
+                .order('created_at', { ascending: false });
+
+            if (ordersError) {
+                console.error('Error fetching orders:', ordersError);
+                throw ordersError;
+            }
+
+            // Fetch requests from Supabase
+            const { data: apiRequests, error: requestsError } = await supabase
+                .from('requests')
+                .select('*')
+                .eq('user_id', currentUserId)
+                .order('created_at', { ascending: false });
+
+            if (requestsError) {
+                console.error('Error fetching requests:', requestsError);
+                throw requestsError;
+            }
+            
+            console.log(`Loaded ${apiOrders.length} orders and ${apiRequests.length} requests for current user`);
+
+            // Transform API orders to match the expected format
+            const transformedOrders = (apiOrders || []).map(order => ({
+                id: order.id,
+                order_number: order.order_number,
+                date: order.created_at,
+                status: order.status, // pending, accepted, processing, etc.
+                payment_status: order.payment_status,
+                payment_method: order.payment_method,
+                delivery_method: order.delivery_method,
+                total: parseFloat(order.total || 0),
+                subtotal: parseFloat(order.subtotal || 0),
+                delivery_fee: parseFloat(order.delivery_fee || 0),
+                notes: order.notes,
+                items: order.order_items || [], // Use order.order_items for the items
+                address_id: order.address_id,
+                address: order.addresses, // Use order.addresses for the address
+                request_id: order.request_id, // Link to booking request if exists
+                isFromRequest: !!order.request_id, // Flag to identify orders from requests (booking, inquiry, etc.)
+                // Include request data for all request types
+                type: order.request_type || null,
+                data: order.request_data || null,
+                photo_url: order.request_photo_url || null,
+                // Booking data
+                eventType: order.event_type || (order.request_data?.eventType || order.request_data?.event_type),
+                eventDate: order.event_date || order.request_data?.eventDate,
+                venue: order.request_data?.venue,
+                details: order.request_data?.details,
+                fullName: order.request_data?.fullName,
+                otherEventType: order.request_data?.otherEventType,
+                // Special order data
+                recipientName: order.request_data?.recipientName,
+                occasion: order.request_data?.occasion,
+                preferences: order.request_data?.preferences,
+                // Customized data
+                flower: order.request_data?.flower,
+                bundleSize: order.bundleSize,
+                wrapper: order.wrapper,
+                ribbon: order.ribbon,
+                // Inquiry data
+                subject: order.request_data?.subject,
+                message: order.request_data?.message,
+                email: order.request_data?.email,
+                phone: order.request_data?.phone,
+                photo: order.request_photo_url
+            }));
+            
+            // Transform API requests to match the expected format
+            const transformedRequests = (apiRequests || []).map(request => {
+                const requestData = typeof request.data === 'string' ? JSON.parse(request.data) : request.data;
+                return {
+                    id: `request-${request.id}`, // Prefix to avoid conflicts
+                    request_id: request.id,
+                    request_number: request.request_number,
+                    date: request.created_at,
+                    status: request.status === 'accepted' ? 'processing' : request.status, // Map accepted to processing for display
+                    type: request.type, // booking, customized, special_order
+                    payment_status: 'to_pay', // Assuming requests start with 'to_pay'
+                    total: parseFloat(request.final_price || request.estimated_price || 0),
+                    notes: request.notes,
+                    data: requestData,
+                    photo_url: request.photo_url,
+                    isRequest: true,
+                    // Extract specific fields for easier access
+                    eventType: requestData?.eventType || requestData?.event_type,
+                    eventDate: requestData?.eventDate || requestData?.event_date,
+                    venue: requestData?.venue,
+                    recipientName: requestData?.recipientName,
+                    occasion: requestData?.occasion,
+                    preferences: requestData?.preferences,
+                    flower: requestData?.flower,
+                    bundleSize: requestData?.bundleSize,
+                    wrapper: requestData?.wrapper,
+                    ribbon: requestData?.ribbon,
+                    // Inquiry fields
+                    subject: requestData?.subject,
+                    message: requestData?.message,
+                    email: requestData?.email,
+                    phone: requestData?.phone
+                };
+            });
+            
+            // Combine orders and requests
+            // If an order has a request_id, prefer the order (it's the actual order created from booking)
+            const allOrders = [...transformedOrders];
+            
+            // Add requests that don't have corresponding orders
+            transformedRequests.forEach(request => {
+                const hasOrder = allOrders.some(order => order.request_id === request.request_id);
+                if (!hasOrder) {
+                    allOrders.push(request);
+                }
+            });
+            
+            // Sort by date (newest first)
+            allOrders.sort((a, b) => {
+                const dateA = new Date(a.date || 0);
+                const dateB = new Date(b.date || 0);
+                return dateB - dateA;
+            });
+            
+            setOrders(allOrders);
+        } catch (error) {
+            console.error('Error loading orders:', error);
+            setOrders([]);
+            
+            if (error.message?.includes('Authentication')) {
+                navigate('/login');
+            } else {
+                console.error('Failed to load orders. Please refresh the page.');
+            }
+        }
+    };
 
     // Redirect if not logged in
     useEffect(() => {
         if (!user) {
             navigate('/login');
+            return;
         }
+        loadOrders(user.id); // Load orders when user is available
     }, [user, navigate]);
 
     if (!user) return null;
 
+    // Fetch addresses from Supabase
     useEffect(() => {
-        // Initialize addresses in localStorage if not present - REMOVED per user request
-        // if (!localStorage.getItem('userAddresses')) {
-        //     localStorage.setItem('userAddresses', JSON.stringify(mockUserAddresses));
-        // }
+        const fetchAddresses = async () => {
+            if (user) {
+                const { data, error } = await supabase
+                    .from('addresses')
+                    .select('*')
+                    .eq('user_id', user.id);
 
-        // Load all orders including regular orders, event bookings, special orders, and customized requests
-        const savedOrders = JSON.parse(localStorage.getItem('orders') || '[]');
-        const savedRequests = JSON.parse(localStorage.getItem('requests') || '[]');
-
-        // Combine regular orders with requests (bookings, special orders, customized)
-        const allOrders = [...savedOrders, ...savedRequests];
-
-        // Enrich orders with status and paymentStatus if not present
-        const enrichedOrders = allOrders.map((order) => {
-            let enrichedOrder = { ...order };
-
-            // Add paymentStatus if not present
-            if (!enrichedOrder.paymentStatus) {
-                // If payment method exists and is GCash, mark as waiting for confirmation; otherwise to_pay
-                if (enrichedOrder.payment && enrichedOrder.payment.id === 'gcash') {
-                    enrichedOrder.paymentStatus = 'waiting_for_confirmation';
+                if (error) {
+                    console.error('Error fetching addresses:', error);
                 } else {
-                    enrichedOrder.paymentStatus = 'to_pay';
+                    setAddresses(data);
                 }
             }
+        };
+        fetchAddresses();
+    }, [user]);
 
-            // Add status if not present or update COD orders to processing
-            if (!enrichedOrder.status) {
-                // Determine status based on order type and date
-                if (enrichedOrder.type === 'booking' || enrichedOrder.type === 'special_order' || enrichedOrder.type === 'customized') {
-                    // New requests start as pending
-                    enrichedOrder.status = 'pending';
-                } else {
-                    // Regular orders use existing logic
-                    const orderDate = new Date(enrichedOrder.date || enrichedOrder.requestDate);
-                    const now = new Date();
-                    const hours = (now - orderDate) / (1000 * 60 * 60);
-
-                    if (hours < 2) {
-                        enrichedOrder.status = 'to_pay';
-                    } else if (hours < 8) {
-                        enrichedOrder.status = 'processing';
-                    } else {
-                        if (enrichedOrder.deliveryMethod === 'pickup') {
-                            if (hours < 12) {
-                                enrichedOrder.status = 'ready_for_pickup';
-                            } else if (hours < 24) {
-                                enrichedOrder.status = 'claimed';
-                            } else {
-                                enrichedOrder.status = 'completed';
-                            }
-                        } else {
-                            if (hours < 24) {
-                                enrichedOrder.status = 'to_receive';
-                            } else {
-                                enrichedOrder.status = 'completed';
-                            }
-                        }
-                    }
-                }
-            } else if (enrichedOrder.status === 'pending' && enrichedOrder.payment && enrichedOrder.payment.id === 'cod') {
-                // Move existing COD orders from pending to processing
-                enrichedOrder.status = 'processing';
-            }
-
-            return enrichedOrder;
-        });
-
-        // Sort by date (newest first)
-        enrichedOrders.sort((a, b) => {
-            const dateA = new Date(a.date || a.requestDate || 0);
-            const dateB = new Date(b.date || b.requestDate || 0);
-            return dateB - dateA;
-        });
-
-        setOrders(enrichedOrders);
-
-        // Load messages
-        const savedMessages = JSON.parse(localStorage.getItem('userMessages') || '[]');
-        if (savedMessages.length === 0) {
-            // Add welcome message from shop
-            const welcomeMsg = {
-                id: 1,
-                sender: 'shop',
-                text: 'Welcome to Jocery\'s Flower Shop! How can we help you today? Feel free to ask about our products, orders, or any inquiries.',
-                time: new Date().toISOString()
-            };
-            setMessages([welcomeMsg]);
-            localStorage.setItem('userMessages', JSON.stringify([welcomeMsg]));
-        } else {
-            setMessages(savedMessages);
+    const handleSaveAddress = async () => {
+        if (!addressForm.label || !addressForm.name || !addressForm.phone || !addressForm.street || !addressForm.city || !addressForm.province) {
+            alert('Please fill in all required fields (Label, Name, Phone, Street, City, Province)');
+            return;
         }
-    }, []);
+
+        if (!user) {
+            alert('You must be logged in to save an address.');
+            return;
+        }
+
+        const addressData = {
+            user_id: user.id,
+            label: addressForm.label,
+            name: addressForm.name,
+            phone: addressForm.phone,
+            street: addressForm.street,
+            city: addressForm.city,
+            province: addressForm.province,
+            is_default: addresses.length === 0 && !editingAddress // If no existing addresses and not editing, set as default
+        };
+
+        if (editingAddress) {
+            const { data, error } = await supabase
+                .from('addresses')
+                .update(addressData)
+                .eq('id', editingAddress.id)
+                .select()
+                .single();
+
+            if (error) {
+                console.error('Error updating address:', error);
+                alert('Failed to update address: ' + error.message);
+                return;
+            }
+            setAddresses(addresses.map(addr => (addr.id === editingAddress.id ? data : addr)));
+        } else {
+            const { data, error } = await supabase
+                .from('addresses')
+                .insert([addressData])
+                .select()
+                .single();
+
+            if (error) {
+                console.error('Error adding address:', error);
+                alert('Failed to add address: ' + error.message);
+                return;
+            }
+            setAddresses([...addresses, data]);
+        }
+
+        setShowAddressModal(false);
+        setAddressForm({ label: '', name: user?.user_metadata?.name || user?.email || '', phone: user?.user_metadata?.phone || '', street: '' });
+        setEditingAddress(null);
+    };
+
+    const handleDeleteAddress = async (id) => {
+        if (!window.confirm('Are you sure you want to delete this address?')) return;
+
+        const { error } = await supabase
+            .from('addresses')
+            .delete()
+            .eq('id', id);
+
+        if (error) {
+            console.error('Error deleting address:', error);
+            alert('Failed to delete address: ' + error.message);
+            return;
+        }
+        setAddresses(addresses.filter(addr => addr.id !== id));
+    };
+
+    const handleSetDefaultAddress = async (id) => {
+        // First, set all other addresses to not default
+        const { error: updateError } = await supabase
+            .from('addresses')
+            .update({ is_default: false })
+            .eq('user_id', user.id)
+            .neq('id', id);
+
+        if (updateError) {
+            console.error('Error updating other addresses default status:', updateError);
+            alert('Failed to set default address: ' + updateError.message);
+            return;
+        }
+
+        // Then, set the selected address as default
+        const { data, error } = await supabase
+            .from('addresses')
+            .update({ is_default: true })
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (error) {
+            console.error('Error setting default address:', error);
+            alert('Failed to set default address: ' + error.message);
+            return;
+        }
+
+        setAddresses(addresses.map(addr => (
+            addr.id === id ? data : { ...addr, is_default: false }
+        )));
+    };
 
     const getOrderTypeLabel = (type) => {
         const labels = {
@@ -212,107 +385,64 @@ const Profile = ({ user, logout }) => {
         setShowCancelModal(true);
     };
 
-    const handleConfirmCancel = () => {
+    const handleConfirmCancel = async () => {
         if (!orderToCancel) return;
 
-        // Create cancellation notification
-        const notifications = JSON.parse(localStorage.getItem('notifications') || '[]');
-        const orderTypeLabel = orderToCancel.type
-            ? (orderToCancel.type === 'booking' ? 'Event Booking'
-                : orderToCancel.type === 'special_order' ? 'Special Order'
-                    : orderToCancel.type === 'customized' ? 'Customized Bouquet'
-                        : 'Request')
-            : 'Order';
-        const orderId = orderToCancel.id ? `#${orderToCancel.id}` : '';
+        try {
+            if (orderToCancel.type) { // It's a request (booking, special_order, customized)
+                const { error } = await supabase
+                    .from('requests')
+                    .update({ status: 'cancelled' })
+                    .eq('id', orderToCancel.request_id || orderToCancel.id); // Use request_id if available, else id
 
-        const newNotification = {
-            id: `notif-${Date.now()}`,
-            type: 'cancellation',
-            title: `${orderTypeLabel} Cancelled`,
-            message: `Your ${orderTypeLabel.toLowerCase()} ${orderId} has been cancelled successfully.`,
-            icon: 'fa-times-circle',
-            timestamp: new Date().toISOString(),
-            read: false,
-            link: '/profile'
-        };
-        localStorage.setItem('notifications', JSON.stringify([newNotification, ...notifications]));
+                if (error) {
+                    console.error('Error cancelling request:', error);
+                    alert('Failed to cancel request: ' + error.message);
+                    return;
+                }
+            } else { // It's a regular order
+                const { error } = await supabase
+                    .from('orders')
+                    .update({ status: 'cancelled' })
+                    .eq('id', orderToCancel.id);
 
-        // Remove from appropriate storage
-        if (orderToCancel.type) {
-            // It's a request (booking, special_order, customized)
-            const requests = JSON.parse(localStorage.getItem('requests') || '[]');
-            const updatedRequests = requests.filter(req => req.id !== orderToCancel.id);
-            localStorage.setItem('requests', JSON.stringify(updatedRequests));
-        } else {
-            // It's a regular order
-            const savedOrders = JSON.parse(localStorage.getItem('orders') || '[]');
-            const updatedOrders = savedOrders.filter(ord => ord.id !== orderToCancel.id);
-            localStorage.setItem('orders', JSON.stringify(updatedOrders));
+                if (error) {
+                    console.error('Error cancelling order:', error);
+                    alert('Failed to cancel order: ' + error.message);
+                    return;
+                }
+            }
+
+            // Create cancellation notification (this still uses localStorage for now, as per original code)
+            const notifications = JSON.parse(localStorage.getItem('notifications') || '[]');
+            const orderTypeLabel = orderToCancel.type
+                ? (orderToCancel.type === 'booking' ? 'Event Booking'
+                    : orderToCancel.type === 'special_order' ? 'Special Order'
+                        : orderToCancel.type === 'customized' ? 'Customized Bouquet'
+                            : 'Request')
+                : 'Order';
+            const orderId = orderToCancel.id ? `#${orderToCancel.id}` : '';
+
+            const newNotification = {
+                id: `notif-${Date.now()}`,
+                type: 'cancellation',
+                title: `${orderTypeLabel} Cancelled`,
+                message: `Your ${orderTypeLabel.toLowerCase()} ${orderId} has been cancelled successfully.`,
+                icon: 'fa-times-circle',
+                timestamp: new Date().toISOString(),
+                read: false,
+                link: '/profile'
+            };
+            localStorage.setItem('notifications', JSON.stringify([newNotification, ...notifications]));
+
+            // Reload orders from Supabase
+            loadOrders(user.id);
+            setShowCancelModal(false);
+            setOrderToCancel(null);
+        } catch (error) {
+            console.error('Error during cancellation:', error);
+            alert('Failed to cancel. Please try again.');
         }
-
-        // Reload orders from localStorage
-        const savedOrders = JSON.parse(localStorage.getItem('orders') || '[]');
-        const savedRequests = JSON.parse(localStorage.getItem('requests') || '[]');
-        const allOrders = [...savedOrders, ...savedRequests];
-
-        // Apply enrichment logic
-        const enrichedOrders = allOrders.map((order) => {
-            let enrichedOrder = { ...order };
-
-            if (!enrichedOrder.paymentStatus) {
-                if (enrichedOrder.payment && enrichedOrder.payment.id === 'gcash') {
-                    enrichedOrder.paymentStatus = 'waiting_for_confirmation';
-                } else {
-                    enrichedOrder.paymentStatus = 'to_pay';
-                }
-            }
-
-            if (!enrichedOrder.status) {
-                if (enrichedOrder.type === 'booking' || enrichedOrder.type === 'special_order' || enrichedOrder.type === 'customized') {
-                    enrichedOrder.status = 'pending';
-                } else {
-                    const orderDate = new Date(enrichedOrder.date || enrichedOrder.requestDate);
-                    const now = new Date();
-                    const hours = (now - orderDate) / (1000 * 60 * 60);
-
-                    if (hours < 2) {
-                        enrichedOrder.status = 'to_pay';
-                    } else if (hours < 8) {
-                        enrichedOrder.status = 'processing';
-                    } else {
-                        if (enrichedOrder.deliveryMethod === 'pickup') {
-                            if (hours < 12) {
-                                enrichedOrder.status = 'ready_for_pickup';
-                            } else if (hours < 24) {
-                                enrichedOrder.status = 'claimed';
-                            } else {
-                                enrichedOrder.status = 'completed';
-                            }
-                        } else {
-                            if (hours < 24) {
-                                enrichedOrder.status = 'to_receive';
-                            } else {
-                                enrichedOrder.status = 'completed';
-                            }
-                        }
-                    }
-                }
-            } else if (enrichedOrder.status === 'pending' && enrichedOrder.payment && enrichedOrder.payment.id === 'cod') {
-                enrichedOrder.status = 'processing';
-            }
-
-            return enrichedOrder;
-        });
-
-        enrichedOrders.sort((a, b) => {
-            const dateA = new Date(a.date || a.requestDate || 0);
-            const dateB = new Date(b.date || b.requestDate || 0);
-            return dateB - dateA;
-        });
-
-        setOrders(enrichedOrders);
-        setShowCancelModal(false);
-        setOrderToCancel(null);
     };
 
     const handleReorder = (order) => {
@@ -457,7 +587,7 @@ const Profile = ({ user, logout }) => {
                                         {order.items.slice(0, 2).map((item, idx) => (
                                             <div key={idx} className="order-item">
                                                 <img
-                                                    src={item.image || item.photo}
+                                                    src={item.image_url || item.image || item.photo} // Prioritize new image_url
                                                     alt={item.name || 'Item'}
                                                     className="order-item-img"
                                                     onError={(e) => e.target.src = 'https://via.placeholder.com/70'}
@@ -574,7 +704,7 @@ const Profile = ({ user, logout }) => {
                                                         <div className="small text-muted">
                                                             {typeof order.address === 'string'
                                                                 ? order.address
-                                                                : `${order.address.street}, ${order.address.city}, ${order.address.province} ${order.address.zip}`
+                                                                : `${order.address.street}, ${order.address.city}, ${order.address.province}`
                                                             }
                                                         </div>
                                                     </div>
@@ -656,7 +786,12 @@ const Profile = ({ user, logout }) => {
                     style={{ background: 'var(--shop-pink)', color: 'white' }}
                     onClick={() => {
                         setEditingAddress(null);
-                        setAddressForm({ label: '', name: user.name || '', phone: '', street: '', city: '', province: '', zip: '' });
+                        setAddressForm({
+                            label: '',
+                            name: user?.user_metadata?.name || '', // Use user_metadata
+                            phone: user?.user_metadata?.phone || '', // Use user_metadata
+                            street: '', city: '', province: ''
+                        });
                         setShowAddressModal(true);
                     }}
                 >
@@ -668,7 +803,7 @@ const Profile = ({ user, logout }) => {
                 <div key={addr.id} className="address-card mb-3" style={{ cursor: 'default' }}>
                     <div className="d-flex justify-content-between align-items-start">
                         <div>
-                            {addr.isDefault && <span className="address-label">Default</span>}
+                            {addr.is_default && <span className="address-label">Default</span>}
                             <span className="badge bg-secondary ms-2">{addr.label}</span>
                         </div>
                         <div>
@@ -676,68 +811,24 @@ const Profile = ({ user, logout }) => {
                                 className="btn btn-link btn-sm text-primary"
                                 onClick={() => {
                                     setEditingAddress(addr);
-                                    // Parse address string into separate fields
-                                    const addressStr = addr.address || '';
-                                    const parts = addressStr.split(',').map(p => p.trim());
-
-                                    let street = '';
-                                    let city = '';
-                                    let province = '';
-                                    let zip = '';
-
-                                    if (parts.length >= 4) {
-                                        // Format: Street, Barangay, City, Province Zip
-                                        street = parts[0];
-                                        city = parts[2];
-                                        const lastPart = parts[3];
-                                        const zipMatch = lastPart.match(/(\d+)$/);
-                                        if (zipMatch) {
-                                            zip = zipMatch[1];
-                                            province = lastPart.replace(/\s*\d+$/, '').trim();
-                                        } else {
-                                            province = lastPart;
-                                        }
-                                    } else if (parts.length === 3) {
-                                        // Format: Street, City, Province Zip
-                                        street = parts[0];
-                                        city = parts[1];
-                                        const lastPart = parts[2];
-                                        const zipMatch = lastPart.match(/(\d+)$/);
-                                        if (zipMatch) {
-                                            zip = zipMatch[1];
-                                            province = lastPart.replace(/\s*\d+$/, '').trim();
-                                        } else {
-                                            province = lastPart;
-                                        }
-                                    } else if (parts.length === 2) {
-                                        street = parts[0];
-                                        city = parts[1];
-                                    } else {
-                                        street = addressStr;
-                                    }
-
                                     setAddressForm({
                                         label: addr.label || '',
                                         name: addr.name || '',
                                         phone: addr.phone || '',
-                                        street: street,
-                                        city: city,
-                                        province: province,
-                                        zip: zip
+                                        street: addr.street,
+                                        city: addr.city,
+                                        province: addr.province,
+                                       
                                     });
                                     setShowAddressModal(true);
                                 }}
                             >
                                 Edit
                             </button>
-                            {!addr.isDefault && (
+                            {!addr.is_default && (
                                 <button
                                     className="btn btn-link btn-sm text-danger"
-                                    onClick={() => {
-                                        const updated = addresses.filter(a => a.id !== addr.id);
-                                        setAddresses(updated);
-                                        localStorage.setItem('userAddresses', JSON.stringify(updated));
-                                    }}
+                                    onClick={() => handleDeleteAddress(addr.id)}
                                 >
                                     Delete
                                 </button>
@@ -746,18 +837,11 @@ const Profile = ({ user, logout }) => {
                     </div>
                     <div className="address-name mt-2">{addr.name}</div>
                     <div className="address-phone">{addr.phone}</div>
-                    <div className="address-detail mt-2">{addr.address}</div>
-                    {!addr.isDefault && (
+                    <div className="address-detail mt-2">{`${addr.street}, ${addr.city}, ${addr.province}`}</div>
+                    {!addr.is_default && (
                         <button
                             className="btn btn-outline-secondary btn-sm mt-3"
-                            onClick={() => {
-                                const updated = addresses.map(a => ({
-                                    ...a,
-                                    isDefault: a.id === addr.id
-                                }));
-                                setAddresses(updated);
-                                localStorage.setItem('userAddresses', JSON.stringify(updated));
-                            }}
+                            onClick={() => handleSetDefaultAddress(addr.id)}
                         >
                             Set as Default
                         </button>
@@ -1006,49 +1090,30 @@ const Profile = ({ user, logout }) => {
                                     placeholder="e.g., 123 Sampaguita St., Brgy. Maligaya"
                                 />
                             </div>
+                            <div className="form-group">
+                                <label className="form-label">City</label>
+                                <input
+                                    type="text"
+                                    className="form-control-custom"
+                                    value={addressForm.city}
+                                    onChange={e => setAddressForm({ ...addressForm, city: e.target.value })}
+                                    placeholder="e.g., Quezon City"
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Province</label>
+                                <input
+                                    type="text"
+                                    className="form-control-custom"
+                                    value={addressForm.province}
+                                    onChange={e => setAddressForm({ ...addressForm, province: e.target.value })}
+                                    placeholder="e.g., Metro Manila"
+                                />
+                            </div>
                             <button
                                 className="btn"
                                 style={{ background: 'var(--shop-pink)', color: 'white' }}
-                                onClick={() => {
-                                    if (!addressForm.label || !addressForm.name || !addressForm.phone || !addressForm.street) {
-                                        alert('Please fill in all required fields (Label, Name, Phone, Street)');
-                                        return;
-                                    }
-
-                                    // Construct full address string from form fields
-                                    // Only save street address as requested (City/Province implied)
-                                    const fullAddress = addressForm.street;
-
-                                    let updated;
-                                    if (editingAddress) {
-                                        updated = addresses.map(a =>
-                                            a.id === editingAddress.id
-                                                ? {
-                                                    ...a,
-                                                    label: addressForm.label,
-                                                    name: addressForm.name,
-                                                    phone: addressForm.phone,
-                                                    address: fullAddress
-                                                }
-                                                : a
-                                        );
-                                    } else {
-                                        const newId = addresses.length > 0 ? Math.max(...addresses.map(a => a.id)) + 1 : 1;
-                                        updated = [...addresses, {
-                                            id: newId,
-                                            label: addressForm.label,
-                                            name: addressForm.name,
-                                            phone: addressForm.phone,
-                                            address: fullAddress,
-                                            isDefault: addresses.length === 0
-                                        }];
-                                    }
-                                    setAddresses(updated);
-                                    localStorage.setItem(`userAddresses_${user?.email}`, JSON.stringify(updated));
-                                    setShowAddressModal(false);
-                                    setAddressForm({ label: '', name: user.name || '', phone: '', street: '', city: '', province: '', zip: '' });
-                                    setEditingAddress(null);
-                                }}
+                                onClick={handleSaveAddress}
                             >
                                 Save
                             </button>

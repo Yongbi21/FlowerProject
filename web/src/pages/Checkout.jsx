@@ -26,64 +26,61 @@ const Checkout = ({ setCart, user }) => {
     const [address, setAddress] = useState({
         name: '',
         phone: '',
-        street: '',
-        city: '',
-        province: '',
-        zip: ''
+        street: ''
     });
     const [savedAddresses, setSavedAddresses] = useState([]);
 
     useEffect(() => {
-        // Load addresses from profile (same key as Profile page uses)
-        if (user?.email) {
-            const saved = localStorage.getItem(`userAddresses_${user.email}`);
-            if (saved) {
-                const parsedAddresses = JSON.parse(saved);
-                setSavedAddresses(parsedAddresses);
+        const fetchAddresses = async () => {
+            if (user) {
+                console.log("Fetching addresses for user.id:", user.id); // Debug log
+                const { data, error } = await supabase
+                    .from('addresses')
+                    .select('*')
+                    .eq('user_id', user.id);
+
+                if (error) {
+                    console.error('Error fetching addresses:', error);
+                    // Add a log for when an error occurs during fetching
+                    console.log("Supabase fetch addresses error:", error);
+                    return;
+                }
                 
-                // Set default address if available
-                const defaultAddress = parsedAddresses.find(addr => addr.isDefault) || parsedAddresses[0];
-                if (defaultAddress) {
-                    parseAddressToForm(defaultAddress);
-                    setSelectedAddressId(defaultAddress.id);
+                console.log("Fetched addresses data:", data); // Debug log
+                setSavedAddresses(data);
+
+                if (data.length > 0) {
+                    const defaultAddress = data.find(addr => addr.is_default) || data[0];
+                    if (defaultAddress) {
+                        setAddress({
+                            name: defaultAddress.name || user?.user_metadata?.name || user?.email || '',
+                            phone: defaultAddress.phone || user?.user_metadata?.phone || '',
+                            street: defaultAddress.street
+                        });
+                        setSelectedAddressId(defaultAddress.id);
+                    }
                 } else {
-                    // If no saved addresses, use user info from profile
+                    console.log("No saved addresses found for user:", user.id); // Debug log
                     setAddress({
-                        name: user.name || '',
-                        phone: user.phone || '',
-                        street: '',
-                        city: '',
-                        province: '',
-                        zip: ''
+                        name: user?.user_metadata?.name || user?.email || '',
+                        phone: user?.user_metadata?.phone || '',
+                        street: ''
                     });
+                    setSelectedAddressId(null);
                 }
             } else {
+                console.log("User not authenticated, not fetching addresses."); // Debug log
                 setSavedAddresses([]);
-                // Use user info from profile if no saved addresses
                 setAddress({
-                    name: user.name || '',
-                    phone: user.phone || '',
-                    street: '',
-                    city: '',
-                    province: '',
-                    zip: ''
+                    name: '',
+                    phone: '',
+                    street: ''
                 });
+                setSelectedAddressId(null);
             }
-        } else {
-            // Fallback for guest or legacy
-            const saved = localStorage.getItem('userAddresses');
-            if (saved) {
-                const parsedAddresses = JSON.parse(saved);
-                setSavedAddresses(parsedAddresses);
-                const defaultAddress = parsedAddresses.find(addr => addr.isDefault) || parsedAddresses[0];
-                if (defaultAddress) {
-                    parseAddressToForm(defaultAddress);
-                    setSelectedAddressId(defaultAddress.id);
-                }
-            } else {
-                setSavedAddresses([]);
-            }
-        }
+        };
+
+        fetchAddresses();
     }, [user]);
     const [selectedAddressId, setSelectedAddressId] = useState(null);
     const [showAddAddressModal, setShowAddAddressModal] = useState(false);
@@ -95,58 +92,11 @@ const Checkout = ({ setCart, user }) => {
     });
 
     const parseAddressToForm = (addressObj) => {
-        // Parse the address string into form fields
-        // Profile page stores address as just the street address string
-        const addressStr = addressObj.address || '';
-        
-        // Try to parse if it contains commas (legacy format)
-        const parts = addressStr.split(',').map(p => p.trim());
-
-        let street = '';
-        let city = '';
-        let province = '';
-        let zip = '';
-
-        if (parts.length >= 4) {
-            // Format: Street, Barangay, City, Province Zip
-            street = parts[0];
-            city = parts[2];
-            const lastPart = parts[3];
-            // Extract zip code if present (e.g., "Metro Manila 1100")
-            const zipMatch = lastPart.match(/(\d+)$/);
-            if (zipMatch) {
-                zip = zipMatch[1];
-                province = lastPart.replace(/\s*\d+$/, '').trim();
-            } else {
-                province = lastPart;
-            }
-        } else if (parts.length === 3) {
-            // Format: Street, City, Province Zip
-            street = parts[0];
-            city = parts[1];
-            const lastPart = parts[2];
-            const zipMatch = lastPart.match(/(\d+)$/);
-            if (zipMatch) {
-                zip = zipMatch[1];
-                province = lastPart.replace(/\s*\d+$/, '').trim();
-            } else {
-                province = lastPart;
-            }
-        } else if (parts.length === 2) {
-            street = parts[0];
-            city = parts[1];
-        } else {
-            // Profile page format: just street address
-            street = addressStr;
-        }
-
+        // This function is still useful for initial address parsing from a selected saved address (fetched from DB)
         setAddress({
-            name: addressObj.name || user?.name || '',
-            phone: addressObj.phone || user?.phone || '',
-            street: street,
-            city: city,
-            province: province,
-            zip: zip
+            name: addressObj.name || user?.user_metadata?.name || user?.email || '',
+            phone: addressObj.phone || user?.user_metadata?.phone || '',
+            street: addressObj.street
         });
     };
 
@@ -158,42 +108,51 @@ const Checkout = ({ setCart, user }) => {
         }
     };
 
-    const handleSaveNewAddress = () => {
+    const handleSaveNewAddress = async () => { // Make it async
         if (!newAddress.label || !address.name || !address.phone || !address.street) {
             alert('Please fill in all required fields (Label, Name, Phone, Street)');
             return;
         }
 
-        // Construct full address string from form fields (matching Profile page format)
-        const fullAddress = address.street;
+        if (!user) {
+            alert('You must be logged in to save a new address.');
+            return;
+        }
 
-        // Create new address object (matching Profile page structure)
-        const newId = savedAddresses.length > 0 ? Math.max(...savedAddresses.map(a => a.id)) + 1 : 1;
-        const addressToSave = {
-            id: newId,
+        const addressToInsert = {
+            user_id: user.id,
             label: newAddress.label,
             name: address.name,
             phone: address.phone,
-            address: fullAddress,
-            isDefault: savedAddresses.length === 0
+            street: address.street,
+            is_default: savedAddresses.length === 0 // Make this the default if it's the first address
         };
 
-        // Save to localStorage (same key as Profile page)
-        const updated = [...savedAddresses, addressToSave];
-        setSavedAddresses(updated);
+        const { data, error } = await supabase
+            .from('addresses')
+            .insert([addressToInsert])
+            .select()
+            .single();
 
-        if (user?.email) {
-            localStorage.setItem(`userAddresses_${user.email}`, JSON.stringify(updated));
-        } else {
-            localStorage.setItem('userAddresses', JSON.stringify(updated));
+        if (error) {
+            console.error('Error saving new address to Supabase:', error);
+            alert('Failed to save address: ' + error.message);
+            return;
         }
 
+        const newlySavedAddress = data;
+
+        // Update local state with the new address from DB
+        const updatedAddresses = [...savedAddresses, newlySavedAddress];
+        setSavedAddresses(updatedAddresses);
+
         // Select the new address
-        parseAddressToForm(addressToSave);
-        setSelectedAddressId(newId);
+        parseAddressToForm(newlySavedAddress); // Use the data from Supabase
+        setSelectedAddressId(newlySavedAddress.id);
 
         // Reset form and close modal
-        setNewAddress({ label: '', name: '', phone: '', address: '' });
+        setNewAddress({ label: '', name: '', phone: '', address: '' }); // Clear newAddress input only
+        // The `address` state is already set by `parseAddressToForm`
         setShowAddAddressModal(false);
     };
 
@@ -234,91 +193,157 @@ const Checkout = ({ setCart, user }) => {
     };
 
     const handlePlaceOrder = async () => {
-        if (deliveryMethod === 'pickup' && !selectedPickupTime) {
-            alert('Please select a pickup time');
-            return;
-        }
-
-        if (selectedPayment === 'gcash' && !receiptFile) {
-            alert('Please upload your GCash payment receipt');
-            return;
-        }
-
-        setIsProcessing(true);
-
-        let uploadedReceiptUrl = null;
-
-        // Handle file upload if a receipt is present
-        if (receiptFile && selectedPayment === 'gcash') {
-            const fileExt = receiptFile.name.split('.').pop();
-            const fileName = `${user ? user.id : 'guest'}-${Date.now()}.${fileExt}`;
-            const filePath = `public/${fileName}`;
-
-            const { error: uploadError } = await supabase.storage
-                .from('receipts')
-                .upload(filePath, receiptFile);
-
-            if (uploadError) {
-                console.error('Error uploading receipt:', uploadError);
-                alert('There was an error uploading your receipt. Please try again.');
+            if (!user) {
+                alert('You must be logged in to place an order. Please log in or sign up.');
+                setIsProcessing(false);
+                navigate('/login'); // Redirect to login page
+                return;
+            }
+        
+            if (deliveryMethod === 'pickup' && !selectedPickupTime) {
+                alert('Please select a pickup time');
+                return;
+            }
+        
+            if (selectedPayment === 'gcash' && !receiptFile) {
+                alert('Please upload your GCash payment receipt');
+                return;
+            }
+        
+            setIsProcessing(true);
+        
+            let finalAddressId = selectedAddressId;
+        
+            // 1. Handle Address: Save new address if needed
+            if (deliveryMethod === 'delivery') {
+                if (!selectedAddressId) {
+                    // This is a new address, save it first.
+                    // This flow is only supported for logged-in users.
+                    // (user is guaranteed to be logged in at this point due to initial check)
+                    // Basic validation for new address form
+                    if (!address.name || !address.phone || !address.street) {
+                        alert('Please fill in all fields for the new delivery address.');
+                        setIsProcessing(false);
+                        return;
+                    }
+        
+                    const newAddressToSave = {
+                        user_id: user.id,
+                        label: 'New Address', // Default label for addresses created at checkout
+                        name: address.name,
+                        phone: address.phone,
+                        street: address.street,
+                        is_default: false
+                    };
+        
+                    const { data: newAddressData, error: newAddressError } = await supabase
+                        .from('addresses')
+                        .insert(newAddressToSave)
+                        .select()
+                        .single();
+        
+                    if (newAddressError) {
+                        console.error('Error saving new address to DB:', newAddressError);
+                        alert('There was an error saving your new address: ' + newAddressError.message + '. Please try again.');
+                        setIsProcessing(false);
+                        return;
+                    }
+        
+                    finalAddressId = newAddressData.id;
+                }
+            }
+        
+            // 2. Handle Receipt Upload
+            let uploadedReceiptUrl = null;
+            if (receiptFile && selectedPayment === 'gcash') {
+                const fileExt = receiptFile.name.split('.').pop();
+                const fileName = `${user.id}-${Date.now()}.${fileExt}`; // Use user.id here
+                const filePath = `public/${fileName}`;
+        
+                const { error: uploadError } = await supabase.storage
+                    .from('receipts')
+                    .upload(filePath, receiptFile);
+        
+                if (uploadError) {
+                    console.error('Error uploading receipt:', uploadError);
+                    alert('There was an error uploading your receipt. Please try again.');
+                    setIsProcessing(false);
+                    return;
+                }
+        
+                const { data: urlData } = supabase.storage
+                    .from('receipts')
+                    .getPublicUrl(filePath);
+                
+                if (!urlData || !urlData.publicUrl) {
+                    console.error('Error getting public URL for receipt');
+                    alert('Could not retrieve receipt URL. Please try again.');
+                    setIsProcessing(false);
+                    return;
+                }
+                
+                uploadedReceiptUrl = urlData.publicUrl;
+            }
+        
+            // 3. Create the Order
+            const order_number = `JFS-${user.id.substring(0, 8)}-${Date.now()}`; // Use user.id here
+        
+            const newOrder = {
+                order_number: order_number,
+                user_id: user.id, // user is guaranteed to be logged in
+                address_id: deliveryMethod === 'delivery' ? finalAddressId : null,
+                payment_method: selectedPayment,
+                payment_status: selectedPayment === 'cod' ? 'to_pay' : 'waiting_for_confirmation',
+                subtotal: subtotal,
+                shipping_fee: shippingFee,
+                total: total,
+                status: 'pending',
+                delivery_method: deliveryMethod,
+                pickup_time: deliveryMethod === 'pickup' ? selectedPickupTime : null,
+                receipt_url: uploadedReceiptUrl,
+            };
+        
+            const { data, error } = await supabase
+                .from('orders')
+                .insert([newOrder])
+                .select()
+                .single();
+        
+            if (error) {
+                console.error('Error creating order:', error);
+                alert('There was an error placing your order. Please try again.');
                 setIsProcessing(false);
                 return;
             }
-
-            // Get the public URL of the uploaded file
-            const { data: urlData } = supabase.storage
-                .from('receipts')
-                .getPublicUrl(filePath);
-            
-            if (!urlData || !urlData.publicUrl) {
-                console.error('Error getting public URL for receipt');
-                alert('Could not retrieve receipt URL. Please try again.');
-                setIsProcessing(false);
-                return;
-            }
-            
-            uploadedReceiptUrl = urlData.publicUrl;
-        }
-
-        const newOrder = {
-            user_id: user ? user.id : null,
-            items: checkoutItems,
-            delivery_address: deliveryMethod === 'delivery' ? address : null,
-            payment_method: selectedPayment,
-            payment_status: selectedPayment === 'cod' ? 'unpaid' : 'paid',
-            subtotal: subtotal,
-            shipping_fee: shippingFee,
-            total_amount: total,
-            status: 'pending',
-            order_type: orderType,
-            delivery_method: deliveryMethod,
-            pickup_time: deliveryMethod === 'pickup' ? selectedPickupTime : null,
-            receipt_url: uploadedReceiptUrl,
-        };
-
-        const { data, error } = await supabase
-            .from('orders')
-            .insert([newOrder])
-            .select()
-            .single();
-
-        if (error) {
-            console.error('Error creating order:', error);
-            alert('There was an error placing your order. Please try again.');
-            setIsProcessing(false);
-            return;
-        }
-
         // --- Success ---
         const newOrderId = data.id;
 
-        // Create notification (can also be done with a DB trigger)
+        // 4. Insert items into order_items table
+        const orderItems = checkoutItems.map(item => ({
+            order_id: newOrderId,
+            product_id: item.id,
+            name: item.name, // Denormalized
+            price: item.price, // Denormalized
+            quantity: item.qty || 1
+        }));
+
+        const { error: itemsError } = await supabase
+            .from('order_items')
+            .insert(orderItems);
+
+        if (itemsError) {
+            console.error('Error inserting order items:', itemsError);
+            alert('There was an error saving your order items. Please contact support and provide your order number.');
+            return;
+        }
+
+        // 5. Create notification 
         const notifications = JSON.parse(localStorage.getItem('notifications') || '[]');
         const newNotification = {
             id: `notif-${Date.now()}`,
             type: 'order',
             title: 'Order Placed Successfully!',
-            message: `Your order #${newOrderId} has been placed. ${selectedPayment === 'cod' ? 'Payment will be collected on delivery.' : 'Waiting for payment confirmation.'}`,
+            message: `Your order #${order_number} has been placed. ${selectedPayment === 'cod' ? 'Payment will be collected on delivery.' : 'Waiting for payment confirmation.'}`,
             icon: 'fa-shopping-bag',
             timestamp: new Date().toISOString(),
             read: false,
@@ -326,7 +351,7 @@ const Checkout = ({ setCart, user }) => {
         };
         localStorage.setItem('notifications', JSON.stringify([newNotification, ...notifications]));
 
-        // Cleanup local storage and state
+        // 6. Cleanup local storage and state
         const currentCart = JSON.parse(localStorage.getItem('cart') || '[]');
         const checkoutItemIds = checkoutItems.map(item => item.id);
         const remainingCart = currentCart.filter(item => !checkoutItemIds.includes(item.id));
@@ -464,7 +489,7 @@ const Checkout = ({ setCart, user }) => {
                                                 value={selectedAddressId || ''}
                                                 onChange={(e) => {
                                                     if (e.target.value) {
-                                                        handleAddressSelect(parseInt(e.target.value));
+                                                        handleAddressSelect(e.target.value); // Removed parseInt
                                                     } else {
                                                         setSelectedAddressId(null);
                                                         // Reset to user info if no address selected
@@ -482,7 +507,7 @@ const Checkout = ({ setCart, user }) => {
                                                 <option value="">Enter new address</option>
                                                 {savedAddresses.map(addr => (
                                                     <option key={addr.id} value={addr.id}>
-                                                        {addr.label} {addr.isDefault && '(Default)'} - {addr.address}
+                                                        {addr.label} {addr.is_default && '(Default)'} - {`${addr.street}`}
                                                     </option>
                                                 ))}
                                             </select>
@@ -616,6 +641,12 @@ const Checkout = ({ setCart, user }) => {
                                             accept="image/*"
                                             onChange={handleReceiptUpload}
                                         />
+                                        {receiptFile && (
+                                            <div className="text-muted small mt-1">
+                                                <i className="fas fa-check-circle text-success me-1"></i>
+                                                File selected: {receiptFile.name}
+                                            </div>
+                                        )}
                                         {receiptPreview && (
                                             <div className="mt-2">
                                                 <img
@@ -761,6 +792,12 @@ const Checkout = ({ setCart, user }) => {
                                     accept="image/*"
                                     onChange={handleReceiptUpload}
                                 />
+                                {receiptFile && (
+                                    <div className="text-muted small mt-1">
+                                        <i className="fas fa-check-circle text-success me-1"></i>
+                                        File selected: {receiptFile.name}
+                                    </div>
+                                )}
                                 {receiptPreview && (
                                     <div className="mt-2">
                                         <img
@@ -773,6 +810,15 @@ const Checkout = ({ setCart, user }) => {
                                                 border: '1px solid #ddd'
                                             }}
                                         />
+                                        <button
+                                            className="btn btn-sm btn-link text-danger mt-1 p-0"
+                                            onClick={() => {
+                                                setReceiptFile(null);
+                                                setReceiptPreview(null);
+                                            }}
+                                        >
+                                            <i className="fas fa-times me-1"></i>Remove
+                                        </button>
                                     </div>
                                 )}
                             </div>

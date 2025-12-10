@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { authAPI } from '../config/api';
+import { supabase } from '../config/supabase'; // Import supabase client
+// import { authAPI } from '../config/api'; // Remove authAPI
 import '../styles/Auth.css';
 
 const Login = ({ onLogin }) => {
@@ -16,18 +17,43 @@ const Login = ({ onLogin }) => {
         setLoading(true);
 
         try {
-            // Customer login for web app
-            const response = await authAPI.login({ email, password });
+            // Customer login for web app using Supabase
+            const { data, error } = await supabase.auth.signInWithPassword({
+                email,
+                password,
+            });
+
+            if (error) {
+                throw error;
+            }
 
             // Login successful
-            const { user, token } = response.data;
-            onLogin(user, token);
+            // Supabase returns user and session
+            const { user, session } = data;
+
+            // Upsert user data into public.users table to ensure consistency
+            const { error: upsertError } = await supabase
+                .from('users')
+                .upsert({
+                    id: user.id,
+                    name: user.user_metadata.name || user.email, // Use name from metadata or fallback to email
+                    email: user.email,
+                    phone: null, // Phone is not collected at login
+                    role: 'customer' // Default role
+                }, { onConflict: 'id' }); // Upsert by id
+
+            if (upsertError) {
+                console.error('Error upserting user into public.users:', upsertError);
+                // Decide how critical this error is. For now, we proceed with login, but log the error.
+            }
+
+            // onLogin(); // No longer needed as user state is handled by App.jsx onAuthStateChange
 
             // Always redirect to home page for customers
             navigate('/');
         } catch (err) {
             console.error('Login error:', err);
-            setError(err.response?.data?.message || 'Invalid email or password');
+            setError(err.message || 'Invalid email or password');
         } finally {
             setLoading(false);
         }

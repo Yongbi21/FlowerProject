@@ -1,62 +1,57 @@
-Checkout.jsx:11 Uncaught ReferenceError: useNavigate is not defined
-    at Checkout (Checkout.jsx:11:22)
-    at react-stack-bottom-frame (react-dom-client.development.js:23863:20)
-    at renderWithHooks (react-dom-client.development.js:5529:22)
-    at updateFunctionComponent (react-dom-client.development.js:8897:19)
-    at beginWork (react-dom-client.development.js:10522:18)
-    at runWithFiberInDEV (react-dom-client.development.js:1519:30)
-    at performUnitOfWork (react-dom-client.development.js:15132:22)
-    at workLoopSync (react-dom-client.development.js:14956:41)
-    at renderRootSync (react-dom-client.development.js:14936:11)
-    at performWorkOnRoot (react-dom-client.development.js:14462:44)
-Checkout @ Checkout.jsx:11
-react-stack-bottom-frame @ react-dom-client.development.js:23863
-renderWithHooks @ react-dom-client.development.js:5529
-updateFunctionComponent @ react-dom-client.development.js:8897
-beginWork @ react-dom-client.development.js:10522
-runWithFiberInDEV @ react-dom-client.development.js:1519
-performUnitOfWork @ react-dom-client.development.js:15132
-workLoopSync @ react-dom-client.development.js:14956
-renderRootSync @ react-dom-client.development.js:14936
-performWorkOnRoot @ react-dom-client.development.js:14462
-performWorkOnRootViaSchedulerTask @ react-dom-client.development.js:16216
-performWorkUntilDeadline @ scheduler.development.js:45
-<Checkout> (async)
-exports.jsxDEV @ react-jsx-dev-runtime.development.js:346
-AppContent @ App.jsx:167
-react-stack-bottom-frame @ react-dom-client.development.js:23863
-renderWithHooksAgain @ react-dom-client.development.js:5629
-renderWithHooks @ react-dom-client.development.js:5541
-updateFunctionComponent @ react-dom-client.development.js:8897
-beginWork @ react-dom-client.development.js:10522
-runWithFiberInDEV @ react-dom-client.development.js:1519
-performUnitOfWork @ react-dom-client.development.js:15132
-workLoopSync @ react-dom-client.development.js:14956
-renderRootSync @ react-dom-client.development.js:14936
-performWorkOnRoot @ react-dom-client.development.js:14462
-performWorkOnRootViaSchedulerTask @ react-dom-client.development.js:16216
-performWorkUntilDeadline @ scheduler.development.js:45
-<AppContent> (async)
-exports.jsxDEV @ react-jsx-dev-runtime.development.js:346
-App @ App.jsx:184
-react-stack-bottom-frame @ react-dom-client.development.js:23863
-renderWithHooksAgain @ react-dom-client.development.js:5629
-renderWithHooks @ react-dom-client.development.js:5541
-updateFunctionComponent @ react-dom-client.development.js:8897
-beginWork @ react-dom-client.development.js:10522
-runWithFiberInDEV @ react-dom-client.development.js:1519
-performUnitOfWork @ react-dom-client.development.js:15132
-workLoopSync @ react-dom-client.development.js:14956
-renderRootSync @ react-dom-client.development.js:14936
-performWorkOnRoot @ react-dom-client.development.js:14462
-performWorkOnRootViaSchedulerTask @ react-dom-client.development.js:16216
-performWorkUntilDeadline @ scheduler.development.js:45
-<App> (async)
-exports.jsxDEV @ react-jsx-dev-runtime.development.js:346
-(anonymous) @ main.jsx:15
-Show 38 more frames
-Show less
-App.jsx:167 An error occurred in the <Checkout> component.
+| column_name     | data_type                | is_nullable | column_default                     |
+| --------------- | ------------------------ | ----------- | ---------------------------------- |
+| user_id         | uuid                     | NO          | null                               |
+| delivery_method | USER-DEFINED             | NO          | null                               |
+| status          | USER-DEFINED             | NO          | null                               |
+| created_at      | timestamp with time zone | YES         | CURRENT_TIMESTAMP                  |
+| id              | integer                  | NO          | nextval('orders_id_seq'::regclass) |
+| address_id      | integer                  | YES         | null                               |
+| subtotal        | numeric                  | NO          | null                               |
+| shipping_fee    | numeric                  | NO          | null                               |
+| total           | numeric                  | NO          | null                               |
+| payment_status  | USER-DEFINED             | NO          | null                               |
+| order_number    | character varying        | NO          | null                               |
+| receipt_url     | character varying        | YES         | null                               |
+| payment_method  | character varying        | NO          | null                               |
+| pickup_time     | character varying        | YES         | null                               |
 
-Consider adding an error boundary to your tree to customize error handling behavior.
-Visit https://react.dev/link/error-boundaries to learn more about error boundaries.
+
+
+| column_name | data_type         | is_nullable | column_default                          |
+| ----------- | ----------------- | ----------- | --------------------------------------- |
+| quantity    | integer           | NO          | null                                    |
+| order_id    | integer           | NO          | null                                    |
+| product_id  | integer           | NO          | null                                    |
+| id          | integer           | NO          | nextval('order_items_id_seq'::regclass) |
+| price       | numeric           | NO          | null                                    |
+| name        | character varying | NO          | null                                    |
+| image_url   | character varying | YES         | null                                    |
+
+
+
+| column_name | data_type         | is_nullable | column_default                          |
+| ----------- | ----------------- | ----------- | --------------------------------------- |
+| quantity    | integer           | NO          | null                                    |
+| order_id    | integer           | NO          | null                                    |
+| product_id  | integer           | NO          | null                                    |
+| id          | integer           | NO          | nextval('order_items_id_seq'::regclass) |
+| price       | numeric           | NO          | null                                    |
+| name        | character varying | NO          | null                                    |
+| image_url   | character varying | YES         | null                                    |
+
+
+
+| constraint_name         | constraint_type | column_name  | foreign_table | foreign_column |
+| ----------------------- | --------------- | ------------ | ------------- | -------------- |
+| orders_pkey             | PRIMARY KEY     | id           | orders        | id             |
+| orders_order_number_key | UNIQUE          | order_number | orders        | order_number   |
+| orders_address_id_fkey  | FOREIGN KEY     | address_id   | addresses     | id             |
+| orders_user_id_fkey     | FOREIGN KEY     | user_id      | users         | id             |
+
+
+
+| constraint_name             | constraint_type | column_name | foreign_table | foreign_column |
+| --------------------------- | --------------- | ----------- | ------------- | -------------- |
+| order_items_pkey            | PRIMARY KEY     | id          | order_items   | id             |
+| order_items_order_id_fkey   | FOREIGN KEY     | order_id    | orders        | id             |
+| order_items_product_id_fkey | FOREIGN KEY     | product_id  | products      | id             |
