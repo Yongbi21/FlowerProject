@@ -988,17 +988,7 @@ const OrdersTab = () => {
           </View>
         </View>
 
-        {/* Order Type Badge */}
-        {item.order_type && (
-          <View style={styles.orderTypeBadge}>
-            <Ionicons
-              name={item.order_type === 'Event Booking' ? 'calendar' : 'gift'}
-              size={14}
-              color="#ec4899"
-            />
-            <Text style={styles.orderTypeText}>{item.order_type}</Text>
-          </View>
-        )}
+
 
         {/* Customer Info */}
         <View style={styles.orderSection}>
@@ -1015,38 +1005,7 @@ const OrdersTab = () => {
           )}
         </View>
 
-        {/* Delivery Method */}
-        <View style={styles.orderSection}>
-          <View style={styles.sectionHeader}>
-            <Ionicons
-              name={item.delivery_method === 'delivery' ? 'car-outline' : 'storefront-outline'}
-              size={16}
-              color="#666"
-            />
-            <Text style={styles.sectionTitle}>
-              {item.delivery_method === 'delivery' ? 'Delivery Address' : 'Pick-up'}
-            </Text>
-          </View>
-          {item.delivery_method === 'delivery' && item.delivery_address ? (
-            <View style={styles.addressContainer}>
-              {item.delivery_address.recipient && (
-                <Text style={styles.addressRecipient}>{item.delivery_address.recipient}</Text>
-              )}
-              <Text style={styles.addressPhone}>📞 {item.delivery_address.phone}</Text>
-              <Text style={styles.addressText}>
-                {item.delivery_address.street}
-              </Text>
-              <Text style={styles.addressText}>
-                {item.delivery_address.barangay}
-              </Text>
-              <Text style={styles.addressText}>
-                {item.delivery_address.city}, {item.delivery_address.province}
-              </Text>
-            </View>
-          ) : (
-            <Text style={styles.pickupText}>Customer will pick up the order</Text>
-          )}
-        </View>
+
 
         {/* Items */}
         {item.items && item.items.length > 0 && (

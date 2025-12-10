@@ -314,8 +314,8 @@ export const adminAPI = {
                 subtotal,
                 shipping_fee,
                 delivery_method,
-                delivery_address,
-                order_type,
+
+
                 users (
                     name,
                     email,
