@@ -312,7 +312,7 @@ export const adminAPI = {
                 payment_method,
                 total,
                 subtotal,
-                delivery_fee,
+                shipping_fee,
                 delivery_method,
                 delivery_address,
                 order_type,

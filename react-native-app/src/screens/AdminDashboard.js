@@ -1100,10 +1100,10 @@ const OrdersTab = () => {
             <Text style={styles.priceLabel}>Subtotal:</Text>
             <Text style={styles.priceValue}>₱{item.subtotal?.toFixed(2) || item.total}</Text>
           </View>
-          {item.delivery_fee > 0 && (
+          {item.shipping_fee > 0 && (
             <View style={styles.priceRow}>
               <Text style={styles.priceLabel}>Delivery Fee:</Text>
-              <Text style={styles.priceValue}>₱{item.delivery_fee.toFixed(2)}</Text>
+              <Text style={styles.priceValue}>₱{item.shipping_fee.toFixed(2)}</Text>
             </View>
           )}
           <View style={[styles.priceRow, styles.totalRow]}>
