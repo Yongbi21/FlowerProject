@@ -81,14 +81,12 @@ const SpecialOrder = () => {
 
             const requestData = {
                 type: 'special_order',
-                data: {
-                    recipientName: formData.recipientName,
-                    occasion: formData.occasion,
-                    otherOccasion: formData.otherOccasion,
-                    preferences: formData.preferences,
-                    addon: formData.addon,
-                    message: formData.message
-                },
+                recipient_name: formData.recipientName,
+                occasion: formData.occasion,
+                other_occasion: formData.otherOccasion,
+                preferences: formData.preferences,
+                addon: formData.addon,
+                card_message: formData.message,
                 photo_url: photoUrl,
                 notes: formData.message || `Special Order for ${formData.recipientName || 'recipient'}`
             };

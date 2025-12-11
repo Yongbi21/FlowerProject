@@ -96,16 +96,14 @@ const BookEvent = () => {
 
             const requestData = {
                 type: 'booking',
-                data: {
-                    fullName: formData.fullName,
-                    eventType: formData.eventType,
-                    otherEventType: formData.otherEventType,
-                    eventDate: formData.eventDate,
-                    venue: formData.venue,
-                    details: formData.details
-                },
+                full_name: formData.fullName,
+                event_type: formData.eventType,
+                other_event_type: formData.otherEventType,
+                event_date: formData.eventDate,
+                venue: formData.venue,
+                additional_notes: formData.details,
                 photo_url: photoUrl,
-                notes: formData.details
+                notes: formData.details // Keep notes for general purpose
             };
 
             const response = await requestAPI.create(requestData);

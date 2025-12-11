@@ -1560,6 +1560,17 @@ const StockTab = () => {
 };
 
 // ==================== REQUESTS TAB ====================
+// Helper component for consistent detail display
+const DetailSection = ({ label, value }) => {
+  if (!value) return null;
+  return (
+    <View style={styles.detailSection}>
+        <Text style={styles.detailLabel}>{label}</Text>
+        <Text style={styles.detailValue}>{value}</Text>
+    </View>
+  );
+};
+
 const RequestsTab = () => {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -1570,6 +1581,28 @@ const RequestsTab = () => {
   useEffect(() => {
     loadRequests();
   }, []);
+
+  const renderBookingDetails = (request) => (
+    <>
+      <DetailSection label="Full Name:" value={request.full_name} />
+      <DetailSection label="Event Type:" value={request.event_type} />
+      <DetailSection label="Other Event Type:" value={request.other_event_type} />
+      <DetailSection label="Event Date:" value={request.event_date} />
+      <DetailSection label="Venue:" value={request.venue} />
+      <DetailSection label="Additional Notes:" value={request.additional_notes || request.notes} />
+    </>
+  );
+
+  const renderSpecialOrderDetails = (request) => (
+    <>
+      <DetailSection label="Recipient Name:" value={request.recipient_name} />
+      <DetailSection label="Occasion:" value={request.occasion} />
+      <DetailSection label="Other Occasion:" value={request.other_occasion} />
+      <DetailSection label="Preferences:" value={request.preferences} />
+      <DetailSection label="Add-on:" value={request.addon} />
+      <DetailSection label="Card Message:" value={request.card_message || request.notes} />
+    </>
+  );
 
   const loadRequests = async () => {
     setLoading(true);
@@ -1673,37 +1706,10 @@ const RequestsTab = () => {
                   <Text style={styles.detailValue}>{formatTimestamp(selectedRequest.created_at)}</Text>
                 </View>
 
-                {/* Parse JSON data for details */}
-                {(() => {
-                  try {
-                    const data = typeof selectedRequest.data === 'string'
-                      ? JSON.parse(selectedRequest.data)
-                      : selectedRequest.data;
+                {/* Use helper functions to render details based on type */}
+                {selectedRequest.type === 'booking' && renderBookingDetails(selectedRequest)}
+                {selectedRequest.type === 'special_order' && renderSpecialOrderDetails(selectedRequest)}
 
-                    return (
-                      <>
-                        <View style={styles.detailSection}>
-                          <Text style={styles.detailLabel}>Event Type:</Text>
-                          <Text style={styles.detailValue}>{data.eventType || data.occasion || 'N/A'}</Text>
-                        </View>
-                        <View style={styles.detailSection}>
-                          <Text style={styles.detailLabel}>Date:</Text>
-                          <Text style={styles.detailValue}>{data.eventDate || 'N/A'}</Text>
-                        </View>
-                        <View style={styles.detailSection}>
-                          <Text style={styles.detailLabel}>Venue:</Text>
-                          <Text style={styles.detailValue}>{data.venue || 'N/A'}</Text>
-                        </View>
-                        <View style={styles.detailSection}>
-                          <Text style={styles.detailLabel}>Details:</Text>
-                          <Text style={styles.detailValue}>{data.details || selectedRequest.notes || 'N/A'}</Text>
-                        </View>
-                      </>
-                    );
-                  } catch (e) {
-                    return <Text>Error parsing details</Text>;
-                  }
-                })()}
 
                 {selectedRequest.photo_url && (
                   <View style={styles.imageSection}>
