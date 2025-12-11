@@ -858,7 +858,7 @@ const OrdersTab = () => {
 
   const handleAccept = async (orderId) => {
     try {
-      await adminAPI.acceptOrder(orderId);
+      await adminAPI.acceptOrder(orderId, 'processing');
       Alert.alert('Success', 'Order accepted');
       await loadOrders();
     } catch (error) {
@@ -878,7 +878,7 @@ const OrdersTab = () => {
           style: 'destructive',
           onPress: async () => {
             try {
-              await adminAPI.declineOrder(orderId, 'Declined by admin');
+              await adminAPI.declineOrder(orderId, 'cancelled');
               Alert.alert('Success', 'Order declined');
               await loadOrders();
             } catch (error) {
