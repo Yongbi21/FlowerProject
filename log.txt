@@ -1,44 +1,23 @@
-C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-native-web\dist\modules\warnOnce\index.js:24 props.pointerEvents is deprecated. Use style.pointerEvents
-warnOnce @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-native-web\dist\modules\warnOnce\index.js:24
-C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\src\screens\LoginScreen.js:37 Login successful! Object
-C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-native-web\dist\modules\warnOnce\index.js:24 Image: style.resizeMode is deprecated. Please use props.resizeMode.
-warnOnce @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-native-web\dist\modules\warnOnce\index.js:24
-C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\src\config\api.js:319 Raw orders data from Supabase: [
-  {
-    "id": 32,
-    "order_number": "JFS-09964054-1765387526959",
-    "address_id": 1,
-    "subtotal": 1,
-    "shipping_fee": 100,
-    "total": 101,
-    "payment_method": "gcash",
-    "payment_status": "waiting_for_confirmation",
-    "delivery_method": "delivery",
-    "pickup_time": null,
-    "receipt_url": "https://luzcecstkebntjnfonwv.supabase.co/storage/v1/object/public/receipts/public/09964054-b01d-40f9-85ee-e51fb9b3776a-1765387525627.png",
-    "status": "pending",
-    "created_at": "2025-12-10T17:27:52.981849+00:00",
-    "user_id": "09964054-b01d-40f9-85ee-e51fb9b3776a"
-  },
-  {
-    "id": 31,
-    "order_number": "JFS-09964054-1765386570421",
-    "address_id": null,
-    "subtotal": 1350,
-    "shipping_fee": 0,
-    "total": 1350,
-    "payment_method": "cod",
-    "payment_status": "to_pay",
-    "delivery_method": "pickup",
-    "pickup_time": "9:00 AM",
-    "receipt_url": null,
-    "status": "pending",
-    "created_at": "2025-12-10T17:11:56.450181+00:00",
-    "user_id": "09964054-b01d-40f9-85ee-e51fb9b3776a"
-  }
-]
-C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\src\screens\AdminDashboard.js:847 Error loading orders: TypeError: Cannot read properties of undefined (reading 'map')
-    at C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\src\config\api.js:326:45
-    at Array.map (<anonymous>)
-    at Object.getAllOrders (C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\src\config\api.js:321:40)
-    at async loadOrders (C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\src\screens\AdminDashboard.js:839:32)
+Uncaught ReferenceError: openReceiptModal is not defined
+    at onPress (C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\src\screens\AdminDashboard.js:1040:46)
+    at onClick (C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-native-web\dist\modules\usePressEvents\PressResponder.js:314:13)
+    at executeDispatch (C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:16368:9)
+    at runWithFiberInDEV (C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:1519:30)
+    at processDispatchQueue (C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:16418:19)
+    at C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:17016:9
+    at batchedUpdates$1 (C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:3262:40)
+    at dispatchEventForPluginEventSystem (C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:16572:7)
+    at dispatchEvent (C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:20658:11)
+    at dispatchDiscreteEvent (C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:20626:11)
+onPress @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\src\screens\AdminDashboard.js:1040
+onClick @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-native-web\dist\modules\usePressEvents\PressResponder.js:314
+executeDispatch @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:16368
+runWithFiberInDEV @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:1519
+processDispatchQueue @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:16418
+(anonymous) @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:17016
+batchedUpdates$1 @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:3262
+dispatchEventForPluginEventSystem @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:16572
+dispatchEvent @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:20658
+dispatchDiscreteEvent @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:20626
+Show 9 more frames
+Show less

@@ -1,0 +1,45 @@
+Should be inside the request table
+
+Special Order Page
+
+**Recipient Name**
+
+**Occasion - dropdown (Birthday, Anniversary, Valentines, Mothers Day, Apology, Others)**
+
+**Your Vision in Words**
+
+**Add-on Items**
+
+Image
+
+**Message for Card (Optional)**
+
+Booking Event Page
+
+**Full Name**
+
+**Occasion - dropdown (Wedding, Debut/Birthday, Anniversary, Corporate Event, Funeral, Others)**
+
+Event Date
+
+**Venue Address**
+
+**Additional Notes**
+
+Image
+
+
+DB Schema 
+CREATE TABLE requests (
+  id SERIAL PRIMARY KEY,
+  request_number VARCHAR(50) NOT NULL UNIQUE,
+  user_id INT NOT NULL,
+  type request_type NOT NULL,
+  status request_status NOT NULL DEFAULT 'pending',
+  data JSONB NOT NULL, -- Stores all form fields specific to the request type
+  photo_url VARCHAR(255),
+  notes TEXT,
+  final_price DECIMAL(10, 2),
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);

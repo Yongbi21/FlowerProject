@@ -9,7 +9,7 @@ const orderTabs = [
     { id: 'pending', label: 'Pending' },
     { id: 'processing', label: 'Processing' },
     { id: 'ready_for_pickup', label: 'Ready for Pickup' },
-    { id: 'to_receive', label: 'Out for Delivery' },
+    { id: 'out_for_delivery', label: 'Out for Delivery' },
     { id: 'claimed', label: 'Claimed' },
     { id: 'completed', label: 'Completed' },
     { id: 'cancelled', label: 'Cancelled' },
@@ -345,7 +345,7 @@ const Profile = ({ user, logout }) => {
             processing: 'processing',
             to_pay: 'pending',
             ready_for_pickup: 'processing',
-            to_receive: 'shipped',
+            out_for_delivery: 'shipped',
             claimed: 'shipped',
             completed: 'delivered',
             cancelled: 'cancelled'
@@ -359,7 +359,7 @@ const Profile = ({ user, logout }) => {
             processing: 'Processing',
             to_pay: 'To Pay',
             ready_for_pickup: 'Ready for Pickup',
-            to_receive: 'Out for Delivery',
+            out_for_delivery: 'Out for Delivery',
             claimed: 'Claimed',
             completed: 'Completed',
             cancelled: 'Cancelled'
@@ -421,13 +421,13 @@ const Profile = ({ user, logout }) => {
                         : orderToCancel.type === 'customized' ? 'Customized Bouquet'
                             : 'Request')
                 : 'Order';
-            const orderId = orderToCancel.id ? `#${orderToCancel.id}` : '';
+            const orderNumber = orderToCancel.order_number ? `#${orderToCancel.order_number}` : '';
 
             const newNotification = {
                 id: `notif-${Date.now()}`,
                 type: 'cancellation',
                 title: `${orderTypeLabel} Cancelled`,
-                message: `Your ${orderTypeLabel.toLowerCase()} ${orderId} has been cancelled successfully.`,
+                message: `Your ${orderTypeLabel.toLowerCase()} ${orderNumber} has been cancelled successfully.`,
                 icon: 'fa-times-circle',
                 timestamp: new Date().toISOString(),
                 read: false,
@@ -537,7 +537,7 @@ const Profile = ({ user, logout }) => {
                                         {order.type === 'booking' && 'Event Booking'}
                                         {order.type === 'special_order' && 'Special Order'}
                                         {order.type === 'customized' && 'Customized Bouquet'}
-                                        {!order.type && `Order #${order.id || index + 1}`}
+                                        {!order.type && `Order #${order.order_number || order.id}`}
                                     </div>
                                     {order.type && (
                                         <span className="badge bg-info text-white">
@@ -747,15 +747,15 @@ const Profile = ({ user, logout }) => {
                                             Track Status
                                         </button>
                                     )}
-                                    {order.status !== 'cancelled' && order.status !== 'completed' && !(order.status === 'pending' && order.type) && (
+                                    {['processing', 'out_for_delivery', 'ready_for_pickup'].includes(order.status) && (
                                         <button
                                             className="btn-order-action primary"
-                                            onClick={() => handleTrackOrder(order.id || `order-${index}`)}
+                                            onClick={() => handleTrackOrder(order.order_number || order.id)}
                                         >
                                             Track Order
                                         </button>
                                     )}
-                                    {order.status !== 'cancelled' && order.status !== 'completed' && (
+                                    {order.status === 'pending' && (
                                         <button
                                             className="btn-order-action danger"
                                             onClick={() => handleCancelClick(order)}

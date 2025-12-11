@@ -1,4 +1,3 @@
-// Supabase API - replaces AsyncStorage for backend operations
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
 import { decode } from 'base64-arraybuffer';
@@ -60,68 +59,78 @@ export const productAPI = {
         return { data: formattedProduct };
     },
 
-    create: async (productData) => {
+    create: async (formData) => {
         let imageUrl = null;
-        const imageFile = productData.image;
-
-        console.log('productAPI.create: imageFile from productData:', JSON.stringify(imageFile, null, 2));
+        const imageFile = formData.get('image');
+        
+        console.log('=== CREATE PRODUCT DEBUG ===');
+        console.log('imageFile type:', typeof imageFile);
+        console.log('imageFile:', imageFile);
+        console.log('imageFile.uri:', imageFile?.uri);
+        console.log('imageFile.name:', imageFile?.name);
+        console.log('imageFile.type:', imageFile?.type);
 
         if (imageFile && imageFile.uri) {
             try {
-                // Use XMLHttpRequest to get a blob from the local URI, more reliable for file://
-                const blob = await new Promise((resolve, reject) => {
-                    const xhr = new XMLHttpRequest();
-                    xhr.onload = function() {
-                        resolve(xhr.response);
-                    };
-                    xhr.onerror = function(e) {
-                        console.error('XHR error:', e);
-                        reject(new TypeError('Network request failed'));
-                    };
-                    xhr.responseType = 'blob';
-                    xhr.open('GET', imageFile.uri, true);
-                    xhr.send(null);
-                });
-
-                console.log('productAPI.create: Blob created via XHR:', blob);
-
-                const fileName = imageFile.fileName || imageFile.name || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                console.log('Fetching image from URI:', imageFile.uri);
                 
+                // Fetch the image from the local URI
+                const res = await fetch(imageFile.uri);
+                const blob = await res.blob();
+                
+                console.log('Blob created, size:', blob.size, 'type:', blob.type);
+                
+                // Create a unique filename
+                const fileName = imageFile.name || `product-${Date.now()}.jpg`;
+                
+                console.log('Uploading to Supabase with filename:', fileName);
+                
+                // Upload to Supabase Storage
                 const { data: uploadData, error: uploadError } = await supabase.storage
                     .from('product-images')
                     .upload(fileName, blob, {
                         cacheControl: '3600',
                         upsert: false,
-                        contentType: imageFile.type || 'image/jpeg',
+                        contentType: imageFile.type || blob.type || 'image/jpeg',
                     });
 
                 if (uploadError) {
-                    console.error('Error uploading image:', uploadError);
+                    console.error('Supabase upload error:', uploadError);
                     throw uploadError;
                 }
                 
-                if (!uploadData) {
-                    throw new Error("Upload succeeded but no data was returned");
-                }
-
-                const { data: publicUrlData } = supabase.storage.from('product-images').getPublicUrl(uploadData.path);
+                console.log('Upload successful, path:', uploadData.path);
+                
+                // Get public URL
+                const { data: publicUrlData } = supabase.storage
+                    .from('product-images')
+                    .getPublicUrl(uploadData.path);
+                
                 imageUrl = publicUrlData.publicUrl;
-            } catch (e) {
-                console.error('productAPI.create: Exception during image handling:', e);
-                throw e;
+                console.log('Public URL generated:', imageUrl);
+                
+            } catch (error) {
+                console.error('Error processing image:', error);
+                throw new Error('Failed to upload image: ' + error.message);
             }
+        } else {
+            console.log('No image file provided or imageFile.uri is missing');
         }
 
+        // Prepare product data
         const productToInsert = {
-            name: productData.name,
-            price: parseFloat(productData.price),
-            stock_quantity: parseInt(productData.stock_quantity, 10),
-            description: productData.description,
-            category_id: parseInt(productData.category_id, 10),
+            name: formData.get('name'),
+            price: parseFloat(formData.get('price')),
+            stock_quantity: parseInt(formData.get('stock_quantity'), 10) || 0,
+            description: formData.get('description') || '',
+            category_id: parseInt(formData.get('category_id'), 10),
             image_url: imageUrl,
             is_active: true,
         };
 
+        console.log('Inserting product to database:', productToInsert);
+
+        // Insert into database
         const { data: newProduct, error } = await supabase
             .from('products')
             .insert(productToInsert)
@@ -129,100 +138,60 @@ export const productAPI = {
             .single();
 
         if (error) {
-            console.error('Error creating product:', error);
+            console.error('Database insert error:', error);
             throw error;
         }
+
+        console.log('Product created successfully:', newProduct);
+        console.log('=== END CREATE PRODUCT DEBUG ===');
 
         return { data: newProduct };
     },
 
-    update: async (id, productData) => {
-        let imageUrl = productData.image_url_hidden || null;
-        const oldImageUrl = productData.image_url_hidden;
+    update: async function(id, formData) {
+        let imageUrl = formData.get('image_url_hidden');
+        const imageFile = formData.get('image');
+        console.log('productAPI.update: existing imageUrl (hidden):', imageUrl);
+        console.log('productAPI.update: imageFile from formData (full object):', imageFile);
 
-        const imageFile = productData.image;
-        console.log('productAPI.update: imageFile from productData:', JSON.stringify(imageFile, null, 2));
+        if (imageFile && imageFile.uri && !imageFile.uri.startsWith('http')) {
+            const res = await fetch(imageFile.uri);
+            const blob = await res.blob();
+            const fileName = imageFile.name || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
-        // If a new image is provided, and it's different from the old one, upload it
-        if (imageFile && imageFile.uri && imageFile.uri !== oldImageUrl) {
-            try {
-                // Use XMLHttpRequest to get a blob from the local URI, more reliable for file://
-                const blob = await new Promise((resolve, reject) => {
-                    const xhr = new XMLHttpRequest();
-                    xhr.onload = function() {
-                        resolve(xhr.response);
-                    };
-                    xhr.onerror = function(e) {
-                        console.error('XHR error:', e);
-                        reject(new TypeError('Network request failed'));
-                    };
-                    xhr.responseType = 'blob';
-                    xhr.open('GET', imageFile.uri, true);
-                    xhr.send(null);
+            const { data: uploadData, error: uploadError } = await supabase.storage
+                .from('product-images')
+                .upload(fileName, blob, {
+                    cacheControl: '3600',
+                    upsert: true,
+                    contentType: imageFile.type,
                 });
 
-                console.log('productAPI.update: Blob created via XHR:', blob);
-
-                const fileName = imageFile.fileName || imageFile.name || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-                
-                const { data: uploadData, error: uploadError } = await supabase.storage
-                    .from('product-images')
-                    .upload(fileName, blob, {
-                        cacheControl: '3600',
-                        upsert: false,
-                        contentType: imageFile.type || 'image/jpeg',
-                    });
-
-                if (uploadError) {
-                    console.error('Error uploading new image:', uploadError);
-                    throw uploadError;
-                }
-
-                if (!uploadData) {
-                    throw new Error("Upload succeeded but no data was returned");
-                }
-                
-                const { data: publicUrlData } = supabase.storage.from('product-images').getPublicUrl(uploadData.path);
-                imageUrl = publicUrlData.publicUrl;
-
-                // Optionally, delete the old image if a new one was successfully uploaded
-                if (oldImageUrl) {
-                    try {
-                        const oldFileName = oldImageUrl.split('/').pop().split('?')[0]; // Handle Supabase URL query params
-                        if (oldFileName) {
-                            const { error: deleteError } = await supabase.storage
-                                .from('product-images')
-                                .remove([oldFileName]);
-
-                            if (deleteError) {
-                                console.warn('Could not delete old image from storage:', deleteError);
-                            }
-                        }
-                    } catch (deleteOldError) {
-                        console.warn('Error processing old image for deletion:', deleteOldError);
-                    }
-                }
-
-            } catch (e) {
-                console.error('productAPI.update: Exception during image handling:', e);
-                throw e;
+            if (uploadError) {
+                console.error('Error uploading image:', uploadError);
+                throw uploadError;
             }
+            const { data: publicUrlData } = supabase.storage.from('product-images').getPublicUrl(uploadData.path);
+            imageUrl = publicUrlData.publicUrl;
+        } else if (imageFile && imageFile.uri) {
+            imageUrl = imageFile.uri;
         }
 
         const productToUpdate = {
-            name: productData.name,
-            price: parseFloat(productData.price),
-            stock_quantity: parseInt(productData.stock_quantity, 10),
-            description: productData.description,
-            category_id: parseInt(productData.category_id, 10),
-            image_url: imageUrl, // Use the new or retained image URL
-            is_active: true,
+            name: formData.get('name'),
+            price: parseFloat(formData.get('price')),
+            stock_quantity: parseInt(formData.get('stock_quantity'), 10),
+            description: formData.get('description'),
+            category_id: parseInt(formData.get('category_id'), 10),
+            image_url: imageUrl,
         };
+        
+        Object.keys(productToUpdate).forEach(key => (productToUpdate[key] === undefined || Number.isNaN(productToUpdate[key])) && delete productToUpdate[key]);
 
         const { data: updatedProduct, error } = await supabase
             .from('products')
             .update(productToUpdate)
-            .eq('id', id)
+            .eq('id', parseInt(id, 10))
             .select()
             .single();
 
@@ -234,7 +203,7 @@ export const productAPI = {
         return { data: updatedProduct };
     },
 
-    delete: async (id) => {
+    deleteProduct: async (id) => {
         const { error } = await supabase
             .from('products')
             .delete()
@@ -277,7 +246,6 @@ export const orderAPI = {
 // Auth API - using AsyncStorage for demo/local mode
 export const authAPI = {
     adminLogin: async (data) => {
-        // For demo: accept any admin login with local storage
         const adminUser = {
             id: 1,
             email: data.email,
@@ -310,6 +278,7 @@ export const adminAPI = {
                 status,
                 payment_status,
                 payment_method,
+                receipt_url,
                 total,
                 subtotal,
                 shipping_fee,
@@ -343,7 +312,6 @@ export const adminAPI = {
             console.error('Supabase query error for orders:', error);
             return { data: [] };
         }
-        console.log('Raw orders data from Supabase:', JSON.stringify(orders, null, 2));
 
         const formattedOrders = orders.map(order => {
             const customerName = order.users ? order.users.name : 'N/A';
@@ -368,7 +336,6 @@ export const adminAPI = {
                 order_items: undefined, // Remove the raw order_items object
             };
         });
-        console.log('Formatted orders data for UI:', JSON.stringify(formattedOrders, null, 2));
 
         return { data: formattedOrders };
     },
@@ -418,10 +385,10 @@ export const adminAPI = {
         return { data: { success: true, order: data } };
     },
 
-    declineOrder: async (id, status, reason) => {
+    declineOrder: async (id, status) => {
         const { data, error } = await supabase
             .from('orders')
-            .update({ status: status, decline_reason: reason })
+            .update({ status: status })
             .eq('id', id)
             .select()
             .single();
@@ -432,6 +399,8 @@ export const adminAPI = {
         }
         return { data: { success: true, order: data } };
     },
+
+
 
     getSalesSummary: async (params) => {
         const orders = JSON.parse(await AsyncStorage.getItem('orders') || '[]');
@@ -444,17 +413,8 @@ export const adminAPI = {
     },
 
     getAllRequests: async (params) => {
-        const { data, error } = await supabase
-            .from('requests')
-            .select('*')
-            .order('created_at', { ascending: false });
-
-        if (error) {
-            console.error('Error fetching requests:', error);
-            throw error;
-        }
-
-        return { data: { requests: data || [] } };
+        const requests = JSON.parse(await AsyncStorage.getItem('requests') || '[]');
+        return { data: requests || [] };
     },
 
     provideQuote: async (id, data) => {
@@ -478,18 +438,13 @@ export const adminAPI = {
     },
 
     updateRequestStatus: async (id, status) => {
-        const { data, error } = await supabase
-            .from('requests')
-            .update({ status: status })
-            .eq('id', id)
-            .select()
-            .single();
-
-        if (error) {
-            console.error('Error updating request status:', error);
-            throw error;
+        const requests = JSON.parse(await AsyncStorage.getItem('requests') || '[]');
+        const index = requests.findIndex(r => r.id === id);
+        if (index !== -1) {
+            requests[index].status = status;
+            await AsyncStorage.setItem('requests', JSON.stringify(requests));
         }
-        return { data: { success: true, request: data } };
+        return { data: { success: true } };
     },
 
     getAllStock: async () => {
@@ -596,8 +551,8 @@ export const uploadAPI = {
     }
 };
 
-// Base URL export (not used in local mode but kept for compatibility)
-export const BASE_URL = supabase.storage.url;
+// Base URL export
+export const BASE_URL = 'https://luzcecstkebntjnfonwv.supabase.co/storage/v1/object/public/product-images/';
 
 // Default export
 export default {
