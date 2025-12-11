@@ -857,14 +857,6 @@ const OrdersTab = () => {
   };
 
   const handleAccept = async (orderId) => {
-    if (orderId === 'sample-001') {
-      setOrders(prevOrders => prevOrders.map(order =>
-        order.id === 'sample-001' ? { ...order, status: 'accepted' } : order
-      ));
-      Alert.alert('Success', 'Order accepted');
-      return;
-    }
-
     try {
       await adminAPI.acceptOrder(orderId);
       Alert.alert('Success', 'Order accepted');
@@ -885,14 +877,6 @@ const OrdersTab = () => {
           text: 'Decline',
           style: 'destructive',
           onPress: async () => {
-            if (orderId === 'sample-001') {
-              setOrders(prevOrders => prevOrders.map(order =>
-                order.id === 'sample-001' ? { ...order, status: 'declined' } : order
-              ));
-              Alert.alert('Success', 'Order declined');
-              return;
-            }
-
             try {
               await adminAPI.declineOrder(orderId, 'Declined by admin');
               Alert.alert('Success', 'Order declined');
@@ -908,14 +892,6 @@ const OrdersTab = () => {
   };
 
   const handleStatusChange = async (orderId, newStatus) => {
-    if (orderId === 'sample-001') {
-      setOrders(prevOrders => prevOrders.map(order =>
-        order.id === 'sample-001' ? { ...order, status: newStatus } : order
-      ));
-      Alert.alert('Success', 'Order status updated');
-      return;
-    }
-
     try {
       await adminAPI.updateOrderStatus(orderId, newStatus);
       Alert.alert('Success', 'Order status updated');
@@ -927,14 +903,6 @@ const OrdersTab = () => {
   };
 
   const handlePaymentMethodChange = async (orderId, newPaymentMethod) => {
-    if (orderId === 'sample-001') {
-      setOrders(prevOrders => prevOrders.map(order =>
-        order.id === 'sample-001' ? { ...order, payment_method: newPaymentMethod } : order
-      ));
-      Alert.alert('Success', 'Payment method updated');
-      return;
-    }
-
     try {
       await adminAPI.updateOrderPaymentMethod(orderId, newPaymentMethod);
       Alert.alert('Success', 'Payment method updated');
