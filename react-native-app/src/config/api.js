@@ -403,10 +403,10 @@ export const adminAPI = {
         return { data: { success: true, order: data } };
     },
 
-    acceptOrder: async (id, status) => {
+    acceptOrder: async (id) => {
         const { data, error } = await supabase
             .from('orders')
-            .update({ status: status })
+            .update({ status: 'accepted' })
             .eq('id', id)
             .select()
             .single();
@@ -418,10 +418,10 @@ export const adminAPI = {
         return { data: { success: true, order: data } };
     },
 
-    declineOrder: async (id, status, reason) => {
+    declineOrder: async (id, reason) => {
         const { data, error } = await supabase
             .from('orders')
-            .update({ status: status, decline_reason: reason })
+            .update({ status: 'declined', decline_reason: reason })
             .eq('id', id)
             .select()
             .single();
