@@ -45,6 +45,42 @@ const Profile = ({ user, logout }) => {
     const [showCancelModal, setShowCancelModal] = useState(false);
     const [orderToCancel, setOrderToCancel] = useState(null);
     const [showWaitingModal, setShowWaitingModal] = useState(false);
+    const [profileForm, setProfileForm] = useState({
+        fullName: '',
+        phone: '',
+        dateOfBirth: '',
+    });
+    const [profileData, setProfileData] = useState(null); // New state for fetched profile data
+    const [status, setStatus] = useState(null);
+
+    useEffect(() => {
+        const fetchProfile = async () => {
+            if (user) {
+                const { data, error } = await supabase
+                    .from('users')
+                    .select('*')
+                    .eq('id', user.id)
+                    .single();
+
+                if (error) {
+                    console.error('Error fetching profile:', error);
+                } else {
+                    setProfileData(data);
+                }
+            }
+        };
+        fetchProfile();
+    }, [user]); // Re-run when user changes
+
+    useEffect(() => {
+        if (profileData) {
+            setProfileForm({
+                fullName: profileData.name || '',
+                phone: profileData.phone || '',
+                dateOfBirth: profileData.birthdate || '',
+            });
+        }
+    }, [profileData]); // Re-run when profileData changes
 
     // Load orders and requests from Supabase
     const loadOrders = async (currentUserId) => {
@@ -54,7 +90,7 @@ const Profile = ({ user, logout }) => {
             // Fetch orders from Supabase with order_items and address details
             const { data: apiOrders, error: ordersError } = await supabase
                 .from('orders')
-                .select('*, order_items(*), addresses(*)') // Assuming 'order_items' is the table for items and 'addresses' for addresses
+                .select('*, order_items(*, products(image_url)), addresses(*)') // Fetch product image_url
                 .eq('user_id', currentUserId)
                 .order('created_at', { ascending: false });
 
@@ -63,10 +99,10 @@ const Profile = ({ user, logout }) => {
                 throw ordersError;
             }
 
-            // Fetch requests from Supabase
+            // Fetch requests from Supabase, joining with the users table to get the phone number
             const { data: apiRequests, error: requestsError } = await supabase
                 .from('requests')
-                .select('*')
+                .select('*, users(phone)') // Select all request fields and the phone from the related user
                 .eq('user_id', currentUserId)
                 .order('created_at', { ascending: false });
 
@@ -98,7 +134,7 @@ const Profile = ({ user, logout }) => {
                 // Include request data for all request types
                 type: order.request_type || null,
                 data: order.request_data || null,
-                photo_url: order.request_photo_url || null,
+                image_url: order.request_image_url || null,
                 // Booking data
                 eventType: order.event_type || (order.request_data?.eventType || order.request_data?.event_type),
                 eventDate: order.event_date || order.request_data?.eventDate,
@@ -120,7 +156,7 @@ const Profile = ({ user, logout }) => {
                 message: order.request_data?.message,
                 email: order.request_data?.email,
                 phone: order.request_data?.phone,
-                photo: order.request_photo_url
+                photo: order.request_image_url
             }));
             
             // Transform API requests to match the expected format
@@ -137,7 +173,7 @@ const Profile = ({ user, logout }) => {
                     total: parseFloat(request.final_price || request.estimated_price || 0),
                     notes: request.notes,
                     data: requestData,
-                    photo_url: request.photo_url,
+                    image_url: request.image_url,
                     isRequest: true,
                     // Extract specific fields for easier access
                     eventType: requestData?.eventType || requestData?.event_type,
@@ -584,27 +620,28 @@ const Profile = ({ user, logout }) => {
                                 {/* Display order items or request details */}
                                 {order.items && order.items.length > 0 ? (
                                     <>
-                                        {order.items.slice(0, 2).map((item, idx) => (
-                                            <div key={idx} className="order-item">
-                                                <img
-                                                    src={item.image_url || item.image || item.photo} // Prioritize new image_url
-                                                    alt={item.name || 'Item'}
-                                                    className="order-item-img"
-                                                    onError={(e) => e.target.src = 'https://via.placeholder.com/70'}
-                                                />
-                                                <div>
-                                                    <div className="order-item-name">{item.name || 'Custom Item'}</div>
-                                                    {item.variant && (
-                                                        <div className="order-item-variant">{item.variant}</div>
-                                                    )}
-                                                    <div className="order-item-qty">x{item.qty || 1}</div>
-                                                </div>
-                                                <div className="order-item-price">
-                                                    ₱{((item.price || order.price || 0) * (item.qty || 1)).toLocaleString()}
-                                                </div>
-                                            </div>
-                                        ))}
-                                        {order.items.length > 2 && (
+                                                                                        {order.items.slice(0, 2).map((item, idx) => (
+                                                                                            <div key={idx} className="order-item">
+                                                                                                <img
+                                                                                                    src={item.products?.image_url || item.image_url || item.image || item.photo} // Prioritize product image_url
+                                                                                                    alt={item.name || 'Item'}
+                                                                                                    className="order-item-img"
+                                                                                                    onError={(e) => e.target.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'} // Replaced external URL with data URI
+                                                                                                />
+                                                                                                <div>
+                                                                                                    <div className="order-item-name">{item.name || 'Custom Item'}</div>
+                                                                                                    {item.variant && (
+                                                                                                        <div className="order-item-variant">{item.variant}</div>
+                                                                                                    )}
+                                                                                                    <div className="order-item-qty">x{item.qty || 1}</div>
+                                                                                                </div>
+                                                                                                {!order.type && (
+                                                                                                    <div className="order-item-price">
+                                                                                                        ₱{((item.price || order.price || 0) * (item.qty || 1)).toLocaleString()}
+                                                                                                    </div>
+                                                                                                )}
+                                                                                            </div>
+                                                                                        ))}                                        {order.items.length > 2 && (
                                             <div className="text-muted small mt-2">
                                                 + {order.items.length - 2} more item(s)
                                             </div>
@@ -613,13 +650,12 @@ const Profile = ({ user, logout }) => {
                                 ) : (
                                     // Display request details for bookings, special orders, and customized
                                     <div className="order-item">
-                                        {order.photo && (
+                                        {order.image_url && (
                                             <img
-                                                src={order.photo}
+                                                src={order.image_url}
                                                 alt="Request preview"
-                                                className="order-item-img"
-                                                style={{ objectFit: 'cover' }}
-                                                onError={(e) => e.target.src = 'https://via.placeholder.com/70'}
+                                                className="order-item-img customized-bouquet-img"
+                                                onError={(e) => e.target.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'}
                                             />
                                         )}
                                         <div className="flex-grow-1">
@@ -647,6 +683,12 @@ const Profile = ({ user, logout }) => {
                                                     For: {order.recipientName}
                                                 </div>
                                             )}
+                                            {order.type && order.userPhone && (
+                                                <div className="order-item-variant">
+                                                    <i className="fas fa-phone me-1"></i>
+                                                    {order.userPhone}
+                                                </div>
+                                            )}
                                             {order.type === 'customized' && order.flower && (
                                                 <div className="order-item-variant">
                                                     <i className="fas fa-seedling me-1"></i>
@@ -654,9 +696,11 @@ const Profile = ({ user, logout }) => {
                                                 </div>
                                             )}
                                         </div>
-                                        <div className="order-item-price">
-                                            ₱{(order.price || order.total || 0).toLocaleString()}
-                                        </div>
+                                        {order.type === 'customized' && (
+                                            <div className="order-item-price">
+                                                ₱{(order.total || 0).toLocaleString()}
+                                            </div>
+                                        )}
                                     </div>
                                 )}
 
@@ -716,7 +760,13 @@ const Profile = ({ user, logout }) => {
                             </div>
                             <div className="order-card-footer">
                                 <div className="order-total">
-                                    {order.type ? 'Request Total' : 'Order Total'}: <span>₱{(order.total || order.price || 0).toLocaleString()}</span>
+                                    {order.type === 'customized' ? (
+                                        <>Request Total: <span>₱{(order.total || 0).toLocaleString()}</span></>
+                                    ) : order.type ? (
+                                        <>Request Total: <span style={{ color: 'var(--shop-pink)' }}>To be discuss further</span></>
+                                    ) : (
+                                        <>Order Total: <span>₱{(order.total || order.price || 0).toLocaleString()}</span></>
+                                    )}
                                 </div>
                                 <div className="order-actions">
                                     {order.status === 'completed' && order.items && (
@@ -747,7 +797,7 @@ const Profile = ({ user, logout }) => {
                                             Track Status
                                         </button>
                                     )}
-                                    {['processing', 'out_for_delivery', 'ready_for_pickup'].includes(order.status) && (
+                                    {['processing', 'out_for_delivery', 'ready_for_pickup'].includes(order.status) && order.type !== 'booking' && order.type !== 'special_order' && (
                                         <button
                                             className="btn-order-action primary"
                                             onClick={() => handleTrackOrder(order.order_number || order.id)}
@@ -851,46 +901,126 @@ const Profile = ({ user, logout }) => {
         </>
     );
 
+    const handleProfileUpdate = async (e) => {
+        e.preventDefault();
+        setStatus(null);
+
+        if (!user) {
+            setStatus({ type: 'error', message: 'You must be logged in to update your profile.' });
+            return;
+        }
+
+        try {
+            // Update the public 'users' table
+            const { error: profileError } = await supabase
+                .from('users')
+                .update({ 
+                    name: profileForm.fullName, 
+                    phone: profileForm.phone,
+                    birthdate: profileForm.dateOfBirth,
+                })
+                .eq('id', user.id);
+
+            if (profileError) {
+                throw profileError;
+            }
+
+            // Also update the user_metadata in auth.users to keep it in sync
+            // This is what the rest of the app seems to use
+            const { error: authError } = await supabase.auth.updateUser({
+                data: {
+                    name: profileForm.fullName,
+                    phone: profileForm.phone,
+                },
+            });
+
+            if (authError) {
+                throw authError;
+            }
+
+            setStatus({ type: 'success', message: 'Profile updated successfully!' });
+
+        } catch (error) {
+            setStatus({ type: 'error', message: 'Failed to update profile: ' + error.message });
+        }
+    };
+
+    const handleProfileFormChange = (e) => {
+        const { name, value } = e.target;
+        setProfileForm(prev => ({ ...prev, [name]: value }));
+    };
+
     const renderSettingsContent = () => (
         <>
             <h5 className="fw-bold mb-4">Account Settings</h5>
+            {status && (
+                <div className={`alert ${status.type === 'success' ? 'alert-success' : 'alert-danger'}`}>
+                    {status.message}
+                </div>
+            )}
+            <form onSubmit={handleProfileUpdate}>
+                <div className="row">
+                    <div className="col-md-6 mb-3">
+                        <label className="form-label">Full Name</label>
+                        <input 
+                            type="text" 
+                            className="form-control" 
+                            name="fullName"
+                            value={profileForm.fullName}
+                            onChange={handleProfileFormChange} 
+                        />
+                    </div>
+                    <div className="col-md-6 mb-3">
+                        <label className="form-label">Email Address</label>
+                        <input 
+                            type="email" 
+                            className="form-control" 
+                            defaultValue={user.email} 
+                            disabled 
+                        />
+                    </div>
+                    <div className="col-md-6 mb-3">
+                        <label className="form-label">Phone Number</label>
+                        <input 
+                            type="tel" 
+                            className="form-control" 
+                            name="phone"
+                            value={profileForm.phone}
+                            onChange={handleProfileFormChange}
+                            placeholder="09171234567"
+                        />
+                        <div className="form-text">Use format +639171234567 or 09171234567.</div>
+                    </div>
+                    <div className="col-md-6 mb-3">
+                        <label className="form-label">Date of Birth</label>
+                        <input 
+                            type="date" 
+                            className="form-control" 
+                            name="dateOfBirth"
+                            value={profileForm.dateOfBirth}
+                            onChange={handleProfileFormChange} 
+                        />
+                    </div>
+                </div>
 
-            <div className="row">
-                <div className="col-md-6 mb-3">
-                    <label className="form-label">Full Name</label>
-                    <input type="text" className="form-control" defaultValue={user.name} />
-                </div>
-                <div className="col-md-6 mb-3">
-                    <label className="form-label">Email Address</label>
-                    <input type="email" className="form-control" defaultValue={user.email} />
-                </div>
-                <div className="col-md-6 mb-3">
-                    <label className="form-label">Phone Number</label>
-                    <input type="tel" className="form-control" defaultValue={user.phone} />
-                </div>
-                <div className="col-md-6 mb-3">
-                    <label className="form-label">Date of Birth</label>
-                    <input type="date" className="form-control" />
-                </div>
-            </div>
+                <hr className="my-4" />
 
-            <hr className="my-4" />
-
-            <h6 className="fw-bold mb-3">Change Password</h6>
-            <div className="row">
-                <div className="col-md-6 mb-3">
-                    <label className="form-label">Current Password</label>
-                    <input type="password" className="form-control" />
+                <h6 className="fw-bold mb-3">Change Password</h6>
+                <div className="row">
+                    <div className="col-md-6 mb-3">
+                        <label className="form-label">Current Password</label>
+                        <input type="password" className="form-control" />
+                    </div>
+                    <div className="col-md-6 mb-3">
+                        <label className="form-label">New Password</label>
+                        <input type="password" className="form-control" />
+                    </div>
                 </div>
-                <div className="col-md-6 mb-3">
-                    <label className="form-label">New Password</label>
-                    <input type="password" className="form-control" />
-                </div>
-            </div>
 
-            <button className="btn mt-3" style={{ background: 'var(--shop-pink)', color: 'white' }}>
-                Save Changes
-            </button>
+                <button type="submit" className="btn mt-3" style={{ background: 'var(--shop-pink)', color: 'white' }}>
+                    Save Changes
+                </button>
+            </form>
         </>
     );
 

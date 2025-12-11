@@ -4,6 +4,7 @@ import Draggable from 'react-draggable';
 import { FaChevronLeft, FaArrowRotateLeft, FaScroll, FaRibbon, FaSeedling } from 'react-icons/fa6';
 import html2canvas from 'html2canvas';
 import RequestSuccessModal from '../components/RequestSuccessModal';
+import { supabase } from '../config/supabase';
 import '../styles/Customized.css';
 import darkBlueWrapperImg from '../assets/pictures/darkbluewrapper.png';
 import blueWrapperImg from '../assets/pictures/bluewrapper.png';
@@ -167,6 +168,15 @@ const Customized = ({ addToCart }) => {
     }
 
     try {
+      // Get current user info from Supabase
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user?.id;
+
+      if (!userId) {
+        alert('You need to be logged in to submit a customized bouquet request.');
+        return;
+      }
+
       // Capture screenshot of the preview
       let photoBase64 = null;
       if (previewRef.current) {
@@ -183,57 +193,85 @@ const Customized = ({ addToCart }) => {
         }
       }
 
-      // Get current user info
-      const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+      // Function to upload image to Supabase Storage
+      const uploadImageToSupabase = async (base64, userId) => {
+        if (!base64) return null;
+
+        const fileName = `customized-bouquets/${userId}-${Date.now()}.png`;
+        const base64WithoutPrefix = base64.split(',')[1];
+        const imageBuffer = Uint8Array.from(atob(base64WithoutPrefix), (c) => c.charCodeAt(0));
+
+        const { data, error } = await supabase.storage
+          .from('request-images') // Ensure this bucket exists in your Supabase project
+          .upload(fileName, imageBuffer, {
+            contentType: 'image/png',
+            upsert: false,
+          });
+
+        if (error) {
+          console.error('Error uploading image to Supabase:', error);
+          return null;
+        }
+
+        // Get public URL
+        const { data: publicUrlData } = supabase.storage
+          .from('request-images')
+          .getPublicUrl(fileName);
+
+        return publicUrlData.publicUrl;
+      };
+
+      // Upload the photo to Supabase Storage
+      const photoUrl = await uploadImageToSupabase(photoBase64, userId);
+
+      // Create a unique request number
+      const requestNumber = `CUS-${Date.now()}`;
       
-      // Create request object for localStorage
-      // This will be displayed in Profile.jsx My Orders section
-      const requestId = `customized-${Date.now()}`;
-      const newRequest = {
-        id: requestId,
+      // Prepare data for Supabase requests table
+      const requestData = {
+        user_id: userId,
+        request_number: requestNumber,
         type: 'customized',
-        status: 'pending', // Set as pending so it shows in pending tab
-        paymentStatus: 'to_pay',
-        flower: selection.flower,
-        bundleSize: selection.bundleSize,
-        wrapper: selection.wrapper,
-        ribbon: selection.ribbon,
-        photo: photoBase64,
-        price: totalPrice,
-        total: totalPrice, // Also add total for price display
-        requestDate: new Date().toISOString(),
-        date: new Date().toISOString(), // Add date field for sorting
-        // Store full data structure for compatibility
+        status: 'pending', // Initial status
         data: {
-          flower: {
-            name: selection.flower.name,
-            id: selection.flower.id
-          },
+          flower: selection.flower,
           bundleSize: selection.bundleSize,
           wrapper: selection.wrapper,
           ribbon: selection.ribbon,
-          price: totalPrice
-        }
+        },
+        image_url: photoUrl,
+        final_price: totalPrice,
       };
 
-      // Save to localStorage requests array
-      const requests = JSON.parse(localStorage.getItem('requests') || '[]');
-      requests.push(newRequest);
-      localStorage.setItem('requests', JSON.stringify(requests));
+      const { data: insertedRequest, error: requestError } = await supabase
+        .from('requests')
+        .insert([requestData])
+        .select();
 
-      // Create notification
-      const notifications = JSON.parse(localStorage.getItem('notifications') || '[]');
-      const newNotification = {
-        id: `notif-${Date.now()}`,
-        type: 'request',
+      if (requestError) {
+        console.error('Error inserting request:', requestError);
+        alert('Error submitting request. Please try again.');
+        return;
+      }
+
+      // Create notification in Supabase
+      const notificationData = {
+        user_id: userId,
+        type: 'request', // Assuming 'request' is a valid type in your notifications table
         title: 'Customized Bouquet Request Submitted!',
-        message: `Your customized bouquet (${selection.flower?.name || 'bouquet'}, ${selection.bundleSize} stems) has been submitted and is pending approval. You can view it in My Orders.`,
-        icon: 'fa-seedling',
-        timestamp: new Date().toISOString(),
-        read: false,
-        link: '/my-orders'
+        message: `Your customized bouquet (${selection.flower?.name || 'bouquet'}, ${selection.bundleSize} stems) has been submitted and is pending approval. Request Number: ${requestNumber}. You can view it in My Orders.`,
+        link: '/my-orders',
+        is_read: false,
       };
-      localStorage.setItem('notifications', JSON.stringify([newNotification, ...notifications]));
+
+      const { error: notificationError } = await supabase
+        .from('notifications')
+        .insert([notificationData]);
+
+      if (notificationError) {
+        console.error('Error inserting notification:', notificationError);
+        // Do not block submission if notification fails
+      }
 
       setCapturedPhoto(photoBase64);
       setShowModal(true);

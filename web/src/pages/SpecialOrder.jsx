@@ -1,128 +1,289 @@
 import React, { useState, useRef } from 'react';
 import RequestSuccessModal from '../components/RequestSuccessModal';
-import { requestAPI, uploadAPI } from '../config/api';
+import { supabase } from '../config/supabase';
 import '../styles/SpecialOrder.css';
 
 const initialFormState = {
     recipientName: '',
     occasion: '',
-    otherOccasion: '',
     preferences: '',
     addon: '',
     inspirationFile: null,
     message: '',
 };
 
-const SpecialOrder = () => {
+const SpecialOrder = ({ user }) => {
+
     const [formData, setFormData] = useState(initialFormState);
+
     const [status, setStatus] = useState(null);
+
     const [showModal, setShowModal] = useState(false);
+
     const [imagePreview, setImagePreview] = useState(null);
+
     const fileInputRef = useRef(null);
 
+
+
     const handleChange = (event) => {
+
         const { name, value, files } = event.target;
 
+
+
         if (files && files[0]) {
+
             const file = files[0];
+
             setFormData((prev) => ({ ...prev, [name]: file }));
+
             
+
             // Create preview
+
             const reader = new FileReader();
+
             reader.onloadend = () => {
+
                 setImagePreview(reader.result);
+
             };
+
             reader.readAsDataURL(file);
+
             return;
+
         }
 
-        setFormData((prev) => ({
-            ...prev,
-            [name]: value,
-            ...(name === 'occasion' && value !== 'Other' ? { otherOccasion: '' } : {}),
-        }));
+
+
+                setFormData((prev) => ({
+
+
+
+                    ...prev,
+
+
+
+                    [name]: value,
+
+
+
+                }));
+
     };
+
+
 
     const openFilePicker = () => {
+
         if (fileInputRef.current) {
+
             fileInputRef.current.click();
+
         }
+
     };
+
+
 
     const handleUploadKeyDown = (event) => {
+
         if (event.key === 'Enter' || event.key === ' ') {
+
             event.preventDefault();
+
             openFilePicker();
+
         }
+
     };
 
+
+
     const handleSubmit = async (event) => {
+
         event.preventDefault();
 
-        try {
-            let photoUrl = null;
+        setStatus(null);
 
-            // Upload photo if selected
-            if (formData.inspirationFile) {
-                try {
-                    const uploadResponse = await uploadAPI.image(formData.inspirationFile);
-                    if (uploadResponse.data.success) {
-                        photoUrl = uploadResponse.data.url;
-                    }
-                } catch (uploadError) {
-                    console.error('Error uploading image:', uploadError);
-                    setStatus({
-                        type: 'error',
-                        message: 'Failed to upload image. Please try again or try a smaller image.'
-                    });
+
+
+        if (!user) {
+
+            setStatus({ type: 'error', message: 'You must be logged in to place a special order.' });
+
+            return;
+
+        }
+
+
+
+                if (!user.user_metadata?.phone) {
+
+
+
+                    setStatus({ type: 'error', message: 'Please add a phone number to your profile before placing an order.' });
+
+
+
                     return;
+
+
+
                 }
+
+
+
+        try {
+
+                        let imageUrl = null;
+
+            
+
+                        if (formData.inspirationFile) {
+
+                            const file = formData.inspirationFile;
+
+                            const fileName = `${Date.now()}_${file.name}`;
+
+                            const { data: uploadData, error: uploadError } = await supabase.storage
+
+                                .from('request-images')
+
+                                .upload(fileName, file);
+
+            
+
+                            if (uploadError) {
+
+                                console.error('Error uploading image:', uploadError);
+
+                                setStatus({ type: 'error', message: 'Failed to upload image. Please try again.' });
+
+                                return;
+
+                            }
+
+                            
+
+                            const { data: urlData } = supabase.storage.from('request-images').getPublicUrl(fileName);
+
+                            imageUrl = urlData.publicUrl;
+
+                        }
+
+            
+
+                                                const requestData = {
+
+            
+
+                                                    type: 'special_order',
+
+            
+
+                                                    recipient_name: formData.recipientName,
+
+            
+
+                                                    occasion: formData.occasion,
+
+            
+
+                                                    addon: formData.addon,
+
+            
+
+                                                    image_url: imageUrl,
+
+            
+
+                                                                                notes: formData.preferences, // "Your Vision in Words" maps to notes column
+
+            
+
+                                                                                status: 'pending',
+
+            
+
+                                                                                user_id: user.id,
+
+            
+
+                                                                            };
+
+
+
+            const { error: insertError } = await supabase.from('requests').insert([requestData]);
+
+
+
+            if (insertError) {
+
+                console.error('Error submitting special order:', insertError);
+
+                setStatus({ type: 'error', message: 'Failed to submit special order. Please try again.' });
+
+                return;
+
             }
 
-            const requestData = {
-                type: 'special_order',
-                recipient_name: formData.recipientName,
-                occasion: formData.occasion,
-                other_occasion: formData.otherOccasion,
-                preferences: formData.preferences,
-                addon: formData.addon,
-                card_message: formData.message,
-                photo_url: photoUrl,
-                notes: formData.message || `Special Order for ${formData.recipientName || 'recipient'}`
+
+
+            // Keep notification for now, can be moved to a backend function later
+
+            const notifications = JSON.parse(localStorage.getItem('notifications') || '[]');
+
+            const newNotification = {
+
+                id: `notif-${Date.now()}`,
+
+                type: 'request',
+
+                title: 'Special Order Request Submitted!',
+
+                message: `Your special order for ${formData.recipientName || 'recipient'} has been submitted.`,
+
+                icon: 'fa-gift',
+
+                timestamp: new Date().toISOString(),
+
+                read: false,
+
+                link: '/my-orders'
+
             };
 
-            const response = await requestAPI.create(requestData);
+            localStorage.setItem('notifications', JSON.stringify([newNotification, ...notifications]));
 
-            if (response.data.success) {
-                // Create notification
-                const notifications = JSON.parse(localStorage.getItem('notifications') || '[]');
-                const newNotification = {
-                    id: `notif-${Date.now()}`,
-                    type: 'request',
-                    title: 'Special Order Request Submitted!',
-                    message: `Your special order for ${formData.recipientName || 'recipient'} has been submitted and is pending approval.`,
-                    icon: 'fa-gift',
-                    timestamp: new Date().toISOString(),
-                    read: false,
-                    link: '/my-orders'
-                };
-                localStorage.setItem('notifications', JSON.stringify([newNotification, ...notifications]));
 
-                setShowModal(true);
-                setFormData(initialFormState);
-                setImagePreview(null);
-                if (fileInputRef.current) {
-                    fileInputRef.current.value = '';
-                }
-                setStatus(null);
+
+            setShowModal(true);
+
+            setFormData(initialFormState);
+
+            setImagePreview(null);
+
+            if (fileInputRef.current) {
+
+                fileInputRef.current.value = '';
+
             }
+
+            setStatus(null);
+
+            
+
         } catch (error) {
-            console.error('Error submitting special order:', error);
-            setStatus({
-                type: 'error',
-                message: 'Failed to submit special order. Please try again.'
-            });
+
+            console.error('Error in handleSubmit:', error);
+
+            setStatus({ type: 'error', message: 'An unexpected error occurred. Please try again.' });
+
         }
+
     };
 
     return (
@@ -184,26 +345,8 @@ const SpecialOrder = () => {
                                                     <option value="MothersDay">Mother's Day</option>
                                                     <option value="JustBecause">Just Because</option>
                                                     <option value="Apology">Apology</option>
-                                                    <option value="Other">Other</option>
                                                 </select>
                                             </div>
-                                            {formData.occasion === 'Other' && (
-                                                <div className="col-12">
-                                                    <div className="p-4 bg-white rounded-4 border shadow-sm">
-                                                        <label className="form-label fw-semibold" htmlFor="otherOccasion">Tell us about the occasion</label>
-                                                        <input
-                                                            type="text"
-                                                            id="otherOccasion"
-                                                            name="otherOccasion"
-                                                            className="form-control bg-light border-0 py-3"
-                                                            placeholder="Describe the celebration"
-                                                            value={formData.otherOccasion}
-                                                            onChange={handleChange}
-                                                            required={formData.occasion === 'Other'}
-                                                        />
-                                                    </div>
-                                                </div>
-                                            )}
                                             <div className="col-12 mt-4">
                                                 <label className="form-label fw-semibold" htmlFor="preferences">Your Vision in Words</label>
                                                 <textarea

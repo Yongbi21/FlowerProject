@@ -42,6 +42,24 @@ const formatTimestamp = (dateString) => {
   }
 };
 
+const getStatusLabel = (status) => {
+  if (!status) return '';
+  return status.replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase());
+};
+
+const getStatusColor = (status) => {
+  switch (status) {
+    case 'completed': return '#4CAF50';
+    case 'claimed': return '#4CAF50';
+    case 'ready_for_pick_up': return '#FFC107';
+    case 'out_for_delivery': return '#FF9800';
+    case 'processing': return '#2196F3';
+    case 'cancelled': return '#f44336';
+    case 'pending': return '#FFA726';
+    default: return '#999';
+  }
+};
+
 const AdminDashboard = () => {
   const navigation = useNavigation();
   const [activeTab, setActiveTab] = useState('catalogue');
@@ -804,7 +822,7 @@ const CatalogueTab = () => {
                   setDeleteModalVisible(false);
                   if (productToDeleteId) {
                     try {
-                      await productAPI.delete(productToDeleteId);
+                      await productAPI.deleteProduct(productToDeleteId);
                       Alert.alert('Success', 'Product deleted');
                       await loadData();
                     } catch (error) {
@@ -841,7 +859,9 @@ const OrdersTab = () => {
   const statusOptions = ['pending', 'processing', 'out_for_delivery', 'ready_for_pick_up', 'claimed', 'completed', 'cancelled'];
 
   const openReceiptModal = (url) => {
-    setSelectedReceiptUrl(url);
+    const finalUrl = url.startsWith('http') ? url : `${BASE_URL}${url}`;
+    console.log('Attempting to open receipt modal with URL:', finalUrl); // Added console log
+    setSelectedReceiptUrl(finalUrl);
     setReceiptModalVisible(true);
   };
 
@@ -952,24 +972,6 @@ const OrdersTab = () => {
     }
   };
   
-  const getStatusLabel = (status) => {
-    if (!status) return '';
-    return status.replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase());
-  };
-
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'completed': return '#4CAF50';
-      case 'claimed': return '#4CAF50';
-      case 'ready_for_pick_up': return '#FFC107';
-      case 'out_for_delivery': return '#FF9800';
-      case 'processing': return '#2196F3';
-      case 'cancelled': return '#f44336';
-      case 'pending': return '#FFA726';
-      default: return '#999';
-    }
-  };
-
   const getPaymentColor = (status) => {
     return status === 'paid' ? '#4CAF50' : '#FF9800';
   };
@@ -1050,15 +1052,17 @@ const OrdersTab = () => {
       </View>
 
       {/* Status Badges */}
-              <View style={styles.orderBadges}>
-                <View style={[styles.badge, { backgroundColor: getStatusColor(item.status) }]}>
-                  <Text style={styles.badgeText}>{getStatusLabel(item.status)}</Text>
-                </View>
-                          <View style={[styles.badge, { backgroundColor: getPaymentColor(item.payment_status) }]}>
-                            <Text style={styles.badgeText}>
-                              {item.payment_status?.toLowerCase() === 'cod' ? 'Cash On Delivery' : getStatusLabel(item.payment_status)}
-                            </Text>
-                          </View>              </View>
+      <View style={styles.orderBadges}>
+        <View style={[styles.badge, { backgroundColor: getStatusColor(item.status) }]}>
+          <Text style={styles.badgeText}>{getStatusLabel(item.status)}</Text>
+        </View>
+        <View style={[styles.badge, { backgroundColor: getPaymentColor(item.payment_status) }]}>
+          <Text style={styles.badgeText}>
+            {item.payment_status?.toLowerCase() === 'cod' ? 'Cash On Delivery' : getStatusLabel(item.payment_status)}
+          </Text>
+        </View>
+      </View>
+
       {/* Pricing */}
       <View style={styles.pricingSection}>
         <View style={styles.priceRow}>
@@ -1084,18 +1088,16 @@ const OrdersTab = () => {
             style={[styles.actionButton, styles.acceptButton]}
             onPress={() => handleAccept(item.id)}
           >
-            <Ionicons name="checkmark-circle-outline" size={18} color="#fff" />
             <Text style={styles.buttonText}>Accept</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.actionButton, styles.rejectButton]}
             onPress={() => handleDecline(item)}
           >
-            <Ionicons name="close-circle-outline" size={18} color="#fff" />
             <Text style={styles.buttonText}>Decline</Text>
           </TouchableOpacity>
         </View>
-      ) : (
+      ) : (!['pending', 'cancelled', 'completed'].includes(item.status) && (
         <TouchableOpacity
           style={styles.changeStatusButton}
           onPress={() => openStatusModal(item)}
@@ -1103,7 +1105,7 @@ const OrdersTab = () => {
           <Ionicons name="create-outline" size={16} color="#2196F3" />
           <Text style={styles.changeStatusText}>Change Status</Text>
         </TouchableOpacity>
-      )}
+      ))}
     </View>
   );
 
@@ -1212,7 +1214,15 @@ const OrdersTab = () => {
                 <Ionicons name="close" size={24} color="#333" />
               </TouchableOpacity>
             </View>
-            <Image source={{ uri: selectedReceiptUrl }} style={styles.receiptImage} resizeMode="contain" />
+            <Image
+              source={{ uri: selectedReceiptUrl }}
+              style={styles.receiptImage}
+              resizeMode="contain"
+              onError={(e) => {
+                console.log('Image loading error:', e.nativeEvent.error);
+                Alert.alert('Image Load Error', 'Failed to load receipt image. The URL might be invalid or the image is not accessible.');
+              }}
+            />
           </View>
         </View>
       </Modal>
@@ -1577,6 +1587,10 @@ const RequestsTab = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
+  const [requestStatusModalVisible, setRequestStatusModalVisible] = useState(false);
+  const [requestToUpdate, setRequestToUpdate] = useState(null);
+  const [selectedRequestStatus, setSelectedRequestStatus] = useState(null);
+  const requestStatusOptions = ['pending', 'processing', 'ready_for_pickup', 'out_for_delivery', 'completed', 'cancelled'];
 
   useEffect(() => {
     loadRequests();
@@ -1584,23 +1598,25 @@ const RequestsTab = () => {
 
   const renderBookingDetails = (request) => (
     <>
-      <DetailSection label="Full Name:" value={request.full_name} />
+      <DetailSection label="Customer Name:" value={request.user_name} />
+      <DetailSection label="Customer Email:" value={request.user_email} />
+      <DetailSection label="Customer Phone:" value={request.user_phone} />
       <DetailSection label="Occasion:" value={request.occasion} />
-      <DetailSection label="Other Occasion:" value={request.other_occasion} />
       <DetailSection label="Event Date:" value={request.event_date} />
       <DetailSection label="Venue:" value={request.venue} />
-      <DetailSection label="Additional Notes:" value={request.additional_notes || request.notes} />
+      <DetailSection label="Additional Notes:" value={request.notes} />
     </>
   );
 
   const renderSpecialOrderDetails = (request) => (
     <>
+      <DetailSection label="Customer Name:" value={request.user_name} />
+      <DetailSection label="Customer Email:" value={request.user_email} />
+      <DetailSection label="Customer Phone:" value={request.user_phone} />
       <DetailSection label="Recipient Name:" value={request.recipient_name} />
       <DetailSection label="Occasion:" value={request.occasion} />
-      <DetailSection label="Other Occasion:" value={request.other_occasion} />
-      <DetailSection label="Preferences:" value={request.preferences} />
+      <DetailSection label="Preferences:" value={request.notes} />
       <DetailSection label="Add-on:" value={request.addon} />
-      <DetailSection label="Card Message:" value={request.card_message || request.notes} />
     </>
   );
 
@@ -1634,13 +1650,36 @@ const RequestsTab = () => {
     }
   };
 
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'pending': return '#FFA726';
-      case 'accepted': return '#4CAF50';
-      case 'cancelled': return '#F44336';
-      case 'quoted': return '#2196F3';
-      default: return '#999';
+  const openRequestStatusModal = (request) => {
+    setRequestToUpdate(request);
+    setSelectedRequestStatus(request.status); // Pre-select current status
+    setRequestStatusModalVisible(true);
+  };
+
+  const confirmRequestStatusChange = async () => {
+    if (!requestToUpdate || !selectedRequestStatus) return;
+    const requestId = requestToUpdate.id;
+    setRequestStatusModalVisible(false); // Close modal immediately
+
+    try {
+      await adminAPI.updateRequestStatus(requestId, selectedRequestStatus);
+      Toast.show({
+        type: 'success',
+        text1: 'Request Status Updated',
+        text2: `Request #${requestToUpdate.request_number} is now ${selectedRequestStatus}.`
+      });
+      setModalVisible(false); // Close the main request details modal
+      loadRequests(); // Reload requests to reflect changes
+    } catch (error) {
+      console.error('Update request status error:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Update Failed',
+        text2: error.response?.data?.message || 'Failed to update request status'
+      });
+    } finally {
+      setRequestToUpdate(null);
+      setSelectedRequestStatus(null);
     }
   };
 
@@ -1655,17 +1694,17 @@ const RequestsTab = () => {
       <View style={styles.requestHeader}>
         <Text style={styles.requestType}>{getStatusLabel(item.type)}</Text>
         <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}>
-          <Text style={styles.statusText}>{item.status}</Text>
+          <Text style={styles.statusText}>{getStatusLabel(item.status)}</Text>
         </View>
       </View>
 
       <Text style={styles.requestCustomer}>{item.user_name || 'Customer'}</Text>
       <Text style={styles.requestDate}>{formatTimestamp(item.created_at)}</Text>
 
-      {item.photo_url && (
+      {item.image_url && (
         <View style={styles.requestPreviewImageContainer}>
           <Image
-            source={{ uri: item.photo_url.startsWith('http') ? item.photo_url : `${BASE_URL}${item.photo_url}` }}
+            source={{ uri: item.image_url.startsWith('http') ? item.image_url : `${BASE_URL}${item.image_url}` }}
             style={styles.requestPreviewImage}
           />
           <Text style={styles.viewDetailsText}>View Details & Photo</Text>
@@ -1677,6 +1716,7 @@ const RequestsTab = () => {
   return (
     <View style={styles.tabContent}>
       <Text style={styles.tabTitle}>Booking & Custom Requests</Text>
+      
       <FlatList
         data={requests}
         renderItem={renderRequest}
@@ -1699,7 +1739,7 @@ const RequestsTab = () => {
               <ScrollView showsVerticalScrollIndicator={false}>
                 <View style={styles.detailSection}>
                   <Text style={styles.detailLabel}>Type:</Text>
-                  <Text style={styles.detailValue}>{selectedRequest.type}</Text>
+                  <Text style={styles.detailValue}>{getStatusLabel(selectedRequest.type)}</Text>
                 </View>
                 <View style={styles.detailSection}>
                   <Text style={styles.detailLabel}>Submitted:</Text>
@@ -1711,11 +1751,11 @@ const RequestsTab = () => {
                 {selectedRequest.type === 'special_order' && renderSpecialOrderDetails(selectedRequest)}
 
 
-                {selectedRequest.photo_url && (
+                {selectedRequest.image_url && (
                   <View style={styles.imageSection}>
                     <Text style={styles.detailLabel}>Inspiration Photo:</Text>
                     <Image
-                      source={{ uri: selectedRequest.photo_url.startsWith('http') ? selectedRequest.photo_url : `http://192.168.111.94:5000${selectedRequest.photo_url}` }}
+                      source={{ uri: selectedRequest.image_url.startsWith('http') ? selectedRequest.image_url : `http://192.168.111.94:5000${selectedRequest.image_url}` }}
                       style={styles.fullImage}
                       resizeMode="contain"
                     />
@@ -1723,25 +1763,96 @@ const RequestsTab = () => {
                 )}
 
                 <View style={styles.actionButtons}>
-                  <TouchableOpacity
-                    style={[styles.actionButton, styles.acceptButton]}
-                    onPress={() => handleStatusChange(selectedRequest.id, 'accepted')}
-                  >
-                    <Text style={styles.buttonText}>Accept</Text>
-                  </TouchableOpacity>
+                  {/* Accept and Decline for Pending Requests */}
+                  {selectedRequest.status === 'pending' && (
+                    <>
+                      <TouchableOpacity
+                        style={[styles.actionButton, styles.acceptButton]}
+                        onPress={() => handleStatusChange(selectedRequest.id, 'processing')}
+                      >
+                        <Text style={styles.buttonText}>Accept</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.actionButton, styles.rejectButton]}
+                        onPress={() => handleStatusChange(selectedRequest.id, 'cancelled')}
+                      >
+                        <Text style={styles.buttonText}>Decline</Text>
+                      </TouchableOpacity>
+                    </>
+                  )}
 
-                  <TouchableOpacity
-                    style={[styles.actionButton, styles.rejectButton]}
-                    onPress={() => handleStatusChange(selectedRequest.id, 'cancelled')}
-                  >
-                    <Text style={styles.buttonText}>Decline</Text>
-                  </TouchableOpacity>
+                  {/* Change Status for Customized Requests (unless cancelled, completed, declined, or pending) */}
+                  {selectedRequest.type === 'customized' &&
+                   selectedRequest.status !== 'cancelled' &&
+                   selectedRequest.status !== 'completed' &&
+                   selectedRequest.status !== 'declined' &&
+                   selectedRequest.status !== 'pending' && (
+                    <TouchableOpacity
+                      style={[styles.actionButton, styles.changeStatusButton]}
+                      onPress={() => openRequestStatusModal(selectedRequest)}
+                    >
+                      <Text style={styles.buttonText}>Change Status</Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {/* Complete for other processing requests (non-customized) */}
+                  {selectedRequest.status === 'processing' &&
+                   selectedRequest.type !== 'customized' && (
+                    <TouchableOpacity
+                      style={[styles.actionButton, styles.saveButton]}
+                      onPress={() => handleStatusChange(selectedRequest.id, 'completed')}
+                    >
+                      <Text style={styles.buttonText}>Complete</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               </ScrollView>
             )}
           </View>
         </View>
       </Modal>
+
+      {/* Request Change Status Modal */}
+      <Modal visible={requestStatusModalVisible} animationType="fade" transparent>
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Change Request Status</Text>
+              <TouchableOpacity onPress={() => setRequestStatusModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#333" />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.modalSubtitle}>Request #{requestToUpdate?.request_number}</Text>
+
+            <View style={styles.radioGroup}>
+              {requestStatusOptions.map(status => (
+                <TouchableOpacity key={status} style={styles.radioButtonContainer} onPress={() => setSelectedRequestStatus(status)}>
+                  <View style={[styles.radioButton, selectedRequestStatus === status && styles.radioButtonSelected]}>
+                    {selectedRequestStatus === status && <View style={styles.radioButtonInner} />}
+                  </View>
+                  <Text style={styles.radioLabel}>{getStatusLabel(status)}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => setRequestStatusModalVisible(false)}
+              >
+                <Text style={styles.buttonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.saveButton]}
+                onPress={confirmRequestStatusChange}
+              >
+                <Text style={styles.buttonText}>Confirm</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
     </View>
   );
 };
@@ -2761,7 +2872,7 @@ const styles = StyleSheet.create({
   productImage: {
     width: '100%',
     height: '100%',
-    resizeMode: 'cover',
+    resizeMode: 'contain',
   },
   productImagePlaceholder: {
     width: '100%',
@@ -3165,7 +3276,7 @@ const styles = StyleSheet.create({
   uploadedImage: {
     width: '100%',
     height: '100%',
-    resizeMode: 'cover',
+    resizeMode: 'contain',
   },
   imageUploadPlaceholder: {
     alignItems: 'center',
@@ -3360,7 +3471,7 @@ const styles = StyleSheet.create({
   uploadedImage: {
     width: '100%',
     height: '100%',
-    resizeMode: 'cover',
+    resizeMode: 'contain',
   },
   imageUploadPlaceholder: {
     alignItems: 'center',
@@ -3546,10 +3657,11 @@ const styles = StyleSheet.create({
     color: '#666',
     marginBottom: 4,
   },
-  paymentMethodText: {
+  viewReceiptButton: {
+    color: '#2196F3', // A standard blue for links/actions
     fontSize: 14,
-    color: '#333',
-    fontWeight: '500',
+    fontWeight: '600',
+    marginLeft: 10,
   },
   pricingSection: {
     backgroundColor: '#f8f9fa',
@@ -3822,7 +3934,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 16,
   },
-  // Styles for the redesigned Change Status Modal
   modalSubtitle: {
     fontSize: 16,
     color: '#666',
@@ -3863,15 +3974,27 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#333',
   },
-  viewReceiptButton: {
-    color: '#2196F3',
+  receiptImage: { // Add this style
+    width: '100%',
+    height: 400, // Adjust height as needed
+    backgroundColor: '#eee', // Placeholder background
+  },
+  // Re-define changeStatusButton to ensure proper styling
+  changeStatusButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingVertical: 15,
+    borderRadius: 8,
+    backgroundColor: '#2196F3', // Example blue background
+  },
+  // Ensure changeStatusText is applied correctly
+  changeStatusText: {
+    color: '#fff', // White text for the blue background
     fontSize: 14,
     fontWeight: '600',
-  },
-  receiptImage: {
-    width: '100%',
-    height: 400,
-    marginTop: 10,
   },
 });
 

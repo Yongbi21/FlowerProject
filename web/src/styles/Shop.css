@@ -749,10 +749,18 @@
 }
 
 .order-item-img {
-    width: 70px;
-    height: 70px;
+    width: 100px; /* Increased size for better visibility */
+    height: 100px; /* Increased size for better visibility */
     border-radius: 8px;
     object-fit: cover;
+}
+
+.customized-bouquet-img {
+    width: 120px; /* Larger size for customized bouquets */
+    height: 120px; /* Larger size for customized bouquets */
+    object-fit: contain; /* Ensure the whole image is visible */
+    background-color: #f0f0f0; /* Add a background for better contrast if image has transparent parts */
+    padding: 5px; /* Optional: add some padding */
 }
 
 .order-item-name {

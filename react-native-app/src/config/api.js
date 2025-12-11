@@ -61,7 +61,7 @@ export const productAPI = {
 
     create: async (formData) => {
         let imageUrl = null;
-        const imageFile = formData.get('image');
+        const imageFile = formData.image;
         
         console.log('=== CREATE PRODUCT DEBUG ===');
         console.log('imageFile type:', typeof imageFile);
@@ -119,11 +119,11 @@ export const productAPI = {
 
         // Prepare product data
         const productToInsert = {
-            name: formData.get('name'),
-            price: parseFloat(formData.get('price')),
-            stock_quantity: parseInt(formData.get('stock_quantity'), 10) || 0,
-            description: formData.get('description') || '',
-            category_id: parseInt(formData.get('category_id'), 10),
+            name: formData.name,
+            price: parseFloat(formData.price),
+            stock_quantity: parseInt(formData.stock_quantity, 10) || 0,
+            description: formData.description || '',
+            category_id: parseInt(formData.category_id, 10),
             image_url: imageUrl,
             is_active: true,
         };
@@ -149,8 +149,8 @@ export const productAPI = {
     },
 
     update: async function(id, formData) {
-        let imageUrl = formData.get('image_url_hidden');
-        const imageFile = formData.get('image');
+        let imageUrl = formData.image_url_hidden;
+        const imageFile = formData.image;
         console.log('productAPI.update: existing imageUrl (hidden):', imageUrl);
         console.log('productAPI.update: imageFile from formData (full object):', imageFile);
 
@@ -178,11 +178,11 @@ export const productAPI = {
         }
 
         const productToUpdate = {
-            name: formData.get('name'),
-            price: parseFloat(formData.get('price')),
-            stock_quantity: parseInt(formData.get('stock_quantity'), 10),
-            description: formData.get('description'),
-            category_id: parseInt(formData.get('category_id'), 10),
+            name: formData.name,
+            price: parseFloat(formData.price),
+            stock_quantity: parseInt(formData.stock_quantity, 10),
+            description: formData.description,
+            category_id: parseInt(formData.category_id, 10),
             image_url: imageUrl,
         };
         
@@ -204,14 +204,26 @@ export const productAPI = {
     },
 
     deleteProduct: async (id) => {
-        const { error } = await supabase
+        // First, delete all order_items referencing this product
+        const { error: orderItemsError } = await supabase
+            .from('order_items')
+            .delete()
+            .eq('product_id', parseInt(id, 10));
+
+        if (orderItemsError) {
+            console.error('Error deleting associated order items:', orderItemsError);
+            throw orderItemsError;
+        }
+
+        // Then, delete the product itself
+        const { error: productError } = await supabase
             .from('products')
             .delete()
             .eq('id', parseInt(id, 10));
 
-        if (error) {
-            console.error('Error deleting product:', error);
-            throw error;
+        if (productError) {
+            console.error('Error deleting product:', productError);
+            throw productError;
         }
 
         return { data: { success: true } };
@@ -413,8 +425,51 @@ export const adminAPI = {
     },
 
     getAllRequests: async (params) => {
-        const requests = JSON.parse(await AsyncStorage.getItem('requests') || '[]');
-        return { data: requests || [] };
+        let query = supabase
+            .from('requests')
+            .select(`
+                id,
+                request_number,
+                type,
+                status,
+                image_url,
+                notes,
+                created_at,
+                users (
+                    name,
+                    email,
+                    phone
+                )
+            `)
+            .order('created_at', { ascending: false });
+
+        const { data: requests, error } = await query;
+
+        if (error) {
+            console.error('Supabase query error for requests:', error);
+            return { data: { requests: [] } };
+        }
+
+        const formattedRequests = requests.map(req => {
+            const userData = req.users || {};
+            // requestData is no longer fetched
+
+            return {
+                id: req.id,
+                request_number: req.request_number,
+                type: req.type,
+                status: req.status,
+                image_url: req.image_url,
+                notes: req.notes,
+                created_at: req.created_at,
+                user_name: userData.name,
+                user_email: userData.email,
+                user_phone: userData.phone,
+                // No longer spreading requestData here
+            };
+        });
+
+        return { data: { requests: formattedRequests } };
     },
 
     provideQuote: async (id, data) => {
@@ -438,13 +493,18 @@ export const adminAPI = {
     },
 
     updateRequestStatus: async (id, status) => {
-        const requests = JSON.parse(await AsyncStorage.getItem('requests') || '[]');
-        const index = requests.findIndex(r => r.id === id);
-        if (index !== -1) {
-            requests[index].status = status;
-            await AsyncStorage.setItem('requests', JSON.stringify(requests));
+        const { data, error } = await supabase
+            .from('requests')
+            .update({ status: status })
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (error) {
+            console.error('Error updating request status:', error);
+            throw error;
         }
-        return { data: { success: true } };
+        return { data: { success: true, request: data } };
     },
 
     getAllStock: async () => {

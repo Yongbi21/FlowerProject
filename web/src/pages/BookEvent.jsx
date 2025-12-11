@@ -1,19 +1,18 @@
 import React, { useMemo, useState, useRef } from 'react';
 import RequestSuccessModal from '../components/RequestSuccessModal';
-import { requestAPI, uploadAPI } from '../config/api';
+import { supabase } from '../config/supabase';
 import '../styles/BookEvent.css';
 
 const initialFormState = {
-    fullName: '',
+    recipientName: '',
     eventType: '',
-    otherEventType: '',
     eventDate: '',
     venue: '',
     details: '',
     inspirationFile: null,
 };
 
-const BookEvent = () => {
+const BookEvent = ({ user }) => {
     const [formData, setFormData] = useState(initialFormState);
     const [status, setStatus] = useState(null);
     const [showModal, setShowModal] = useState(false);
@@ -52,7 +51,6 @@ const BookEvent = () => {
         setFormData((prev) => ({
             ...prev,
             [name]: nextValue,
-            ...(name === 'eventType' && nextValue !== 'Other' ? { otherEventType: '' } : {}),
         }));
     };
 
@@ -71,58 +69,70 @@ const BookEvent = () => {
 
     const handleSubmit = async (event) => {
         event.preventDefault();
+        setStatus(null);
+
+        if (!user) {
+            setStatus({ type: 'error', message: 'You must be logged in to book an event.' });
+            return;
+        }
+
+        if (!user.user_metadata?.phone) {
+            setStatus({ type: 'error', message: 'Please add a phone number to your profile before booking an event.' });
+            return;
+        }
 
         try {
+            let imageUrl = null;
 
-
-            let photoUrl = null;
-
-            // Upload photo if selected
             if (formData.inspirationFile) {
-                try {
-                    const uploadResponse = await uploadAPI.image(formData.inspirationFile);
-                    if (uploadResponse.data.success) {
-                        photoUrl = uploadResponse.data.url;
-                    }
-                } catch (uploadError) {
+                const file = formData.inspirationFile;
+                const fileName = `${Date.now()}_${file.name}`;
+                const { data: uploadData, error: uploadError } = await supabase.storage
+                    .from('request-images')
+                    .upload(fileName, file);
+
+                if (uploadError) {
                     console.error('Error uploading image:', uploadError);
-                    setStatus({
-                        type: 'error',
-                        message: 'Failed to upload image. Please try again or try a smaller image.'
-                    });
+                    setStatus({ type: 'error', message: 'Failed to upload image. Please try again.' });
                     return;
                 }
+                
+                const { data: urlData } = supabase.storage.from('request-images').getPublicUrl(fileName);
+                imageUrl = urlData.publicUrl;
             }
 
             const requestData = {
                 type: 'booking',
-                full_name: formData.fullName,
+                recipient_name: formData.recipientName,
                 occasion: formData.eventType,
-                other_occasion: formData.otherEventType,
                 event_date: formData.eventDate,
                 venue: formData.venue,
                 additional_notes: formData.details,
-                photo_url: photoUrl,
-                notes: formData.details // Keep notes for general purpose
+                image_url: imageUrl,
+                notes: formData.details,
+                status: 'pending',
+                user_id: user.id,
             };
 
-            const response = await requestAPI.create(requestData);
+            const { error: insertError } = await supabase.from('requests').insert([requestData]);
 
-            if (response.data.success) {
-                setShowModal(true);
-                setFormData(initialFormState);
-                setImagePreview(null);
-                if (fileInputRef.current) {
-                    fileInputRef.current.value = '';
-                }
-                setStatus(null);
+            if (insertError) {
+                console.error('Error submitting booking:', insertError);
+                setStatus({ type: 'error', message: 'Failed to submit booking. Please try again.' });
+                return;
             }
+
+            setShowModal(true);
+            setFormData(initialFormState);
+            setImagePreview(null);
+            if (fileInputRef.current) {
+                fileInputRef.current.value = '';
+            }
+            setStatus(null);
+
         } catch (error) {
-            console.error('Error submitting booking:', error);
-            setStatus({
-                type: 'error',
-                message: 'Failed to submit booking. Please try again.'
-            });
+            console.error('Error in handleSubmit:', error);
+            setStatus({ type: 'error', message: 'An unexpected error occurred. Please try again.' });
         }
     };
 
@@ -150,14 +160,14 @@ const BookEvent = () => {
                                     <form onSubmit={handleSubmit}>
                                         <div className="row g-4">
                                             <div className="col-md-6">
-                                                <label className="form-label fw-semibold" htmlFor="fullName">Full Name</label>
+                                                <label className="form-label fw-semibold" htmlFor="recipientName">Recipient Name</label>
                                                 <input
                                                     type="text"
-                                                    id="fullName"
-                                                    name="fullName"
+                                                    id="recipientName"
+                                                    name="recipientName"
                                                     className="form-control bg-light border-0 py-3"
-                                                    placeholder="Enter your full name"
-                                                    value={formData.fullName}
+                                                    placeholder="Enter recipient's name"
+                                                    value={formData.recipientName}
                                                     onChange={handleChange}
                                                     required
                                                 />
@@ -181,23 +191,6 @@ const BookEvent = () => {
                                                     <option value="Other">Other</option>
                                                 </select>
                                             </div>
-                                            {formData.eventType === 'Other' && (
-                                                <div className="col-12">
-                                                    <div className="p-4 bg-white rounded-4 border shadow-sm">
-                                                        <label className="form-label fw-semibold" htmlFor="otherEventType">Tell us about the occasion</label>
-                                                        <input
-                                                            type="text"
-                                                            id="otherEventType"
-                                                            name="otherEventType"
-                                                            className="form-control bg-light border-0 py-3"
-                                                            placeholder="Describe the celebration"
-                                                            value={formData.otherEventType}
-                                                            onChange={handleChange}
-                                                            required={formData.eventType === 'Other'}
-                                                        />
-                                                    </div>
-                                                </div>
-                                            )}
                                             <div className="col-md-6">
                                                 <label className="form-label fw-semibold" htmlFor="eventDate">Event Date</label>
                                                 <input

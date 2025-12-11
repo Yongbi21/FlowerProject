@@ -166,9 +166,9 @@ function AppContent() {
         <Route path="/cart" element={<Cart cart={cart} updateCartItem={updateCartItem} removeFromCart={removeFromCart} />} />
         <Route path="/login" element={<Login onLogin={login} />} />
         <Route path="/signup" element={<Signup />} />
-        <Route path="/book-event" element={<BookEvent />} />
+        <Route path="/book-event" element={<BookEvent user={user} />} />
         <Route path="/customized" element={<Customized addToCart={addToCart} />} />
-        <Route path="/special-order" element={<SpecialOrder />} />
+        <Route path="/special-order" element={<SpecialOrder user={user} />} />
         <Route path="/product/:productId" element={<ProductDetail addToCart={addToCart} />} />
         <Route path="/checkout" element={<Checkout setCart={setCart} user={user} />} />
         <Route path="/order-success/:orderId" element={<OrderSuccess />} />

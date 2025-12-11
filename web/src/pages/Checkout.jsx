@@ -324,7 +324,8 @@ const Checkout = ({ setCart, user }) => {
             product_id: item.id,
             name: item.name, // Denormalized
             price: item.price, // Denormalized
-            quantity: item.qty || 1
+            quantity: item.qty || 1,
+            image_url: item.image_url || item.image || item.photo, // Include image URL
         }));
 
         const { error: itemsError } = await supabase
@@ -567,7 +568,7 @@ const Checkout = ({ setCart, user }) => {
                             {checkoutItems.map((item, index) => (
                                 <div key={index} className="checkout-item">
                                     <img
-                                        src={item.image}
+                                        src={item.image_url || item.image || item.photo}
                                         alt={item.name}
                                         className="checkout-item-img"
                                         onError={(e) => e.target.src = 'https://via.placeholder.com/80'}
