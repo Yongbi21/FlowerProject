@@ -1061,7 +1061,7 @@ const OrdersTab = () => {
               <Text style={styles.buttonText}>Decline</Text>
             </TouchableOpacity>
           </View>
-        ) : item.status === 'accepted' ? (
+        ) : item.status === 'processing' ? (
           <TouchableOpacity
             style={styles.changeStatusButton}
             onPress={() => {
