@@ -878,7 +878,7 @@ const OrdersTab = () => {
           style: 'destructive',
           onPress: async () => {
             try {
-              await adminAPI.declineOrder(orderId, 'cancelled');
+              await adminAPI.declineOrder(orderId, 'cancelled', 'Declined by admin');
               Alert.alert('Success', 'Order declined');
               await loadOrders();
             } catch (error) {
