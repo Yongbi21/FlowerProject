@@ -444,8 +444,17 @@ export const adminAPI = {
     },
 
     getAllRequests: async (params) => {
-        const requests = JSON.parse(await AsyncStorage.getItem('requests') || '[]');
-        return { data: requests || [] };
+        const { data, error } = await supabase
+            .from('requests')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+        if (error) {
+            console.error('Error fetching requests:', error);
+            throw error;
+        }
+
+        return { data: { requests: data || [] } };
     },
 
     provideQuote: async (id, data) => {
@@ -469,13 +478,18 @@ export const adminAPI = {
     },
 
     updateRequestStatus: async (id, status) => {
-        const requests = JSON.parse(await AsyncStorage.getItem('requests') || '[]');
-        const index = requests.findIndex(r => r.id === id);
-        if (index !== -1) {
-            requests[index].status = status;
-            await AsyncStorage.setItem('requests', JSON.stringify(requests));
+        const { data, error } = await supabase
+            .from('requests')
+            .update({ status: status })
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (error) {
+            console.error('Error updating request status:', error);
+            throw error;
         }
-        return { data: { success: true } };
+        return { data: { success: true, request: data } };
     },
 
     getAllStock: async () => {
