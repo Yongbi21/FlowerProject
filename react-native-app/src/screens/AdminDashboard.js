@@ -954,7 +954,7 @@ const OrdersTab = () => {
   
   const getStatusLabel = (status) => {
     if (!status) return '';
-    return status.replace(/_/g, ' ').replace(/\w/g, char => char.toUpperCase());
+    return status.replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase());
   };
 
   const getStatusColor = (status) => {
