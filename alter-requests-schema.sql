@@ -13,8 +13,6 @@ ALTER TABLE requests
   ADD COLUMN addon VARCHAR(255),
   ADD COLUMN card_message TEXT,
   ADD COLUMN full_name VARCHAR(255),
-  ADD COLUMN event_type VARCHAR(255),
-  ADD COLUMN other_event_type VARCHAR(255),
   ADD COLUMN event_date DATE,
   ADD COLUMN venue TEXT,
   ADD COLUMN additional_notes TEXT;
@@ -26,14 +24,12 @@ ALTER TABLE requests
 UPDATE requests
 SET
   recipient_name = data->>'recipientName',
-  occasion = data->>'occasion',
-  other_occasion = data->>'otherOccasion',
+  occasion = COALESCE(data->>'eventType', data->>'occasion'),
+  other_occasion = COALESCE(data->>'otherEventType', data->>'otherOccasion'),
   preferences = data->>'preferences',
   addon = data->>'addon',
   card_message = data->>'message',
   full_name = data->>'fullName',
-  event_type = data->>'eventType',
-  other_event_type = data->>'otherEventType',
   event_date = (data->>'eventDate')::DATE,
   venue = data->>'venue',
   additional_notes = data->>'details'
@@ -52,14 +48,12 @@ ALTER TABLE requests
 -- (This would fail if there are special_order rows with NULL full_name)
 
 COMMENT ON COLUMN requests.recipient_name IS 'From SpecialOrder.jsx';
-COMMENT ON COLUMN requests.occasion IS 'From SpecialOrder.jsx';
-COMMENT ON COLUMN requests.other_occasion IS 'From SpecialOrder.jsx';
+COMMENT ON COLUMN requests.occasion IS 'Shared: from SpecialOrder.jsx (occasion) and BookEvent.jsx (eventType)';
+COMMENT ON COLUMN requests.other_occasion IS 'Shared: from SpecialOrder.jsx (otherOccasion) and BookEvent.jsx (otherEventType)';
 COMMENT ON COLUMN requests.preferences IS 'From SpecialOrder.jsx';
 COMMENT ON COLUMN requests.addon IS 'From SpecialOrder.jsx';
 COMMENT ON COLUMN requests.card_message IS 'From SpecialOrder.jsx';
 COMMENT ON COLUMN requests.full_name IS 'From BookEvent.jsx';
-COMMENT ON COLUMN requests.event_type IS 'From BookEvent.jsx';
-COMMENT ON COLUMN requests.other_event_type IS 'From BookEvent.jsx';
 COMMENT ON COLUMN requests.event_date IS 'From BookEvent.jsx';
 COMMENT ON COLUMN requests.venue IS 'From BookEvent.jsx';
 COMMENT ON COLUMN requests.additional_notes IS 'From BookEvent.jsx';

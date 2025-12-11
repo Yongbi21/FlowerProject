@@ -1585,8 +1585,8 @@ const RequestsTab = () => {
   const renderBookingDetails = (request) => (
     <>
       <DetailSection label="Full Name:" value={request.full_name} />
-      <DetailSection label="Event Type:" value={request.event_type} />
-      <DetailSection label="Other Event Type:" value={request.other_event_type} />
+      <DetailSection label="Occasion:" value={request.occasion} />
+      <DetailSection label="Other Occasion:" value={request.other_occasion} />
       <DetailSection label="Event Date:" value={request.event_date} />
       <DetailSection label="Venue:" value={request.venue} />
       <DetailSection label="Additional Notes:" value={request.additional_notes || request.notes} />

@@ -97,8 +97,8 @@ const BookEvent = () => {
             const requestData = {
                 type: 'booking',
                 full_name: formData.fullName,
-                event_type: formData.eventType,
-                other_event_type: formData.otherEventType,
+                occasion: formData.eventType,
+                other_occasion: formData.otherEventType,
                 event_date: formData.eventDate,
                 venue: formData.venue,
                 additional_notes: formData.details,
