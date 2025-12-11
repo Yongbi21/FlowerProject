@@ -24,6 +24,7 @@ import { useNavigation } from '@react-navigation/native';
 import { productAPI, adminAPI, categoryAPI, BASE_URL } from '../config/api';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import Toast from 'react-native-toast-message';
 
 // Helper function to format timestamp with date and time
 const formatTimestamp = (dateString) => {
@@ -827,29 +828,40 @@ const OrdersTab = () => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [expandedOrder, setExpandedOrder] = useState(null);
+  
+  // State for Modals
+  const [declineModalVisible, setDeclineModalVisible] = useState(false);
+  const [orderToDecline, setOrderToDecline] = useState(null);
+  const [statusModalVisible, setStatusModalVisible] = useState(false);
+  const [orderToUpdate, setOrderToUpdate] = useState(null);
+  const [selectedStatus, setSelectedStatus] = useState(null);
+  const [receiptModalVisible, setReceiptModalVisible] = useState(false);
+  const [selectedReceiptUrl, setSelectedReceiptUrl] = useState(null);
+
+  const statusOptions = ['pending', 'processing', 'out_for_delivery', 'ready_for_pick_up', 'claimed', 'completed', 'cancelled'];
+
+  const openReceiptModal = (url) => {
+    setSelectedReceiptUrl(url);
+    setReceiptModalVisible(true);
+  };
 
   useEffect(() => {
     loadOrders();
   }, []);
 
-      const loadOrders = async () => {
-          setLoading(true);
-          try {
-              const response = await adminAPI.getAllOrders();
-              console.log('Response from adminAPI.getAllOrders in AdminDashboard:', JSON.stringify(response.data, null, 2));
-  
-              if (!response.data || response.data.length === 0) {
-                  console.warn('adminAPI.getAllOrders returned no data or empty array.');
-              }
-              setOrders(response.data || []);
-          } catch (error) {
-              console.error('Error loading orders:', error);
-              setOrders([]);
-          } finally {
-              setLoading(false);
-          }
-      };
+  const loadOrders = async () => {
+    setLoading(true);
+    try {
+      const response = await adminAPI.getAllOrders();
+      setOrders(response.data || []);
+    } catch (error) {
+      console.error('Error loading orders:', error);
+      setOrders([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const onRefresh = async () => {
     setRefreshing(true);
     await loadOrders();
@@ -859,7 +871,11 @@ const OrdersTab = () => {
   const handleAccept = async (orderId) => {
     try {
       await adminAPI.acceptOrder(orderId, 'processing');
-      Alert.alert('Success', 'Order accepted');
+      Toast.show({
+        type: 'success',
+        text1: 'Order Accepted',
+        text2: `Order #${orderId} is now being processed.`
+      });
       await loadOrders();
     } catch (error) {
       console.error('Accept order error:', error);
@@ -867,38 +883,62 @@ const OrdersTab = () => {
     }
   };
 
-  const handleDecline = async (orderId) => {
-    Alert.alert(
-      'Decline Order',
-      'Are you sure you want to decline this order?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Decline',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await adminAPI.declineOrder(orderId, 'cancelled', 'Declined by admin');
-              Alert.alert('Success', 'Order declined');
-              await loadOrders();
-            } catch (error) {
-              console.error('Decline order error:', error);
-              Alert.alert('Error', error.response?.data?.message || 'Failed to decline order');
-            }
-          }
-        }
-      ]
-    );
+  const handleDecline = (order) => {
+    setOrderToDecline(order);
+    setDeclineModalVisible(true);
   };
 
-  const handleStatusChange = async (orderId, newStatus) => {
+  const confirmDecline = async () => {
+    if (!orderToDecline) return;
     try {
-      await adminAPI.updateOrderStatus(orderId, newStatus);
-      Alert.alert('Success', 'Order status updated');
+      await adminAPI.declineOrder(orderToDecline.id, 'cancelled');
+      Toast.show({
+        type: 'success',
+        text1: 'Order Declined',
+        text2: `Order #${orderToDecline.order_number} has been cancelled.`
+      });
+    } catch (error) {
+      console.error('Decline order error:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Decline Failed',
+        text2: error.response?.data?.message || 'Failed to decline order'
+      });
+    } finally {
+      setDeclineModalVisible(false);
+      setOrderToDecline(null);
+      await loadOrders();
+    }
+  };
+
+  const openStatusModal = (order) => {
+    setOrderToUpdate(order);
+    setSelectedStatus(order.status);
+    setStatusModalVisible(true);
+  };
+
+  const confirmStatusChange = async () => {
+    if (!orderToUpdate || !selectedStatus) return;
+    const orderId = orderToUpdate.id;
+    setStatusModalVisible(false);
+    try {
+      await adminAPI.updateOrderStatus(orderId, selectedStatus);
+      Toast.show({
+        type: 'success',
+        text1: 'Status Updated',
+        text2: `Order #${orderToUpdate.order_number} is now ${selectedStatus}.`
+      });
       await loadOrders();
     } catch (error) {
       console.error('Update status error:', error);
-      Alert.alert('Error', error.response?.data?.message || 'Failed to update order status');
+      Toast.show({
+        type: 'error',
+        text1: 'Update Failed',
+        text2: error.response?.data?.message || 'Failed to update order status'
+      });
+    } finally {
+      setOrderToUpdate(null);
+      setSelectedStatus(null);
     }
   };
 
@@ -911,10 +951,17 @@ const OrdersTab = () => {
       Alert.alert('Error', 'Failed to update payment method');
     }
   };
+  
+  const getStatusLabel = (status) => {
+    if (!status) return '';
+    return status.replace(/_/g, ' ').replace(/\w/g, char => char.toUpperCase());
+  };
 
   const getStatusColor = (status) => {
     switch (status) {
       case 'completed': return '#4CAF50';
+      case 'claimed': return '#4CAF50';
+      case 'ready_for_pick_up': return '#FFC107';
       case 'out_for_delivery': return '#FF9800';
       case 'processing': return '#2196F3';
       case 'cancelled': return '#f44336';
@@ -943,168 +990,122 @@ const OrdersTab = () => {
     }
   };
 
-  const renderOrder = ({ item }) => {
-    const isExpanded = expandedOrder === item.id;
-
-    return (
-      <View style={styles.orderCard}>
-        {/* Order Header - Only date badge, no duplicate time */}
-        <View style={styles.orderHeader}>
-          <View style={styles.orderHeaderLeft}>
-            <Text style={styles.orderNumber}>Order #{item.order_number}</Text>
-            {item.created_at ? (
-              <Text style={styles.orderDateBadge}>{formatTimestamp(item.created_at)}</Text>
-            ) : item.order_date ? (
-              <Text style={styles.orderDateBadge}>{item.order_date}</Text>
-            ) : null}
-          </View>
+  const renderOrder = ({ item }) => (
+    <View style={styles.orderCard}>
+      {/* Order Header */}
+      <View style={styles.orderHeader}>
+        <View style={styles.orderHeaderLeft}>
+          <Text style={styles.orderNumber}>Order #{item.order_number}</Text>
+          {item.created_at ? (
+            <Text style={styles.orderDateBadge}>{formatTimestamp(item.created_at)}</Text>
+          ) : item.order_date ? (
+            <Text style={styles.orderDateBadge}>{item.order_date}</Text>
+          ) : null}
         </View>
+      </View>
 
-
-
-        {/* Customer Info */}
-        <View style={styles.orderSection}>
-          <View style={styles.sectionHeader}>
-            <Ionicons name="person-outline" size={16} color="#666" />
-            <Text style={styles.sectionTitle}>Customer</Text>
-          </View>
-          <Text style={styles.orderCustomer}>{item.customer_name || 'Customer'}</Text>
-          {item.customer_email && (
-            <Text style={styles.orderEmail}>{item.customer_email}</Text>
-          )}
-          {item.customer_phone && !item.customer_email && (
-            <Text style={styles.orderPhone}>📞 {item.customer_phone}</Text>
-          )}
+      {/* Customer Info */}
+      <View style={styles.orderSection}>
+        <View style={styles.sectionHeader}>
+          <Ionicons name="person-outline" size={16} color="#666" />
+          <Text style={styles.sectionTitle}>Customer</Text>
         </View>
-
-
-
-        {/* Items */}
-        {item.items && item.items.length > 0 && (
-          <View style={styles.orderSection}>
-            <Text style={styles.sectionTitle}>Items ({item.items.length}):</Text>
-            {item.items.map((orderItem, index) => (
-              <Text key={index} style={styles.itemText}>
-                • {orderItem.name} x{orderItem.quantity} - ₱{orderItem.price.toFixed(2)}
-              </Text>
-            ))}
-          </View>
+        <Text style={styles.orderCustomer}>{item.customer_name || 'Customer'}</Text>
+        {item.customer_email && (
+          <Text style={styles.orderEmail}>{item.customer_email}</Text>
         )}
-
-        {/* Payment Method - Editable */}
-        <View style={styles.orderSection}>
-          <View style={styles.sectionHeader}>
-            <Ionicons name="card-outline" size={16} color="#666" />
-            <Text style={styles.sectionTitle}>Payment Method</Text>
-            <TouchableOpacity
-              onPress={() => {
-                Alert.alert(
-                  'Change Payment Method',
-                  'Select payment method:',
-                  [
-                    { text: 'GCash', onPress: () => handlePaymentMethodChange(item.id, 'GCash') },
-                    { text: 'Cash on Delivery', onPress: () => handlePaymentMethodChange(item.id, 'Cash on Delivery') },
-                    { text: 'Cancel', style: 'cancel' }
-                  ]
-                );
-              }}
-            >
-              <Ionicons name="create-outline" size={16} color="#2196F3" />
-            </TouchableOpacity>
-          </View>
-          <Text style={styles.paymentMethodText}>{item.payment_method || 'Not specified'}</Text>
-        </View>
-
-        {/* Status Badges */}
-        <View style={styles.orderBadges}>
-          <View style={[styles.badge, { backgroundColor: getStatusColor(item.status) }]}>
-            <Text style={styles.badgeText}>{item.status}</Text>
-          </View>
-          <View style={[styles.badge, { backgroundColor: getPaymentColor(item.payment_status) }]}>
-            <Text style={styles.badgeText}>{item.payment_status}</Text>
-          </View>
-        </View>
-
-        {/* Pricing */}
-        <View style={styles.pricingSection}>
-          <View style={styles.priceRow}>
-            <Text style={styles.priceLabel}>Subtotal:</Text>
-            <Text style={styles.priceValue}>₱{item.subtotal?.toFixed(2) || item.total}</Text>
-          </View>
-          {item.shipping_fee > 0 && (
-            <View style={styles.priceRow}>
-              <Text style={styles.priceLabel}>Delivery Fee:</Text>
-              <Text style={styles.priceValue}>₱{item.shipping_fee.toFixed(2)}</Text>
-            </View>
-          )}
-          <View style={[styles.priceRow, styles.totalRow]}>
-            <Text style={styles.totalLabel}>Total:</Text>
-            <Text style={styles.totalValue}>₱{item.total}</Text>
-          </View>
-        </View>
-
-        {/* Action Buttons */}
-        {item.status === 'pending' ? (
-          <View style={styles.actionButtons}>
-            <TouchableOpacity
-              style={[styles.actionButton, styles.acceptButton]}
-              onPress={() => handleAccept(item.id)}
-            >
-              <Ionicons name="checkmark-circle-outline" size={18} color="#fff" />
-              <Text style={styles.buttonText}>Accept</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.actionButton, styles.rejectButton]}
-              onPress={() => handleDecline(item.id)}
-            >
-              <Ionicons name="close-circle-outline" size={18} color="#fff" />
-              <Text style={styles.buttonText}>Decline</Text>
-            </TouchableOpacity>
-          </View>
-        ) : item.status === 'processing' ? (
-          <TouchableOpacity
-            style={styles.changeStatusButton}
-            onPress={() => {
-              Alert.alert(
-                'Change Status',
-                'Select new status:',
-                [
-                  { text: 'Processing', onPress: () => handleStatusChange(item.id, 'processing') },
-                  { text: 'Out for Delivery', onPress: () => handleStatusChange(item.id, 'out_for_delivery') },
-                  { text: 'Completed', onPress: () => handleStatusChange(item.id, 'completed') },
-                  { text: 'Cancelled', onPress: () => handleStatusChange(item.id, 'cancelled') },
-                  { text: 'Cancel', style: 'cancel' }
-                ]
-              );
-            }}
-          >
-            <Ionicons name="create-outline" size={16} color="#2196F3" />
-            <Text style={styles.changeStatusText}>Change Status</Text>
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity
-            style={styles.changeStatusButton}
-            onPress={() => {
-              Alert.alert(
-                'Change Status',
-                'Select new status:',
-                [
-                  { text: 'Processing', onPress: () => handleStatusChange(item.id, 'processing') },
-                  { text: 'Out for Delivery', onPress: () => handleStatusChange(item.id, 'out_for_delivery') },
-                  { text: 'Completed', onPress: () => handleStatusChange(item.id, 'completed') },
-                  { text: 'Cancelled', onPress: () => handleStatusChange(item.id, 'cancelled') },
-                  { text: 'Cancel', style: 'cancel' }
-                ]
-              );
-            }}
-          >
-            <Ionicons name="create-outline" size={16} color="#2196F3" />
-            <Text style={styles.changeStatusText}>Change Status</Text>
-          </TouchableOpacity>
+        {item.customer_phone && !item.customer_email && (
+          <Text style={styles.orderPhone}>📞 {item.customer_phone}</Text>
         )}
       </View>
-    );
-  };
+
+      {/* Items */}
+      {item.items && item.items.length > 0 && (
+        <View style={styles.orderSection}>
+          <Text style={styles.sectionTitle}>Items ({item.items.length}):</Text>
+          {item.items.map((orderItem, index) => (
+            <Text key={index} style={styles.itemText}>
+              • {orderItem.name} x{orderItem.quantity} - ₱{orderItem.price.toFixed(2)}
+            </Text>
+          ))}
+        </View>
+      )}
+
+      {/* Payment Method */}
+      <View style={styles.orderSection}>
+        <View style={styles.sectionHeader}>
+          <Ionicons name="card-outline" size={16} color="#666" />
+          <Text style={styles.sectionTitle}>Payment Method</Text>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Text style={styles.paymentMethodText}>
+            {item.payment_method?.toLowerCase() === 'gcash' ? 'GCash' : item.payment_method?.toLowerCase() === 'cod' ? 'Cash On Delivery' : getStatusLabel(item.payment_method) || 'Not specified'}
+          </Text>
+          {item.payment_method?.toLowerCase() === 'gcash' && item.receipt_url && (
+            <TouchableOpacity onPress={() => openReceiptModal(item.receipt_url)}>
+              <Text style={styles.viewReceiptButton}>View Receipt</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
+      {/* Status Badges */}
+              <View style={styles.orderBadges}>
+                <View style={[styles.badge, { backgroundColor: getStatusColor(item.status) }]}>
+                  <Text style={styles.badgeText}>{getStatusLabel(item.status)}</Text>
+                </View>
+                          <View style={[styles.badge, { backgroundColor: getPaymentColor(item.payment_status) }]}>
+                            <Text style={styles.badgeText}>
+                              {item.payment_status?.toLowerCase() === 'cod' ? 'Cash On Delivery' : getStatusLabel(item.payment_status)}
+                            </Text>
+                          </View>              </View>
+      {/* Pricing */}
+      <View style={styles.pricingSection}>
+        <View style={styles.priceRow}>
+          <Text style={styles.priceLabel}>Subtotal:</Text>
+          <Text style={styles.priceValue}>₱{item.subtotal?.toFixed(2) || item.total}</Text>
+        </View>
+        {item.shipping_fee > 0 && (
+          <View style={styles.priceRow}>
+            <Text style={styles.priceLabel}>Delivery Fee:</Text>
+            <Text style={styles.priceValue}>₱{item.shipping_fee.toFixed(2)}</Text>
+          </View>
+        )}
+        <View style={[styles.priceRow, styles.totalRow]}>
+          <Text style={styles.totalLabel}>Total:</Text>
+          <Text style={styles.totalValue}>₱{item.total}</Text>
+        </View>
+      </View>
+
+      {/* Action Buttons */}
+      {item.status === 'pending' ? (
+        <View style={styles.actionButtons}>
+          <TouchableOpacity
+            style={[styles.actionButton, styles.acceptButton]}
+            onPress={() => handleAccept(item.id)}
+          >
+            <Ionicons name="checkmark-circle-outline" size={18} color="#fff" />
+            <Text style={styles.buttonText}>Accept</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.actionButton, styles.rejectButton]}
+            onPress={() => handleDecline(item)}
+          >
+            <Ionicons name="close-circle-outline" size={18} color="#fff" />
+            <Text style={styles.buttonText}>Decline</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <TouchableOpacity
+          style={styles.changeStatusButton}
+          onPress={() => openStatusModal(item)}
+        >
+          <Ionicons name="create-outline" size={16} color="#2196F3" />
+          <Text style={styles.changeStatusText}>Change Status</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
 
   if (loading && !refreshing) {
     return (
@@ -1128,6 +1129,93 @@ const OrdersTab = () => {
           <Text style={styles.emptyText}>No orders found</Text>
         }
       />
+      
+      {/* Decline Confirmation Modal */}
+      <Modal visible={declineModalVisible} animationType="fade" transparent>
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Confirm Decline</Text>
+              <TouchableOpacity onPress={() => setDeclineModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#333" />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.modalText}>
+              Are you sure you want to decline Order #{orderToDecline?.order_number}?
+            </Text>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => setDeclineModalVisible(false)}
+              >
+                <Text style={styles.buttonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.deleteButton]}
+                onPress={confirmDecline}
+              >
+                <Text style={styles.buttonText}>Confirm Decline</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Change Status Modal */}
+      <Modal visible={statusModalVisible} animationType="fade" transparent>
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Change Status</Text>
+              <TouchableOpacity onPress={() => setStatusModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#333" />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.modalSubtitle}>Order #{orderToUpdate?.order_number}</Text>
+            
+            <View style={styles.radioGroup}>
+              {statusOptions.map(status => (
+                <TouchableOpacity key={status} style={styles.radioButtonContainer} onPress={() => setSelectedStatus(status)}>
+                  <View style={[styles.radioButton, selectedStatus === status && styles.radioButtonSelected]}>
+                    {selectedStatus === status && <View style={styles.radioButtonInner} />}
+                  </View>
+                  <Text style={styles.radioLabel}>{getStatusLabel(status)}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => setStatusModalVisible(false)}
+              >
+                <Text style={styles.buttonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.saveButton]}
+                onPress={confirmStatusChange}
+              >
+                <Text style={styles.buttonText}>Confirm</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Receipt View Modal */}
+      <Modal visible={receiptModalVisible} animationType="fade" transparent>
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Payment Receipt</Text>
+              <TouchableOpacity onPress={() => setReceiptModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#333" />
+              </TouchableOpacity>
+            </View>
+            <Image source={{ uri: selectedReceiptUrl }} style={styles.receiptImage} resizeMode="contain" />
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -1532,7 +1620,7 @@ const RequestsTab = () => {
       }}
     >
       <View style={styles.requestHeader}>
-        <Text style={styles.requestType}>{item.type.toUpperCase()}</Text>
+        <Text style={styles.requestType}>{getStatusLabel(item.type)}</Text>
         <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}>
           <Text style={styles.statusText}>{item.status}</Text>
         </View>
@@ -3727,6 +3815,57 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '600',
     fontSize: 16,
+  },
+  // Styles for the redesigned Change Status Modal
+  modalSubtitle: {
+    fontSize: 16,
+    color: '#666',
+    marginBottom: 20,
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+  radioGroup: {
+    marginBottom: 20,
+  },
+  radioButtonContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  radioButton: {
+    height: 24,
+    width: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#ddd',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 15,
+  },
+  radioButtonSelected: {
+    borderColor: '#ec4899',
+  },
+  radioButtonInner: {
+    height: 12,
+    width: 12,
+    borderRadius: 6,
+    backgroundColor: '#ec4899',
+  },
+  radioLabel: {
+    fontSize: 16,
+    color: '#333',
+  },
+  viewReceiptButton: {
+    color: '#2196F3',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  receiptImage: {
+    width: '100%',
+    height: 400,
+    marginTop: 10,
   },
 });
 
