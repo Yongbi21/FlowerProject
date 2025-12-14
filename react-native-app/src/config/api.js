@@ -66,32 +66,25 @@ export const productAPI = {
         console.log('=== CREATE PRODUCT DEBUG ===');
         console.log('imageFile type:', typeof imageFile);
         console.log('imageFile:', imageFile);
-        console.log('imageFile.uri:', imageFile?.uri);
-        console.log('imageFile.name:', imageFile?.name);
-        console.log('imageFile.type:', imageFile?.type);
 
-        if (imageFile && imageFile.uri) {
+        if (imageFile && imageFile.base64) {
             try {
-                console.log('Fetching image from URI:', imageFile.uri);
+                const fileName = imageFile.fileName || `product-${Date.now()}.jpg`;
+                // The expo-image-picker result includes mimeType.
+                const contentType = imageFile.mimeType || 'image/jpeg';
                 
-                // Fetch the image from the local URI
-                const res = await fetch(imageFile.uri);
-                const blob = await res.blob();
-                
-                console.log('Blob created, size:', blob.size, 'type:', blob.type);
-                
-                // Create a unique filename
-                const fileName = imageFile.name || `product-${Date.now()}.jpg`;
-                
-                console.log('Uploading to Supabase with filename:', fileName);
+                console.log(`Uploading ${fileName} with contentType: ${contentType}`);
+
+                // Decode base64 to ArrayBuffer, which is more reliable for uploads.
+                const arrayBuffer = decode(imageFile.base64);
                 
                 // Upload to Supabase Storage
                 const { data: uploadData, error: uploadError } = await supabase.storage
                     .from('product-images')
-                    .upload(fileName, blob, {
+                    .upload(fileName, arrayBuffer, {
                         cacheControl: '3600',
                         upsert: false,
-                        contentType: imageFile.type || blob.type || 'image/jpeg',
+                        contentType,
                     });
 
                 if (uploadError) {
@@ -114,7 +107,7 @@ export const productAPI = {
                 throw new Error('Failed to upload image: ' + error.message);
             }
         } else {
-            console.log('No image file provided or imageFile.uri is missing');
+            console.log('No image file with base64 data provided.');
         }
 
         // Prepare product data
@@ -154,26 +147,35 @@ export const productAPI = {
         console.log('productAPI.update: existing imageUrl (hidden):', imageUrl);
         console.log('productAPI.update: imageFile from formData (full object):', imageFile);
 
-        if (imageFile && imageFile.uri && !imageFile.uri.startsWith('http')) {
-            const res = await fetch(imageFile.uri);
-            const blob = await res.blob();
-            const fileName = imageFile.name || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        // If a new image is picked, it will have base64 data.
+        if (imageFile && imageFile.base64) {
+            try {
+                const fileName = imageFile.fileName || `${Date.now()}.jpg`;
+                const contentType = imageFile.mimeType || 'image/jpeg';
+                const arrayBuffer = decode(imageFile.base64);
 
-            const { data: uploadData, error: uploadError } = await supabase.storage
-                .from('product-images')
-                .upload(fileName, blob, {
-                    cacheControl: '3600',
-                    upsert: true,
-                    contentType: imageFile.type,
-                });
+                console.log(`Uploading new image for update: ${fileName}`);
 
-            if (uploadError) {
-                console.error('Error uploading image:', uploadError);
-                throw uploadError;
+                const { data: uploadData, error: uploadError } = await supabase.storage
+                    .from('product-images')
+                    .upload(fileName, arrayBuffer, {
+                        cacheControl: '3600',
+                        upsert: true,
+                        contentType: contentType,
+                    });
+
+                if (uploadError) {
+                    console.error('Error uploading image:', uploadError);
+                    throw uploadError;
+                }
+                const { data: publicUrlData } = supabase.storage.from('product-images').getPublicUrl(uploadData.path);
+                imageUrl = publicUrlData.publicUrl; // Set new image URL
+            } catch (error) {
+                 console.error('Error processing image for update:', error);
+                throw new Error('Failed to upload image for update: ' + error.message);
             }
-            const { data: publicUrlData } = supabase.storage.from('product-images').getPublicUrl(uploadData.path);
-            imageUrl = publicUrlData.publicUrl;
-        } else if (imageFile && imageFile.uri) {
+        } else if (imageFile && imageFile.uri && imageFile.uri.startsWith('http')) {
+            // This is the case where no new image was selected, so we keep the old one.
             imageUrl = imageFile.uri;
         }
 

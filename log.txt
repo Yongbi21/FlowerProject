@@ -1,1 +1,13 @@
-Attempting to open receipt modal with URL: https://luzcecstkebntjnfonwv.supabase.co/storage/v1/object/public/receipts/public/09964054-b01d-40f9-85ee-e51fb9b3776a-1765470740644.png
+ WARN  [expo-image-picker] `ImagePicker.MediaTypeOptions` have been deprecated. Use `ImagePicker.MediaType` or an array of `ImagePicker.MediaType` instead.
+ LOG  === CREATE PRODUCT DEBUG ===
+ LOG  imageFile type: object
+ LOG  imageFile: {"assetId": null, "base64": null, "duration": null, "exif": null, "fileName": "a34609d5-0ddf-4cda-9e41-841060365d08.png", "fileSize": 39550, "height": 540, "mimeType": "image/png", "rotation": null, "type": "image", "uri": "file:///data/user/0/host.exp.exponent/cache/ImagePicker/a34609d5-0ddf-4cda-9e41-841060365d08.png", "width": 720}
+ LOG  imageFile.uri: file:///data/user/0/host.exp.exponent/cache/ImagePicker/a34609d5-0ddf-4cda-9e41-841060365d08.png
+ LOG  imageFile.fileName: a34609d5-0ddf-4cda-9e41-841060365d08.png
+ LOG  imageFile.type: image
+ LOG  Fetching image from URI: file:///data/user/0/host.exp.exponent/cache/ImagePicker/a34609d5-0ddf-4cda-9e41-841060365d08.png
+ LOG  Blob created, size: 39550 type: image/png
+ LOG  Uploading to Supabase with filename: a34609d5-0ddf-4cda-9e41-841060365d08.png
+ ERROR  Supabase upload error: [StorageUnknownError: Network request failed]
+ ERROR  Error processing image: [StorageUnknownError: Network request failed]
+ ERROR  Error saving product: [Error: Failed to upload image: Network request failed]
