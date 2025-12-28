@@ -153,3 +153,52 @@ CREATE TABLE app_content (
   value TEXT NOT NULL,
   updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
+
+create or replace function get_admin_conversations()
+returns table (
+    user_id int,
+    user_name text,
+    last_message text,
+    last_message_at timestamptz,
+    unread_count bigint
+) as 
+begin
+    return query
+    with message_partners as (
+        select
+            case
+                when sender_id = 1 then receiver_id
+                else sender_id
+            end as partner_id,
+            id,
+            message,
+            created_at,
+            is_read
+        from messages
+        where sender_id = 1 or receiver_id = 1
+    ),
+    ranked_messages as (
+        select
+            partner_id,
+            message,
+            created_at,
+            is_read,
+            row_number() over(partition by partner_id order by created_at desc) as rn
+        from message_partners
+    )
+    select
+        u.id as user_id,
+        u.name as user_name,
+        rm.message as last_message,
+        rm.created_at as last_message_at,
+        (
+            select count(*)
+            from messages
+            where (receiver_id = 1 and sender_id = u.id and not is_read)
+        ) as unread_count
+    from ranked_messages rm
+    join users u on u.id = rm.partner_id
+    where rm.rn = 1
+    order by rm.created_at desc;
+end;
+ language plpgsql;

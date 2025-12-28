@@ -1,13 +1,327 @@
- WARN  [expo-image-picker] `ImagePicker.MediaTypeOptions` have been deprecated. Use `ImagePicker.MediaType` or an array of `ImagePicker.MediaType` instead.
- LOG  === CREATE PRODUCT DEBUG ===
- LOG  imageFile type: object
- LOG  imageFile: {"assetId": null, "base64": null, "duration": null, "exif": null, "fileName": "a34609d5-0ddf-4cda-9e41-841060365d08.png", "fileSize": 39550, "height": 540, "mimeType": "image/png", "rotation": null, "type": "image", "uri": "file:///data/user/0/host.exp.exponent/cache/ImagePicker/a34609d5-0ddf-4cda-9e41-841060365d08.png", "width": 720}
- LOG  imageFile.uri: file:///data/user/0/host.exp.exponent/cache/ImagePicker/a34609d5-0ddf-4cda-9e41-841060365d08.png
- LOG  imageFile.fileName: a34609d5-0ddf-4cda-9e41-841060365d08.png
- LOG  imageFile.type: image
- LOG  Fetching image from URI: file:///data/user/0/host.exp.exponent/cache/ImagePicker/a34609d5-0ddf-4cda-9e41-841060365d08.png
- LOG  Blob created, size: 39550 type: image/png
- LOG  Uploading to Supabase with filename: a34609d5-0ddf-4cda-9e41-841060365d08.png
- ERROR  Supabase upload error: [StorageUnknownError: Network request failed]
- ERROR  Error processing image: [StorageUnknownError: Network request failed]
- ERROR  Error saving product: [Error: Failed to upload image: Network request failed]
+C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\src\screens\AdminDashboard.js:2264 Encountered two children with the same key, `.$7`. Keys should be unique so that components maintain their identity across updates. Non-unique keys may cause children to be duplicated and/or omitted — the behavior is unsupported and could change in a future version.
+(anonymous) @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:7563
+runWithFiberInDEV @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:1519
+warnOnInvalidKey @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:7562
+reconcileChildrenArray @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:7631
+reconcileChildFibersImpl @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:7952
+(anonymous) @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:8057
+reconcileChildren @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:8622
+beginWork @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:10793
+runWithFiberInDEV @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:1519
+performUnitOfWork @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:15132
+workLoopSync @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14956
+renderRootSync @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14936
+performWorkOnRoot @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14419
+performWorkOnRootViaSchedulerTask @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:16216
+performWorkUntilDeadline @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\scheduler\cjs\scheduler.development.js:45
+<CellRenderer> (async)
+exports.createElement @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react\cjs\react.development.js:1033
+_loop @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-native-web\dist\vendor\react-native\VirtualizedList\index.js:944
+_pushCells @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-native-web\dist\vendor\react-native\VirtualizedList\index.js:968
+render @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-native-web\dist\vendor\react-native\VirtualizedList\index.js:1088
+react-stack-bottom-frame @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:23876
+updateClassComponent @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:9454
+beginWork @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:10536
+runWithFiberInDEV @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:1519
+performUnitOfWork @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:15132
+workLoopSync @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14956
+renderRootSync @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14936
+performWorkOnRoot @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14419
+performWorkOnRootViaSchedulerTask @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:16216
+performWorkUntilDeadline @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\scheduler\cjs\scheduler.development.js:45
+<VirtualizedList> (async)
+exports.createElement @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react\cjs\react.development.js:1033
+render @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-native-web\dist\vendor\react-native\FlatList\index.js:429
+react-stack-bottom-frame @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:23876
+updateClassComponent @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:9454
+beginWork @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:10536
+runWithFiberInDEV @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:1519
+performUnitOfWork @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:15132
+workLoopSync @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14956
+renderRootSync @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14936
+performWorkOnRoot @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14419
+performWorkOnRootViaSchedulerTask @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:16216
+performWorkUntilDeadline @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\scheduler\cjs\scheduler.development.js:45
+<FlatList> (async)
+exports.jsxDEV @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react\cjs\react-jsx-dev-runtime.development.js:346
+MessagingTab @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\src\screens\AdminDashboard.js:2264
+react-stack-bottom-frame @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:23863
+renderWithHooks @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:5529
+updateFunctionComponent @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:8897
+beginWork @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:10522
+runWithFiberInDEV @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:1519
+performUnitOfWork @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:15132
+workLoopSync @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14956
+renderRootSync @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14936
+performWorkOnRoot @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14419
+performWorkOnRootViaSchedulerTask @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:16216
+performWorkUntilDeadline @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\scheduler\cjs\scheduler.development.js:45
+<MessagingTab> (async)
+exports.jsxDEV @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react\cjs\react-jsx-dev-runtime.development.js:346
+renderTabContent @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\src\screens\AdminDashboard.js:135
+AdminDashboard @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\src\screens\AdminDashboard.js:178
+react-stack-bottom-frame @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:23863
+renderWithHooks @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:5529
+updateFunctionComponent @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:8897
+beginWork @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:10522
+runWithFiberInDEV @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:1519
+performUnitOfWork @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:15132
+workLoopSync @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14956
+renderRootSync @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14936
+performWorkOnRoot @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14419
+performSyncWorkOnRoot @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:16231
+flushSyncWorkAcrossRoots_impl @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:16079
+processRootScheduleInMicrotask @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:16116
+(anonymous) @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:16250
+<AdminDashboard> (async)
+exports.createElement @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react\cjs\react.development.js:1033
+SceneView @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\@react-navigation\core\lib\module\SceneView.js:76
+react-stack-bottom-frame @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:23863
+renderWithHooks @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:5529
+updateFunctionComponent @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:8897
+beginWork @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:10522
+runWithFiberInDEV @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:1519
+performUnitOfWork @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:15132
+workLoopSync @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14956
+renderRootSync @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14936
+performWorkOnRoot @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14419
+performWorkOnRootViaSchedulerTask @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:16216
+performWorkUntilDeadline @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\scheduler\cjs\scheduler.development.js:45
+<SceneView> (async)
+exports.createElement @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react\cjs\react.development.js:1033
+render @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\@react-navigation\core\lib\module\useDescriptors.js:109
+(anonymous) @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\@react-navigation\native-stack\lib\module\views\NativeStackView.js:123
+NativeStackView @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\@react-navigation\native-stack\lib\module\views\NativeStackView.js:13
+react-stack-bottom-frame @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:23863
+renderWithHooks @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:5529
+updateFunctionComponent @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:8897
+beginWork @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:10522
+runWithFiberInDEV @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:1519
+performUnitOfWork @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:15132
+workLoopSync @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14956
+renderRootSync @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14936
+performWorkOnRoot @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14419
+performWorkOnRootViaSchedulerTask @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:16216
+performWorkUntilDeadline @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\scheduler\cjs\scheduler.development.js:45
+<NativeStackView> (async)
+exports.createElement @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react\cjs\react.development.js:1033
+NativeStackNavigator @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\@react-navigation\native-stack\lib\module\navigators\createNativeStackNavigator.js:47
+react-stack-bottom-frame @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:23863
+renderWithHooks @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:5529
+updateFunctionComponent @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:8897
+beginWork @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:10522
+runWithFiberInDEV @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:1519
+performUnitOfWork @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:15132
+workLoopSync @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14956
+renderRootSync @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14936
+performWorkOnRoot @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14419
+performWorkOnRootViaSchedulerTask @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:16216
+performWorkUntilDeadline @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\scheduler\cjs\scheduler.development.js:45
+<NativeStackNavigator> (async)
+exports.jsxDEV @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react\cjs\react-jsx-dev-runtime.development.js:346
+App @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\App.js:21
+react-stack-bottom-frame @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:23863
+renderWithHooks @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:5529
+updateFunctionComponent @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:8897
+beginWork @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:10522
+runWithFiberInDEV @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:1519
+performUnitOfWork @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:15132
+workLoopSync @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14956
+renderRootSync @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14936
+performWorkOnRoot @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14419
+performWorkOnRootViaSchedulerTask @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:16216
+performWorkUntilDeadline @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\scheduler\cjs\scheduler.development.js:45
+<App> (async)
+exports.jsxDEV @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react\cjs\react-jsx-dev-runtime.development.js:346
+WithDevTools @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\expo\src\launch\withDevTools.web.tsx:11
+react-stack-bottom-frame @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:23863
+renderWithHooks @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:5529
+updateFunctionComponent @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:8897
+beginWork @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:10522
+runWithFiberInDEV @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:1519
+performUnitOfWork @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:15132
+workLoopSync @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14956
+renderRootSync @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14936
+performWorkOnRoot @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14419
+performWorkOnRootViaSchedulerTask @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:16216
+performWorkUntilDeadline @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\scheduler\cjs\scheduler.development.js:45
+<withDevTools(App)> (async)
+exports.createElement @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react\cjs\react.development.js:1033
+renderApplication @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-native-web\dist\exports\AppRegistry\renderApplication.js:27
+run @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-native-web\dist\exports\AppRegistry\index.js:36
+runApplication @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-native-web\dist\exports\AppRegistry\index.js:74
+registerRootComponent @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\expo\src\launch\registerRootComponent.tsx:58
+(anonymous) @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\expo\AppEntry.js:5
+loadModuleImplementation @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\expo\node_modules\@expo\cli\build\metro-require\require.js:248
+guardedLoadModule @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\expo\node_modules\@expo\cli\build\metro-require\require.js:156
+metroRequire @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\expo\node_modules\@expo\cli\build\metro-require\require.js:74
+(anonymous) @ AppEntry.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable:119160
+Show 141 more frames
+Show less
+C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\src\screens\AdminDashboard.js:2264 Encountered two children with the same key, `.$7`. Keys should be unique so that components maintain their identity across updates. Non-unique keys may cause children to be duplicated and/or omitted — the behavior is unsupported and could change in a future version.
+(anonymous) @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:7563
+runWithFiberInDEV @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:1519
+warnOnInvalidKey @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:7562
+reconcileChildrenArray @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:7604
+reconcileChildFibersImpl @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:7952
+(anonymous) @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:8057
+reconcileChildren @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:8622
+beginWork @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:10793
+runWithFiberInDEV @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:1519
+performUnitOfWork @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:15132
+workLoopSync @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14956
+renderRootSync @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14936
+performWorkOnRoot @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14419
+performSyncWorkOnRoot @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:16231
+flushSyncWorkAcrossRoots_impl @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:16079
+flushSpawnedWork @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:15677
+commitRoot @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:15403
+commitRootWhenReady @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14652
+performWorkOnRoot @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14575
+performWorkOnRootViaSchedulerTask @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:16216
+performWorkUntilDeadline @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\scheduler\cjs\scheduler.development.js:45
+<CellRenderer> (async)
+exports.createElement @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react\cjs\react.development.js:1033
+_loop @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-native-web\dist\vendor\react-native\VirtualizedList\index.js:944
+_pushCells @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-native-web\dist\vendor\react-native\VirtualizedList\index.js:968
+render @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-native-web\dist\vendor\react-native\VirtualizedList\index.js:1088
+react-stack-bottom-frame @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:23876
+updateClassComponent @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:9454
+beginWork @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:10536
+runWithFiberInDEV @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:1519
+performUnitOfWork @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:15132
+workLoopSync @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14956
+renderRootSync @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14936
+performWorkOnRoot @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14419
+performWorkOnRootViaSchedulerTask @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:16216
+performWorkUntilDeadline @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\scheduler\cjs\scheduler.development.js:45
+<VirtualizedList> (async)
+exports.createElement @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react\cjs\react.development.js:1033
+render @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-native-web\dist\vendor\react-native\FlatList\index.js:429
+react-stack-bottom-frame @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:23876
+updateClassComponent @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:9454
+beginWork @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:10536
+runWithFiberInDEV @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:1519
+performUnitOfWork @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:15132
+workLoopSync @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14956
+renderRootSync @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14936
+performWorkOnRoot @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14419
+performWorkOnRootViaSchedulerTask @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:16216
+performWorkUntilDeadline @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\scheduler\cjs\scheduler.development.js:45
+<FlatList> (async)
+exports.jsxDEV @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react\cjs\react-jsx-dev-runtime.development.js:346
+MessagingTab @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\src\screens\AdminDashboard.js:2264
+react-stack-bottom-frame @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:23863
+renderWithHooks @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:5529
+updateFunctionComponent @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:8897
+beginWork @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:10522
+runWithFiberInDEV @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:1519
+performUnitOfWork @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:15132
+workLoopSync @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14956
+renderRootSync @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14936
+performWorkOnRoot @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14419
+performWorkOnRootViaSchedulerTask @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:16216
+performWorkUntilDeadline @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\scheduler\cjs\scheduler.development.js:45
+<MessagingTab> (async)
+exports.jsxDEV @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react\cjs\react-jsx-dev-runtime.development.js:346
+renderTabContent @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\src\screens\AdminDashboard.js:135
+AdminDashboard @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\src\screens\AdminDashboard.js:178
+react-stack-bottom-frame @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:23863
+renderWithHooks @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:5529
+updateFunctionComponent @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:8897
+beginWork @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:10522
+runWithFiberInDEV @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:1519
+performUnitOfWork @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:15132
+workLoopSync @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14956
+renderRootSync @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14936
+performWorkOnRoot @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14419
+performSyncWorkOnRoot @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:16231
+flushSyncWorkAcrossRoots_impl @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:16079
+processRootScheduleInMicrotask @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:16116
+(anonymous) @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:16250
+<AdminDashboard> (async)
+exports.createElement @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react\cjs\react.development.js:1033
+SceneView @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\@react-navigation\core\lib\module\SceneView.js:76
+react-stack-bottom-frame @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:23863
+renderWithHooks @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:5529
+updateFunctionComponent @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:8897
+beginWork @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:10522
+runWithFiberInDEV @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:1519
+performUnitOfWork @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:15132
+workLoopSync @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14956
+renderRootSync @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14936
+performWorkOnRoot @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14419
+performWorkOnRootViaSchedulerTask @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:16216
+performWorkUntilDeadline @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\scheduler\cjs\scheduler.development.js:45
+<SceneView> (async)
+exports.createElement @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react\cjs\react.development.js:1033
+render @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\@react-navigation\core\lib\module\useDescriptors.js:109
+(anonymous) @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\@react-navigation\native-stack\lib\module\views\NativeStackView.js:123
+NativeStackView @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\@react-navigation\native-stack\lib\module\views\NativeStackView.js:13
+react-stack-bottom-frame @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:23863
+renderWithHooks @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:5529
+updateFunctionComponent @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:8897
+beginWork @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:10522
+runWithFiberInDEV @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:1519
+performUnitOfWork @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:15132
+workLoopSync @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14956
+renderRootSync @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14936
+performWorkOnRoot @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14419
+performWorkOnRootViaSchedulerTask @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:16216
+performWorkUntilDeadline @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\scheduler\cjs\scheduler.development.js:45
+<NativeStackView> (async)
+exports.createElement @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react\cjs\react.development.js:1033
+NativeStackNavigator @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\@react-navigation\native-stack\lib\module\navigators\createNativeStackNavigator.js:47
+react-stack-bottom-frame @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:23863
+renderWithHooks @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:5529
+updateFunctionComponent @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:8897
+beginWork @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:10522
+runWithFiberInDEV @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:1519
+performUnitOfWork @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:15132
+workLoopSync @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14956
+renderRootSync @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14936
+performWorkOnRoot @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14419
+performWorkOnRootViaSchedulerTask @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:16216
+performWorkUntilDeadline @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\scheduler\cjs\scheduler.development.js:45
+<NativeStackNavigator> (async)
+exports.jsxDEV @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react\cjs\react-jsx-dev-runtime.development.js:346
+App @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\App.js:21
+react-stack-bottom-frame @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:23863
+renderWithHooks @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:5529
+updateFunctionComponent @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:8897
+beginWork @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:10522
+runWithFiberInDEV @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:1519
+performUnitOfWork @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:15132
+workLoopSync @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14956
+renderRootSync @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14936
+performWorkOnRoot @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14419
+performWorkOnRootViaSchedulerTask @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:16216
+performWorkUntilDeadline @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\scheduler\cjs\scheduler.development.js:45
+<App> (async)
+exports.jsxDEV @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react\cjs\react-jsx-dev-runtime.development.js:346
+WithDevTools @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\expo\src\launch\withDevTools.web.tsx:11
+react-stack-bottom-frame @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:23863
+renderWithHooks @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:5529
+updateFunctionComponent @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:8897
+beginWork @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:10522
+runWithFiberInDEV @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:1519
+performUnitOfWork @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:15132
+workLoopSync @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14956
+renderRootSync @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14936
+performWorkOnRoot @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:14419
+performWorkOnRootViaSchedulerTask @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:16216
+performWorkUntilDeadline @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\scheduler\cjs\scheduler.development.js:45
+<withDevTools(App)> (async)
+exports.createElement @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react\cjs\react.development.js:1033
+renderApplication @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-native-web\dist\exports\AppRegistry\renderApplication.js:27
+run @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-native-web\dist\exports\AppRegistry\index.js:36
+runApplication @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-native-web\dist\exports\AppRegistry\index.js:74
+registerRootComponent @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\expo\src\launch\registerRootComponent.tsx:58
+(anonymous) @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\expo\AppEntry.js:5
+loadModuleImplementation @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\expo\node_modules\@expo\cli\build\metro-require\require.js:248
+guardedLoadModule @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\expo\node_modules\@expo\cli\build\metro-require\require.js:156
+metroRequire @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\expo\node_modules\@expo\cli\build\metro-require\require.js:74
+(anonymous) @ AppEntry.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable:119160
+Show 147 more frames
+Show less
+C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\src\screens\AdminDashboard.js:2264 Encountered two children with the same key, `.$7`. Keys should be unique so that components maintain their identity across updates. Non-unique keys may cause children to be duplicated and/or omitted — the behavior is unsupported and could change in a future version.

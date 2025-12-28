@@ -20,8 +20,9 @@ import {
   StatusBar,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useNavigation } from '@react-navigation/native';
-import { productAPI, adminAPI, categoryAPI, BASE_URL } from '../config/api';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { productAPI, adminAPI, categoryAPI, authAPI, BASE_URL } from '../config/api';
+import { supabase } from '../config/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import Toast from 'react-native-toast-message';
@@ -37,6 +38,34 @@ const formatTimestamp = (dateString) => {
     const hours = String(date.getHours()).padStart(2, '0');
     const minutes = String(date.getMinutes()).padStart(2, '0');
     return `${day}/${month}/${year} ${hours}:${minutes}`;
+  } catch (e) {
+    return dateString;
+  }
+};
+
+const formatMessageTimestamp = (dateString) => {
+  if (!dateString) return '';
+  try {
+    const date = new Date(dateString);
+    const now = new Date();
+    
+    const isToday = now.toDateString() === date.toDateString();
+    if (isToday) {
+        return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    }
+    
+    // not today, calculate days ago
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfMessageDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const diffTime = startOfToday.getTime() - startOfMessageDate.getTime();
+    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 1) {
+      return '1 day ago';
+    }
+    
+    return `${diffDays} days ago`;
+
   } catch (e) {
     return dateString;
   }
@@ -66,6 +95,7 @@ const AdminDashboard = () => {
   const [menuVisible, setMenuVisible] = useState(false);
   const [userRole, setUserRole] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [unreadMessageCount, setUnreadMessageCount] = useState(0);
 
   useEffect(() => {
     checkUser();
@@ -103,6 +133,7 @@ const AdminDashboard = () => {
         {
           text: 'Logout',
           onPress: async () => {
+            await authAPI.logout(); // Sign out from Supabase
             await AsyncStorage.removeItem('currentUser');
             await AsyncStorage.removeItem('token');
             navigation.navigate('Login');
@@ -130,7 +161,7 @@ const AdminDashboard = () => {
       case 'notifications':
         return <NotificationsTab />;
       case 'messaging':
-        return <MessagingTab />;
+        return <MessagingTab onUnreadCountChange={setUnreadMessageCount} />;
       case 'sales':
         return <SalesTab />;
       case 'about':
@@ -243,6 +274,11 @@ const AdminDashboard = () => {
             size={24}
             color={activeTab === 'messaging' ? '#ec4899' : '#999'}
           />
+            {unreadMessageCount > 0 && (
+                <View style={styles.navBadge}>
+                    <Text style={styles.navBadgeText}>{unreadMessageCount}</Text>
+                </View>
+            )}
           <Text style={[styles.navText, activeTab === 'messaging' && styles.navTextActive]}>
             Messagi..
           </Text>
@@ -2046,81 +2082,310 @@ const NotificationsTab = () => {
 };
 
 // ==================== MESSAGING TAB ====================
-const MessagingTab = () => {
-  const [conversations, setConversations] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
+const MessagingTab = ({ onUnreadCountChange }) => {
+    const [conversations, setConversations] = useState([]);
+    const [selectedConversation, setSelectedConversation] = useState(null);
+    const [messages, setMessages] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const [newMessage, setNewMessage] = useState('');
+    const [currentUser, setCurrentUser] = useState(null);
+    const flatListRef = React.useRef(null);
+    const navigation = useNavigation();
 
-  useEffect(() => {
-    loadMessages();
-  }, []);
+    // Get current user from AsyncStorage
+    useEffect(() => {
+        const loadInitialData = async () => {
+            const userJson = await AsyncStorage.getItem('currentUser');
+            if (userJson) {
+                const user = JSON.parse(userJson);
+                setCurrentUser(user);
+            } else {
+                navigation.navigate('Login');
+            }
+        };
+        loadInitialData();
+    }, [navigation]);
 
-  const loadMessages = async () => {
-    setLoading(true);
-    try {
-      const response = await adminAPI.getAllMessages();
-      setConversations(response.data.conversations || []);
-    } catch (error) {
-      console.error('Error loading messages:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+    const fetchConversations = React.useCallback(async (adminId) => {
+        if (!adminId) return;
+        setLoading(true);
+        try {
+            const { data: allMessages, error: msgError } = await supabase
+                .from('messages')
+                .select(`*, sender:sender_id(id, name), receiver:receiver_id(id, name)`)
+                .or(`sender_id.eq.${adminId},receiver_id.eq.${adminId}`)
+                .order('created_at', { ascending: false });
 
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await loadMessages();
-    setRefreshing(false);
-  };
+            if (msgError) throw msgError;
 
-  if (loading && !refreshing) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#ec4899" />
-      </View>
+            const convosMap = new Map();
+            let totalUnread = 0;
+            allMessages.forEach(msg => {
+                const otherUser = msg.sender_id === adminId ? msg.receiver : msg.sender;
+                if (!otherUser) return;
+
+                if (!convosMap.has(otherUser.id)) {
+                    convosMap.set(otherUser.id, {
+                        user: otherUser,
+                        lastMessage: msg.message,
+                        timestamp: msg.created_at,
+                        unreadCount: 0,
+                    });
+                }
+                
+                if (msg.receiver_id === adminId && !msg.is_read) {
+                    const convo = convosMap.get(otherUser.id);
+                    if (convo) {
+                        convo.unreadCount += 1;
+                    }
+                }
+            });
+
+            for (const convo of convosMap.values()) {
+                totalUnread += convo.unreadCount;
+            }
+            onUnreadCountChange(totalUnread);
+            
+            const sortedConversations = Array.from(convosMap.values()).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+            setConversations(sortedConversations);
+
+        } catch (error) {
+            Alert.alert('Error', 'Could not fetch conversations.');
+        } finally {
+            setLoading(false);
+        }
+    }, [onUnreadCountChange]);
+
+    // Fetch conversations when user is loaded
+    useFocusEffect(
+        React.useCallback(() => {
+            if (currentUser) {
+                fetchConversations(currentUser.id);
+            }
+        }, [currentUser, fetchConversations])
     );
-  }
 
-  return (
-    <View style={styles.tabContent}>
-      <Text style={styles.tabTitle}>Messages</Text>
+    // Real-time subscription for new messages
+    useEffect(() => {
+        if (!currentUser) return;
 
-      <FlatList
-        data={conversations}
-        renderItem={({ item }) => (
-          <TouchableOpacity style={styles.conversationCard}>
-            <View style={styles.avatarCircle}>
-              <Ionicons name="person" size={24} color="#ec4899" />
-            </View>
-            <View style={styles.conversationContent}>
-              <Text style={styles.conversationName}>{item.sender_name || 'Unknown User'}</Text>
-              <Text style={styles.conversationMessage} numberOfLines={1}>
-                {item.content}
-              </Text>
-            </View>
-            <View style={styles.conversationMeta}>
-              <Text style={styles.conversationDate}>
-                {new Date(item.created_at).toLocaleDateString()}
-              </Text>
-              {item.unread_count > 0 && (
-                <View style={styles.unreadBadge}>
-                  <Text style={styles.unreadText}>{item.unread_count}</Text>
+        const channel = supabase
+            .channel('public:messages')
+            .on(
+                'postgres_changes',
+                { event: 'INSERT', schema: 'public', table: 'messages' },
+                (payload) => {
+                    const newMessage = payload.new;
+                    const adminId = currentUser.id;
+
+                    if (newMessage.sender_id === adminId) {
+                        return;
+                    }
+
+                    if (selectedConversation && newMessage.sender_id === selectedConversation.user.id && newMessage.receiver_id === adminId) {
+                        const fetchAndAddMessage = async () => {
+                             const {data, error} = await supabase.from('messages').select('*, sender:sender_id(id, name), receiver:receiver_id(id, name)').eq('id', newMessage.id).single();
+                             if (!error && data) {
+                                 setMessages((prevMessages) => {
+                                     if (prevMessages.some(m => m.id === data.id)) {
+                                         return prevMessages;
+                                     }
+                                     return [...prevMessages, data];
+                                 });
+                             }
+                         }
+                         fetchAndAddMessage();
+                    }
+                    fetchConversations(adminId);
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [currentUser, selectedConversation, fetchConversations]);
+
+    const fetchMessages = async (conversation) => {
+        if (!currentUser) return;
+        
+        const otherUserId = conversation.user.id;
+        const unreadToClear = conversation.unreadCount;
+
+        if (unreadToClear > 0) {
+            const { error: updateError } = await supabase
+                .from('messages')
+                .update({ is_read: true })
+                .eq('receiver_id', currentUser.id)
+                .eq('sender_id', otherUserId)
+                .eq('is_read', false);
+
+            if (updateError) {
+                console.error("Error marking messages as read:", updateError);
+            } else {
+                setConversations(prev => prev.map(c => 
+                    c.user.id === otherUserId ? { ...c, unreadCount: 0 } : c
+                ));
+                onUnreadCountChange(prevTotal => Math.max(0, prevTotal - unreadToClear));
+            }
+        }
+
+        setSelectedConversation(conversation);
+        setLoading(true);
+        try {
+            const { data, error } = await supabase
+                .from('messages')
+                .select(`*, sender:sender_id(id, name), receiver:receiver_id(id, name)`)
+                .or(`and(sender_id.eq.${currentUser.id},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${currentUser.id})`)
+                .order('created_at', { ascending: true });
+
+            if (error) throw error;
+            setMessages(data);
+        } catch (error) {
+            Alert.alert('Error', 'Could not fetch messages.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleSendMessage = async () => {
+        if (!newMessage.trim() || !selectedConversation || !currentUser) return;
+
+        const receiverId = selectedConversation.user.id;
+        const messageText = newMessage.trim();
+        
+        const tempMessageId = `temp_${Date.now()}_${Math.random()}`;
+        const optimisticMessage = {
+            id: tempMessageId,
+            sender_id: currentUser.id,
+            receiver_id: receiverId,
+            message: messageText,
+            created_at: new Date().toISOString(),
+            sender: { id: currentUser.id, name: 'Admin' },
+            receiver: selectedConversation.user,
+            isTemporary: true,
+        };
+        setMessages(prevMessages => [...prevMessages, optimisticMessage]);
+        setNewMessage('');
+
+        try {
+            const { data, error } = await supabase
+                .from('messages')
+                .insert({ sender_id: currentUser.id, receiver_id: receiverId, message: messageText })
+                .select()
+                .single();
+            
+            if (error) throw error;
+            
+            setMessages(prev => prev.map(m => (m.id === tempMessageId ? { ...data, sender: optimisticMessage.sender, receiver: optimisticMessage.receiver } : m)));
+            fetchConversations(currentUser.id);
+        } catch (error) {
+            Alert.alert('Error', 'Could not send message.');
+            setMessages(prev => prev.filter(m => m.id !== tempMessageId));
+            setNewMessage(messageText); 
+        }
+    };
+
+    const renderConversationItem = ({ item }) => {
+        const isUnread = item.unreadCount > 0;
+        return (
+            <TouchableOpacity style={styles.chatItem} onPress={() => fetchMessages(item)}>
+                <View style={styles.chatAvatar}>
+                     <Text style={styles.chatAvatarText}>{item.user.name ? item.user.name.charAt(0).toUpperCase() : 'U'}</Text>
                 </View>
-              )}
+                <View style={styles.chatPreview}>
+                    <Text style={[styles.chatName, isUnread && styles.chatNameUnread]}>{item.user.name || 'Unknown User'}</Text>
+                    <Text style={[styles.chatMessage, isUnread && styles.chatMessageUnread]} numberOfLines={1}>{item.lastMessage}</Text>
+                </View>
+                <View style={styles.chatMeta}>
+          <Text style={styles.chatUserTime}>{formatMessageTimestamp(item.timestamp)}</Text>
+                    {isUnread && (
+                        <View style={styles.unreadBadge}>
+                            <Text style={styles.unreadText}>{item.unreadCount}</Text>
+                        </View>
+                    )}
+                </View>
+            </TouchableOpacity>
+        );
+    };
+
+    const renderMessageItem = ({ item }) => {
+        const isSentByAdmin = item.sender_id === currentUser.id;
+        return (
+            <View style={[styles.messageWrapper, isSentByAdmin ? styles.messageSentWrapper : styles.messageReceivedWrapper]}>
+                {!isSentByAdmin && (
+                    <View style={styles.messageAvatar}>
+                        <Text style={styles.chatAvatarText}>{item.sender.name ? item.sender.name.charAt(0).toUpperCase() : 'U'}</Text>
+                    </View>
+                )}
+                <View style={[styles.messageBubble, isSentByAdmin ? styles.messageSentBubble : styles.messageReceivedBubble, item.isTemporary && { opacity: 0.6 }]}>
+                    <Text style={isSentByAdmin ? styles.messageTextSent : styles.messageTextReceived}>{item.message}</Text>
+                    <Text style={[styles.messageTime, isSentByAdmin ? styles.messageTimeSent : styles.messageTimeReceived]}>{formatMessageTimestamp(item.created_at)}</Text>
+                </View>
             </View>
-          </TouchableOpacity>
-        )}
-        keyExtractor={(item) => item.id.toString()}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#ec4899']} />
-        }
-        ListEmptyComponent={
-          <Text style={styles.emptyText}>No messages yet</Text>
-        }
-      />
-    </View>
-  );
+        );
+    };
+
+    if (selectedConversation) {
+        return (
+            <View style={styles.tabContent}>
+                <View style={styles.chatHeader}>
+                    <TouchableOpacity onPress={() => setSelectedConversation(null)}>
+                        <Ionicons name="arrow-back" size={24} color="#333" />
+                    </TouchableOpacity>
+                    <Text style={styles.chatHeaderTitle}>{selectedConversation.user.name}</Text>
+                    <View style={{width: 24}}/>
+                </View>
+                {loading && messages.length === 0 ? (
+                    <ActivityIndicator style={{ marginTop: 20 }} size="large" color="#ec4899" />
+                ) : (
+                    <FlatList
+                        ref={flatListRef}
+                        data={messages}
+                        renderItem={renderMessageItem}
+                        keyExtractor={(item) => item.id.toString()}
+                        style={styles.chatMessagesContainer}
+                        contentContainerStyle={{ padding: 10 }}
+                        onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
+                        onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
+                    />
+                )}
+                <View style={styles.chatInputContainer}>
+                    <TextInput
+                        style={styles.chatInput}
+                        placeholder="Type a message..."
+                        value={newMessage}
+                        onChangeText={setNewMessage}
+                        onSubmitEditing={handleSendMessage}
+                        placeholderTextColor="#999"
+                    />
+                    <TouchableOpacity style={styles.chatSendButton} onPress={handleSendMessage}>
+                        <Ionicons name="send" size={20} color="#fff" />
+                    </TouchableOpacity>
+                </View>
+            </View>
+        )
+    }
+
+    return (
+        <View style={styles.tabContent}>
+            <Text style={styles.tabTitle}>Conversations</Text>
+            {loading ? (
+                <ActivityIndicator style={{ marginTop: 20 }} size="large" color="#ec4899" />
+            ) : (
+                <FlatList
+                    data={conversations}
+                    renderItem={renderConversationItem}
+                    keyExtractor={(item) => item.user?.id?.toString() || item.timestamp}
+                    onRefresh={() => fetchConversations(currentUser.id)}
+                    refreshing={loading}
+                    ListEmptyComponent={<Text style={styles.emptyText}>No conversations found.</Text>}
+                />
+            )}
+        </View>
+    );
 };
+
 
 // ==================== SALES TAB ====================
 const SalesTab = () => {
@@ -2797,6 +3062,23 @@ const styles = StyleSheet.create({
   navTextActive: {
     color: '#ec4899',
     fontWeight: '600',
+  },
+  navBadge: {
+    position: 'absolute',
+    top: -5,
+    right: 20,
+    backgroundColor: 'red',
+    borderRadius: 10,
+    width: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 4,
+  },
+  navBadgeText: {
+      color: 'white',
+      fontSize: 12,
+      fontWeight: 'bold',
   },
   tabContent: {
     flex: 1,
@@ -3887,6 +4169,177 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#2196F3',
     fontWeight: '500',
+  },
+  // Messaging Tab Styles
+  chatItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 15,
+    marginBottom: 10,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+  },
+  chatAvatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#ffe0f0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 15,
+  },
+  chatAvatarText: {
+    color: '#ec4899',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  chatPreview: {
+    flex: 1,
+  },
+  chatName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  chatMessage: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 2,
+  },
+  chatTime: {
+    fontSize: 12,
+    color: '#999',
+    textAlign: 'right',
+  },
+  chatNameUnread: {
+    fontWeight: 'bold',
+  },
+  chatMessageUnread: {
+    color: '#333',
+    fontWeight: 'bold',
+  },
+  chatMeta: {
+    alignItems: 'flex-end',
+  },
+  unreadBadge: {
+    backgroundColor: '#ec4899',
+    borderRadius: 10,
+    height: 20,
+    minWidth: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 4,
+  },
+  unreadText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  chatHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  chatHeaderTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  chatMessagesContainer: {
+    flex: 1,
+    backgroundColor: '#f8f9fa',
+  },
+  chatInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+    backgroundColor: '#fff',
+  },
+  chatInput: {
+    flex: 1,
+    height: 40,
+    backgroundColor: '#f0f2f5',
+    borderRadius: 20,
+    paddingHorizontal: 15,
+    marginRight: 10,
+    fontSize: 16,
+    color: '#333',
+  },
+  chatSendButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#ec4899',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  messageWrapper: {
+    flexDirection: 'row',
+    marginBottom: 10,
+    alignItems: 'flex-end',
+  },
+  messageSentWrapper: {
+    justifyContent: 'flex-end',
+  },
+  messageReceivedWrapper: {
+    justifyContent: 'flex-start',
+  },
+  messageBubble: {
+    maxWidth: '75%',
+    padding: 12,
+    borderRadius: 18,
+  },
+  messageSentBubble: {
+    backgroundColor: '#ec4899',
+    borderBottomRightRadius: 4,
+  },
+  messageReceivedBubble: {
+    backgroundColor: '#fff',
+    borderBottomLeftRadius: 4,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 1,
+  },
+  messageTextSent: {
+    color: '#fff',
+    fontSize: 15,
+  },
+  messageTextReceived: {
+    color: '#333',
+    fontSize: 15,
+  },
+  messageTime: {
+    fontSize: 11,
+    marginTop: 4,
+    alignSelf: 'flex-end',
+  },
+  messageTimeSent: {
+    color: '#fff',
+    opacity: 0.7,
+  },
+  messageTimeReceived: {
+    color: '#999',
+  },
+  messageAvatar: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#e0e0e0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
   },
   detailSection: {
     marginBottom: 15,

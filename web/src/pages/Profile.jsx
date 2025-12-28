@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import '../styles/Shop.css';
 import { supabase } from '../config/supabase';
 
@@ -26,7 +26,22 @@ const menuItems = [
 
 const Profile = ({ user, logout }) => {
     const navigate = useNavigate();
-    const [activeMenu, setActiveMenu] = useState('orders');
+    const location = useLocation();
+
+    // Effect to handle redirection if user is not logged in
+    useEffect(() => {
+        if (!user) {
+            navigate('/login');
+        }
+    }, [user, navigate]);
+
+    // If user is not present, render nothing (or a loading spinner)
+    // All hooks must be called unconditionally after this check
+    if (!user) {
+        return null;
+    }
+
+    const [activeMenu, setActiveMenu] = useState(location.state?.activeMenu || 'orders');
     const [activeOrderTab, setActiveOrderTab] = useState('all');
     const [orders, setOrders] = useState([]);
     const [addresses, setAddresses] = useState([]);
@@ -41,7 +56,109 @@ const Profile = ({ user, logout }) => {
         province: ''
     });
     const [messages, setMessages] = useState([]);
-    const [newMessage, setNewMessage] = '';
+    const [newMessage, setNewMessage] = useState('');
+    const [adminId, setAdminId] = useState(null);
+
+    const formatMessageTime = (timestamp) => {
+        if (!timestamp) return '';
+        try {
+            const date = new Date(timestamp);
+            const now = new Date();
+            
+            const isToday = now.toDateString() === date.toDateString();
+            if (isToday) {
+                return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+            }
+            
+            const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const startOfMessageDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+            const diffTime = startOfToday.getTime() - startOfMessageDate.getTime();
+            const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+
+            if (diffDays === 1) {
+              return '1 day ago';
+            }
+            
+            if (diffDays > 1) {
+              return `${diffDays} days ago`;
+            }
+
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+        } catch (e) {
+            return timestamp;
+        }
+    };
+
+    useEffect(() => {
+        const fetchAdminId = async () => {
+            const { data, error } = await supabase
+                .from('users')
+                .select('id')
+                .eq('role', 'admin')
+                .limit(1);
+
+            if (error) {
+                console.error('Error fetching admin ID:', error);
+            } else if (data && data.length > 0) {
+                setAdminId(data[0].id);
+            } else {
+                console.warn('No admin user found. Please ensure an admin user exists in your Supabase "users" table.');
+            }
+        };
+
+        fetchAdminId();
+    }, []);
+
+    useEffect(() => {
+        if (!user || !adminId) return;
+    
+        const fetchMessages = async () => {
+            const { data, error } = await supabase
+                .from('messages')
+                .select('*')
+                .or(`and(sender_id.eq.${user.id},receiver_id.eq.${adminId}),and(sender_id.eq.${adminId},receiver_id.eq.${user.id})`)
+                .order('created_at', { ascending: true });
+    
+            if (error) {
+                console.error('Error fetching messages:', error);
+            } else {
+                setMessages(data);
+            }
+        };
+
+        const markMessagesAsRead = async () => {
+            if (activeMenu === 'messages') {
+                await supabase
+                    .from('messages')
+                    .update({ is_read: true })
+                    .eq('receiver_id', user.id)
+                    .eq('sender_id', adminId);
+            }
+        };
+    
+        fetchMessages();
+        markMessagesAsRead();
+    
+        const subscription = supabase
+            .channel('public:messages')
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+                const newMessage = payload.new;
+                const isChatParticipant = (newMessage.sender_id === user.id && newMessage.receiver_id === adminId) ||
+                                        (newMessage.sender_id === adminId && newMessage.receiver_id === user.id);
+
+                if (isChatParticipant) {
+                    setMessages((prevMessages) => [...prevMessages, newMessage]);
+                    markMessagesAsRead();
+                }
+            })
+            .subscribe();
+    
+        return () => {
+            supabase.removeChannel(subscription);
+        };
+    }, [user, adminId, supabase, activeMenu]);
+
     const [showCancelModal, setShowCancelModal] = useState(false);
     const [orderToCancel, setOrderToCancel] = useState(null);
     const [showWaitingModal, setShowWaitingModal] = useState(false);
@@ -226,16 +343,12 @@ const Profile = ({ user, logout }) => {
         }
     };
 
-    // Redirect if not logged in
+    // Load orders when user is available
     useEffect(() => {
-        if (!user) {
-            navigate('/login');
-            return;
+        if (user) {
+            loadOrders(user.id);
         }
-        loadOrders(user.id); // Load orders when user is available
-    }, [user, navigate]);
-
-    if (!user) return null;
+    }, [user]); // Only re-run if user changes
 
     // Fetch addresses from Supabase
     useEffect(() => {
@@ -495,39 +608,22 @@ const Profile = ({ user, logout }) => {
         navigate('/cart');
     };
 
-    const sendMessage = () => {
-        if (!newMessage.trim()) return;
+    const sendMessage = async () => {
+        if (!newMessage.trim() || !user || !adminId) return;
 
-        const userMsg = {
-            id: messages.length + 1,
-            sender: 'user',
-            text: newMessage.trim(),
-            time: new Date().toISOString()
+        const message = {
+            sender_id: user.id,
+            receiver_id: adminId, // Admin user ID
+            message: newMessage.trim(),
         };
 
-        const updatedMessages = [...messages, userMsg];
-        setMessages(updatedMessages);
-        localStorage.setItem('userMessages', JSON.stringify(updatedMessages));
-        setNewMessage('');
+        const { error } = await supabase.from('messages').insert([message]);
 
-        // Simulate shop auto-reply after 1 second
-        setTimeout(() => {
-            const replies = [
-                "Thank you for your message! Our team will get back to you shortly.",
-                "We appreciate your inquiry! Please allow us some time to respond.",
-                "Got it! One of our staff will assist you soon.",
-                "Thank you for reaching out! We'll respond as soon as possible."
-            ];
-            const shopReply = {
-                id: updatedMessages.length + 1,
-                sender: 'shop',
-                text: replies[Math.floor(Math.random() * replies.length)],
-                time: new Date().toISOString()
-            };
-            const newMessages = [...updatedMessages, shopReply];
-            setMessages(newMessages);
-            localStorage.setItem('userMessages', JSON.stringify(newMessages));
-        }, 1000);
+        if (error) {
+            console.error('Error sending message:', error);
+        } else {
+            setNewMessage('');
+        }
     };
 
     const renderOrdersContent = () => (
@@ -1024,91 +1120,80 @@ const Profile = ({ user, logout }) => {
         </>
     );
 
-    const renderMessagesContent = () => (
-        <>
-            <div className="d-flex justify-content-between align-items-center mb-4">
-                <h5 className="fw-bold mb-0">
-                    <i className="fas fa-comments me-2" style={{ color: 'var(--shop-pink)' }}></i>
-                    Chat with Us
-                </h5>
-                <span className="badge" style={{ background: 'var(--shop-pink-light)', color: 'var(--shop-pink)' }}>
-                    <i className="fas fa-circle me-1" style={{ fontSize: '0.5rem' }}></i>
-                    Online
-                </span>
-            </div>
-
-            <div
-                className="messages-container rounded p-3 mb-3"
-                style={{
-                    background: '#f8f9fa',
-                    height: '400px',
-                    overflowY: 'auto',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '12px'
-                }}
-            >
-                {messages.map((msg, index) => (
-                    <div
-                        key={index}
-                        className={`d-flex ${msg.sender === 'user' ? 'justify-content-end' : 'justify-content-start'}`}
+    const renderMessagesContent = () => {
+        // Check for complete profile from the fetched profile data
+        const isProfileComplete = profileData && profileData.name && profileData.phone;
+    
+        if (!isProfileComplete) {
+            return (
+                <div className="text-center p-5">
+                    <i className="fas fa-user-edit fa-3x text-muted mb-3"></i>
+                    <h5 className="fw-bold">Complete Your Profile</h5>
+                    <p className="text-muted">Please complete your profile setup in the "Account Settings" tab before you can send messages.</p>
+                    <button
+                        className="btn mt-3"
+                        style={{ background: 'var(--shop-pink)', color: 'white' }}
+                        onClick={() => setActiveMenu('settings')}
                     >
-                        <div
-                            className="message-bubble p-3 rounded-3"
-                            style={{
-                                maxWidth: '75%',
-                                background: msg.sender === 'user' ? 'var(--shop-pink)' : 'white',
-                                color: msg.sender === 'user' ? 'white' : '#333',
-                                boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-                            }}
-                        >
-                            {msg.sender === 'shop' && (
-                                <div className="d-flex align-items-center mb-2">
-                                    <div
-                                        className="rounded-circle d-flex align-items-center justify-content-center me-2"
-                                        style={{ width: '24px', height: '24px', background: 'var(--shop-pink-light)' }}
-                                    >
-                                        <i className="fas fa-store" style={{ fontSize: '0.7rem', color: 'var(--shop-pink)' }}></i>
+                        Go to Account Settings
+                    </button>
+                </div>
+            );
+        }
+    
+        return (
+            <>
+                <div className="d-flex justify-content-between align-items-center mb-4">
+                    <h5 className="fw-bold mb-0">
+                        <i className="fas fa-comments me-2" style={{ color: 'var(--shop-pink)' }}></i>
+                        Chat with Us
+                    </h5>
+                    <span className="badge" style={{ background: 'var(--shop-pink-light)', color: 'var(--shop-pink)' }}>
+                        <i className="fas fa-circle me-1" style={{ fontSize: '0.5rem' }}></i>
+                        Online
+                    </span>
+                </div>
+    
+                <div className="messages-container">
+                    {messages.map((msg, index) => {
+                        const isSent = msg.sender_id === user.id;
+                        return (
+                            <div key={index} className={`message-wrapper ${isSent ? 'sent' : 'received'}`}>
+                                {!isSent && (
+                                     <div className="message-avatar">
+                                        <i className="fas fa-store"></i>
+                                     </div>
+                                )}
+                                <div className={`message-bubble ${isSent ? 'sent' : 'received'}`}>
+                                    <p className="message-text">{msg.message}</p>
+                                    <div className={`message-time ${isSent ? 'sent' : 'received'}`}>
+                                        {formatMessageTime(msg.created_at)}
                                     </div>
-                                    <small className="fw-bold" style={{ color: 'var(--shop-pink)' }}>Jocery's Flower Shop</small>
                                 </div>
-                            )}
-                            <p className="mb-1" style={{ fontSize: '0.95rem' }}>{msg.text}</p>
-                            <small className={msg.sender === 'user' ? 'text-white-50' : 'text-muted'} style={{ fontSize: '0.75rem' }}>
-                                {new Date(msg.time).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })}
-                            </small>
-                        </div>
-                    </div>
-                ))}
-            </div>
-
-            <div className="input-group">
-                <input
-                    type="text"
-                    className="form-control rounded-pill rounded-end"
-                    placeholder="Type your message..."
-                    value={newMessage}
-                    onChange={(e) => setNewMessage(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
-                    style={{ borderRight: 'none' }}
-                />
-                <button
-                    className="btn rounded-pill rounded-start px-4"
-                    style={{ background: 'var(--shop-pink)', color: 'white', borderLeft: 'none' }}
-                    onClick={sendMessage}
-                >
-                    <i className="fas fa-paper-plane"></i>
-                </button>
-            </div>
-
-            <div className="mt-3 p-3 rounded" style={{ background: 'var(--shop-pink-light)' }}>
-                <small className="text-muted">
-                    <i className="fas fa-info-circle me-2" style={{ color: 'var(--shop-pink)' }}></i>
-                    <strong>Quick Help:</strong> You can ask about product availability, order status, custom arrangements, delivery times, or any other inquiries.
-                </small>
-            </div>
-        </>
-    );
+                            </div>
+                        );
+                    })}
+                </div>
+    
+                <div className="chat-input-container">
+                    <input
+                        type="text"
+                        className="chat-input"
+                        placeholder="Type your message..."
+                        value={newMessage}
+                        onChange={(e) => setNewMessage(e.target.value)}
+                        onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                    />
+                    <button
+                        className="chat-send-button"
+                        onClick={sendMessage}
+                    >
+                        <i className="fas fa-paper-plane"></i>
+                    </button>
+                </div>
+            </>
+        );
+    };
 
     const renderContent = () => {
         switch (activeMenu) {
