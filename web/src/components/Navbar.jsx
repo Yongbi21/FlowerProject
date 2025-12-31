@@ -166,6 +166,9 @@ const Navbar = ({ cartCount, user, logout }) => {
                             {/* Generic Notification Bell - moved here */}
                             <Link to="/notifications" className="btn-icon">
                                 <i className="fa-regular fa-bell"></i>
+                                {unreadCount > 0 && (
+                                    <span className="badge-count">{unreadCount > 9 ? '9+' : unreadCount}</span>
+                                )}
                             </Link>
 
                             {user ? (

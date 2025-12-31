@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import Select from 'react-select';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import '../styles/Shop.css';
 import { supabase } from '../config/supabase';
@@ -52,12 +53,114 @@ const Profile = ({ user, logout }) => {
         name: '',
         phone: '',
         street: '',
+        barangay: '',
         city: '',
         province: ''
     });
+    
+    // NEW STATE for address dropdowns
+    const [provinces, setProvinces] = useState([]);
+    const [cities, setCities] = useState([]);
+    const [barangays, setBarangays] = useState([]);
+    const [addressLoading, setAddressLoading] = useState(null); // Can be 'provinces', 'cities', 'barangays'
+    
+    const [selectedProvince, setSelectedProvince] = useState(null);
+    const [selectedCity, setSelectedCity] = useState(null);
+    const [selectedBarangay, setSelectedBarangay] = useState(null);
+
+
     const [messages, setMessages] = useState([]);
     const [newMessage, setNewMessage] = useState('');
     const [adminId, setAdminId] = useState(null);
+
+    // NEW: Fetch provinces when modal opens
+    useEffect(() => {
+        if (showAddressModal) {
+            setAddressLoading('provinces');
+            fetch('https://psgc.gitlab.io/api/provinces/')
+                .then(response => response.json())
+                .then(data => {
+                    const provinceOptions = data.map(p => ({ value: p.code, label: p.name }));
+                    setProvinces(provinceOptions);
+                })
+                .catch(error => console.error('Error fetching provinces:', error))
+                .finally(() => setAddressLoading(null));
+        }
+    }, [showAddressModal]);
+
+    // NEW: Fetch cities when province changes
+    useEffect(() => {
+        if (selectedProvince?.value) {
+            setAddressLoading('cities');
+            setCities([]);
+            setBarangays([]);
+            setSelectedCity(null);
+            setSelectedBarangay(null);
+            setAddressForm(prev => ({ ...prev, city: '', barangay: '' }));
+            
+            fetch(`https://psgc.gitlab.io/api/provinces/${selectedProvince.value}/cities-municipalities/`)
+                .then(response => response.json())
+                .then(data => {
+                    const cityOptions = data.map(c => ({ value: c.code, label: c.name }));
+                    setCities(cityOptions);
+                })
+                .catch(error => console.error('Error fetching cities:', error))
+                .finally(() => setAddressLoading(null));
+        } else {
+            setCities([]);
+            setBarangays([]);
+        }
+    }, [selectedProvince]);
+
+    // NEW: Fetch barangays when city changes
+    useEffect(() => {
+        if (selectedCity?.value) {
+            setAddressLoading('barangays');
+            setBarangays([]);
+            setSelectedBarangay(null);
+            setAddressForm(prev => ({ ...prev, barangay: '' }));
+
+            fetch(`https://psgc.gitlab.io/api/cities-municipalities/${selectedCity.value}/barangays/`)
+                .then(response => response.json())
+                .then(data => {
+                    const barangayOptions = data.map(b => ({ value: b.code, label: b.name }));
+                    setBarangays(barangayOptions);
+                })
+                .catch(error => console.error('Error fetching barangays:', error))
+                .finally(() => setAddressLoading(null));
+        } else {
+            setBarangays([]);
+        }
+    }, [selectedCity]);
+
+    // NEW: Handle pre-filling dropdowns when editing an address
+    useEffect(() => {
+        if (editingAddress && provinces.length > 0) {
+            const currentProvince = provinces.find(p => p.label === editingAddress.province);
+            if (currentProvince) {
+                setSelectedProvince(currentProvince);
+            }
+        }
+    }, [editingAddress, provinces]);
+
+    useEffect(() => {
+        if (editingAddress && cities.length > 0) {
+            const currentCity = cities.find(c => c.label === editingAddress.city);
+            if (currentCity) {
+                setSelectedCity(currentCity);
+            }
+        }
+    }, [editingAddress, cities]);
+
+    useEffect(() => {
+        if (editingAddress && barangays.length > 0) {
+            const currentBarangay = barangays.find(b => b.label === editingAddress.barangay);
+            if (currentBarangay) {
+                setSelectedBarangay(currentBarangay);
+            }
+        }
+    }, [editingAddress, barangays]);
+
 
     const formatMessageTime = (timestamp) => {
         if (!timestamp) return '';
@@ -91,65 +194,80 @@ const Profile = ({ user, logout }) => {
     };
 
     useEffect(() => {
-        const fetchAdminId = async () => {
-            const { data, error } = await supabase
+        if (!user) return;
+    
+        let staffIds = [];
+    
+        const setupMessaging = async () => {
+            // 1. Get all staff members (admins and employees)
+            const { data: staffUsers, error: staffError } = await supabase
                 .from('users')
                 .select('id')
-                .eq('role', 'admin')
-                .limit(1);
-
-            if (error) {
-                console.error('Error fetching admin ID:', error);
-            } else if (data && data.length > 0) {
-                setAdminId(data[0].id);
+                .in('role', ['admin', 'employee']);
+            
+            if (staffError) {
+                console.error('Error fetching staff IDs:', staffError);
+                // As a fallback, we might still want to fetch messages from the primary admin if one exists
+                const { data: adminUser, error: adminError } = await supabase.from('users').select('id').eq('role', 'admin').limit(1).single();
+                if (adminUser) {
+                    staffIds = [adminUser.id];
+                }
             } else {
-                console.warn('No admin user found. Please ensure an admin user exists in your Supabase "users" table.');
+                staffIds = staffUsers.map(u => u.id);
             }
-        };
+            
+            if (staffIds.length === 0) {
+                console.warn("No staff users found to fetch messages from.");
+                return;
+            }
 
-        fetchAdminId();
-    }, []);
-
-    useEffect(() => {
-        if (!user || !adminId) return;
-    
-        const fetchMessages = async () => {
+            // 2. Fetch initial messages between current user and ANY staff member
             const { data, error } = await supabase
                 .from('messages')
                 .select('*')
-                .or(`and(sender_id.eq.${user.id},receiver_id.eq.${adminId}),and(sender_id.eq.${adminId},receiver_id.eq.${user.id})`)
+                .or(`and(sender_id.eq.${user.id},receiver_id.in.(${staffIds.join(',')})),and(receiver_id.eq.${user.id},sender_id.in.(${staffIds.join(',')}))`)
                 .order('created_at', { ascending: true });
     
             if (error) {
                 console.error('Error fetching messages:', error);
             } else {
-                setMessages(data);
+                setMessages(data || []);
             }
-        };
 
-        const markMessagesAsRead = async () => {
+            // 3. Mark messages from any staff as read
             if (activeMenu === 'messages') {
                 await supabase
                     .from('messages')
                     .update({ is_read: true })
                     .eq('receiver_id', user.id)
-                    .eq('sender_id', adminId);
+                    .in('sender_id', staffIds);
             }
         };
+
+        setupMessaging();
     
-        fetchMessages();
-        markMessagesAsRead();
-    
+        // 4. Set up real-time subscription
         const subscription = supabase
             .channel('public:messages')
             .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
                 const newMessage = payload.new;
-                const isChatParticipant = (newMessage.sender_id === user.id && newMessage.receiver_id === adminId) ||
-                                        (newMessage.sender_id === adminId && newMessage.receiver_id === user.id);
+                // A message is relevant if it's TO me from ANY staff, or FROM me to ANY staff.
+                const isRelevant = (staffIds.includes(newMessage.sender_id) && newMessage.receiver_id === user.id) || 
+                                   (newMessage.sender_id === user.id && staffIds.includes(newMessage.receiver_id));
 
-                if (isChatParticipant) {
-                    setMessages((prevMessages) => [...prevMessages, newMessage]);
-                    markMessagesAsRead();
+                if (isRelevant) {
+                    setMessages((prevMessages) => {
+                        if (prevMessages.some(msg => msg.id === newMessage.id)) return prevMessages;
+                        return [...prevMessages, newMessage]
+                    });
+                    // Also mark as read if the messages tab is active
+                    if (activeMenu === 'messages' && newMessage.receiver_id === user.id) {
+                         supabase
+                            .from('messages')
+                            .update({ is_read: true })
+                            .eq('id', newMessage.id)
+                            .then();
+                    }
                 }
             })
             .subscribe();
@@ -157,7 +275,18 @@ const Profile = ({ user, logout }) => {
         return () => {
             supabase.removeChannel(subscription);
         };
-    }, [user, adminId, supabase, activeMenu]);
+    }, [user, activeMenu]);
+
+    // This useEffect is to find a primary admin to send messages TO.
+    useEffect(() => {
+        const fetchAdminId = async () => {
+            const { data, error } = await supabase.from('users').select('id').eq('role', 'admin').limit(1).single();
+            if (error) console.error('Error fetching admin ID for sending:', error);
+            else if (data) setAdminId(data.id);
+            else console.warn('No admin user found to send messages to.');
+        };
+        fetchAdminId();
+    }, []);
 
     const [showCancelModal, setShowCancelModal] = useState(false);
     const [orderToCancel, setOrderToCancel] = useState(null);
@@ -370,22 +499,26 @@ const Profile = ({ user, logout }) => {
     }, [user]);
 
     const handleSaveAddress = async () => {
-        if (!addressForm.label || !addressForm.name || !addressForm.phone || !addressForm.street || !addressForm.city || !addressForm.province) {
-            alert('Please fill in all required fields (Label, Name, Phone, Street, City, Province)');
+        if (!addressForm.label || !addressForm.name || !addressForm.phone || !addressForm.street || !addressForm.barangay || !addressForm.city || !addressForm.province) {
+            alert('Please fill in all required fields (Label, Name, Phone, Street, Barangay, City, Province)');
             return;
         }
 
-        if (!user) {
+        const { data: { user: currentUser }, error: userError } = await supabase.auth.getUser();
+
+        if (userError || !currentUser) {
             alert('You must be logged in to save an address.');
+            console.error('Error fetching user for saving address:', userError);
             return;
         }
 
         const addressData = {
-            user_id: user.id,
+            user_id: currentUser.id,
             label: addressForm.label,
             name: addressForm.name,
             phone: addressForm.phone,
             street: addressForm.street,
+            barangay: addressForm.barangay,
             city: addressForm.city,
             province: addressForm.province,
             is_default: addresses.length === 0 && !editingAddress // If no existing addresses and not editing, set as default
@@ -421,7 +554,7 @@ const Profile = ({ user, logout }) => {
         }
 
         setShowAddressModal(false);
-        setAddressForm({ label: '', name: user?.user_metadata?.name || user?.email || '', phone: user?.user_metadata?.phone || '', street: '' });
+        setAddressForm({ label: '', name: user?.user_metadata?.name || user?.email || '', phone: user?.user_metadata?.phone || '', street: '', barangay: '', city: '', province: '' });
         setEditingAddress(null);
     };
 
@@ -516,8 +649,8 @@ const Profile = ({ user, logout }) => {
         return labels[status] || status;
     };
 
-    const handleTrackOrder = (orderId) => {
-        navigate(`/order-tracking/${orderId}`);
+    const handleTrackOrder = (orderNumber) => {
+        navigate(`/order-tracking/${orderNumber}`);
     };
 
     const handleTrackStatus = (order) => {
@@ -525,7 +658,7 @@ const Profile = ({ user, logout }) => {
         if (order.status === 'pending' && order.type) {
             setShowWaitingModal(true);
         } else {
-            handleTrackOrder(order.id);
+            handleTrackOrder(order.order_number || order.id);
         }
     };
 
@@ -844,7 +977,7 @@ const Profile = ({ user, logout }) => {
                                                         <div className="small text-muted">
                                                             {typeof order.address === 'string'
                                                                 ? order.address
-                                                                : `${order.address.street}, ${order.address.city}, ${order.address.province}`
+                                                                : `${order.address.street}, ${order.address.barangay}, ${order.address.city}, ${order.address.province}`
                                                             }
                                                         </div>
                                                     </div>
@@ -932,11 +1065,17 @@ const Profile = ({ user, logout }) => {
                     style={{ background: 'var(--shop-pink)', color: 'white' }}
                     onClick={() => {
                         setEditingAddress(null);
+                        setSelectedProvince(null);
+                        setSelectedCity(null);
+                        setSelectedBarangay(null);
                         setAddressForm({
                             label: '',
                             name: user?.user_metadata?.name || '', // Use user_metadata
                             phone: user?.user_metadata?.phone || '', // Use user_metadata
-                            street: '', city: '', province: ''
+                            street: '',
+                            barangay: '',
+                            city: '', 
+                            province: ''
                         });
                         setShowAddressModal(true);
                     }}
@@ -962,9 +1101,9 @@ const Profile = ({ user, logout }) => {
                                         name: addr.name || '',
                                         phone: addr.phone || '',
                                         street: addr.street,
+                                        barangay: addr.barangay || '',
                                         city: addr.city,
                                         province: addr.province,
-                                       
                                     });
                                     setShowAddressModal(true);
                                 }}
@@ -983,7 +1122,7 @@ const Profile = ({ user, logout }) => {
                     </div>
                     <div className="address-name mt-2">{addr.name}</div>
                     <div className="address-phone">{addr.phone}</div>
-                    <div className="address-detail mt-2">{`${addr.street}, ${addr.city}, ${addr.province}`}</div>
+                    <div className="address-detail mt-2">{`${addr.street}, ${addr.barangay}, ${addr.city}, ${addr.province}`}</div>
                     {!addr.is_default && (
                         <button
                             className="btn btn-outline-secondary btn-sm mt-3"
@@ -1205,6 +1344,20 @@ const Profile = ({ user, logout }) => {
         }
     };
 
+    const selectStyles = {
+        control: (provided) => ({
+            ...provided,
+            borderColor: '#ddd',
+            borderRadius: '8px',
+            padding: '4px',
+            fontSize: '16px',
+        }),
+        menu: (provided) => ({
+            ...provided,
+            zIndex: 1050, // Ensure dropdown appears above other content
+        }),
+    };
+
     return (
         <div className="profile-container">
             <div className="container">
@@ -1295,6 +1448,54 @@ const Profile = ({ user, logout }) => {
                                     onChange={e => setAddressForm({ ...addressForm, phone: e.target.value })}
                                 />
                             </div>
+
+                             <div className="form-group">
+                                <label className="form-label">Province</label>
+                                <Select
+                                    styles={selectStyles}
+                                    options={provinces}
+                                    isLoading={addressLoading === 'provinces'}
+                                    placeholder="Select Province"
+                                    onChange={option => {
+                                        setSelectedProvince(option);
+                                        setAddressForm({ ...addressForm, province: option ? option.label : '' });
+                                    }}
+                                    value={selectedProvince}
+                                    isClearable
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">City / Municipality</label>
+                                <Select
+                                    styles={selectStyles}
+                                    options={cities}
+                                    isLoading={addressLoading === 'cities'}
+                                    placeholder="Select City/Municipality"
+                                    onChange={option => {
+                                        setSelectedCity(option);
+                                        setAddressForm({ ...addressForm, city: option ? option.label : '' });
+                                    }}
+                                    value={selectedCity}
+                                    isDisabled={!selectedProvince}
+                                    isClearable
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Barangay</label>
+                                <Select
+                                    styles={selectStyles}
+                                    options={barangays}
+                                    isLoading={addressLoading === 'barangays'}
+                                    placeholder="Select Barangay"
+                                    onChange={option => {
+                                        setSelectedBarangay(option);
+                                        setAddressForm({ ...addressForm, barangay: option ? option.label : '' });
+                                    }}
+                                    value={selectedBarangay}
+                                    isDisabled={!selectedCity}
+                                    isClearable
+                                />
+                            </div>
                             <div className="form-group">
                                 <label className="form-label">Street Address</label>
                                 <input
@@ -1302,29 +1503,10 @@ const Profile = ({ user, logout }) => {
                                     className="form-control-custom"
                                     value={addressForm.street}
                                     onChange={e => setAddressForm({ ...addressForm, street: e.target.value })}
-                                    placeholder="e.g., 123 Sampaguita St., Brgy. Maligaya"
+                                    placeholder="e.g., House No., Street Name, Subdivision"
                                 />
                             </div>
-                            <div className="form-group">
-                                <label className="form-label">City</label>
-                                <input
-                                    type="text"
-                                    className="form-control-custom"
-                                    value={addressForm.city}
-                                    onChange={e => setAddressForm({ ...addressForm, city: e.target.value })}
-                                    placeholder="e.g., Quezon City"
-                                />
-                            </div>
-                            <div className="form-group">
-                                <label className="form-label">Province</label>
-                                <input
-                                    type="text"
-                                    className="form-control-custom"
-                                    value={addressForm.province}
-                                    onChange={e => setAddressForm({ ...addressForm, province: e.target.value })}
-                                    placeholder="e.g., Metro Manila"
-                                />
-                            </div>
+                            
                             <button
                                 className="btn"
                                 style={{ background: 'var(--shop-pink)', color: 'white' }}

@@ -1,6 +1,7 @@
 // AdminDashboard.js - Complete Version with Full UI + API Integration
 // Restored all features from original design
 
+import { decode } from 'base64-arraybuffer';
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -35,9 +36,15 @@ const formatTimestamp = (dateString) => {
     const day = String(date.getDate()).padStart(2, '0');
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const year = date.getFullYear();
-    const hours = String(date.getHours()).padStart(2, '0');
+    
+    let hours = date.getHours();
     const minutes = String(date.getMinutes()).padStart(2, '0');
-    return `${day}/${month}/${year} ${hours}:${minutes}`;
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12; // The hour '0' should be '12'
+    hours = String(hours).padStart(2, '0'); // Pad with leading zero
+
+    return `${day}/${month}/${year} ${hours}:${minutes} ${ampm}`;
   } catch (e) {
     return dateString;
   }
@@ -93,36 +100,72 @@ const AdminDashboard = () => {
   const navigation = useNavigation();
   const [activeTab, setActiveTab] = useState('catalogue');
   const [menuVisible, setMenuVisible] = useState(false);
-  const [userRole, setUserRole] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [unreadMessageCount, setUnreadMessageCount] = useState(0);
 
   useEffect(() => {
-    checkUser();
-  }, []);
+    const checkUserAndSubscribe = async () => {
+      setLoading(true);
+      try {
+        const currentUserJson = await AsyncStorage.getItem('currentUser');
+        if (!currentUserJson) {
+          navigation.navigate('Login');
+          return;
+        }
 
-  const checkUser = async () => {
-    try {
-      const currentUser = await AsyncStorage.getItem('currentUser');
-      if (!currentUser) {
+        const user = JSON.parse(currentUserJson);
+        if (user.role !== 'admin' && user.role !== 'employee') {
+          Alert.alert('Access Denied', 'You do not have permission to access this page');
+          navigation.navigate('Login');
+          return;
+        }
+
+        setCurrentUser(user);
+      } catch (error) {
+        console.error('Error checking user:', error);
         navigation.navigate('Login');
-        return;
+      } finally {
+        setLoading(false);
       }
+    };
 
-      const user = JSON.parse(currentUser);
-      if (user.role !== 'admin' && user.role !== 'employee') {
-        Alert.alert('Access Denied', 'You do not have permission to access this page');
-        navigation.navigate('Login');
-        return;
+    checkUserAndSubscribe();
+  }, [navigation]);
+
+  // Effect for real-time message count
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const fetchUnreadCount = async () => {
+      try {
+        const { data, error } = await supabase.rpc('get_shared_conversations');
+        if (error) throw error;
+        
+        const totalUnread = (data || []).reduce((sum, convo) => sum + (convo.unreadCount || 0), 0);
+        setUnreadMessageCount(totalUnread);
+      } catch (error) {
+        console.error("Error fetching unread message count:", error);
       }
+    };
+    
+    // Fetch initial count
+    fetchUnreadCount();
 
-      setUserRole(user.role);
-      setLoading(false);
-    } catch (error) {
-      console.error('Error checking user:', error);
-      navigation.navigate('Login');
-    }
-  };
+    // Set up real-time subscription for new messages
+    const channel = supabase.channel('public:messages')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+        // When a new message comes in, refetch the count
+        fetchUnreadCount();
+      })
+      .subscribe();
+
+    // Cleanup subscription on unmount
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentUser]);
+
 
   const handleLogout = () => {
     Alert.alert(
@@ -145,7 +188,7 @@ const AdminDashboard = () => {
 
   const renderTabContent = () => {
     // Prevent employees from accessing admin-only tabs
-    if (userRole === 'employee' && (activeTab === 'sales' || activeTab === 'about' || activeTab === 'contact' || activeTab === 'employees')) {
+    if (currentUser?.role === 'employee' && (activeTab === 'sales' || activeTab === 'about' || activeTab === 'contact' || activeTab === 'employees')) {
       return <CatalogueTab />;
     }
 
@@ -161,7 +204,7 @@ const AdminDashboard = () => {
       case 'notifications':
         return <NotificationsTab />;
       case 'messaging':
-        return <MessagingTab onUnreadCountChange={setUnreadMessageCount} />;
+        return <MessagingTab />;
       case 'sales':
         return <SalesTab />;
       case 'about':
@@ -267,7 +310,10 @@ const AdminDashboard = () => {
 
         <TouchableOpacity
           style={styles.navItem}
-          onPress={() => setActiveTab('messaging')}
+          onPress={() => {
+            setActiveTab('messaging');
+            setUnreadMessageCount(0);
+          }}
         >
           <Ionicons
             name="chatbubbles"
@@ -336,14 +382,14 @@ const AdminDashboard = () => {
                 <Text style={styles.menuItemText}>Messaging</Text>
               </TouchableOpacity>
 
-              {userRole === 'admin' && (
+              {currentUser?.role === 'admin' && (
                 <TouchableOpacity style={styles.menuItem} onPress={() => { setActiveTab('sales'); setMenuVisible(false); }}>
                   <Ionicons name="cash-outline" size={20} color="#333" />
                   <Text style={styles.menuItemText}>Sales</Text>
                 </TouchableOpacity>
               )}
 
-              {userRole === 'admin' && (
+              {currentUser?.role === 'admin' && (
                 <>
                   <View style={styles.menuDivider} />
 
@@ -905,13 +951,34 @@ const OrdersTab = () => {
 
   useEffect(() => {
     loadOrders();
+
+    const channel = supabase
+      .channel('public:orders')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'orders' },
+        (payload) => {
+          loadOrders();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const loadOrders = async () => {
     setLoading(true);
     try {
       const response = await adminAPI.getAllOrders();
-      setOrders(response.data || []);
+      // Sort orders by created_at in descending order (newest first)
+      const sortedOrders = (response.data || []).sort((a, b) => {
+        const dateA = new Date(a.created_at || 0);
+        const dateB = new Date(b.created_at || 0);
+        return dateB.getTime() - dateA.getTime(); // Descending order
+      });
+      setOrders(sortedOrders);
     } catch (error) {
       console.error('Error loading orders:', error);
       setOrders([]);
@@ -2082,7 +2149,7 @@ const NotificationsTab = () => {
 };
 
 // ==================== MESSAGING TAB ====================
-const MessagingTab = ({ onUnreadCountChange }) => {
+const MessagingTab = () => {
     const [conversations, setConversations] = useState([]);
     const [selectedConversation, setSelectedConversation] = useState(null);
     const [messages, setMessages] = useState([]);
@@ -2092,196 +2159,107 @@ const MessagingTab = ({ onUnreadCountChange }) => {
     const flatListRef = React.useRef(null);
     const navigation = useNavigation();
 
+    // Memoized fetchConversations
+    const fetchConversations = React.useCallback(async (user) => {
+        if (!user || !(user.role === 'admin' || user.role === 'employee')) {
+            setConversations([]);
+            return;
+        }
+        setLoading(true);
+        try {
+            const { data, error } = await supabase.rpc('get_shared_conversations');
+            if (error) throw error;
+            const conversationsData = data || [];
+            setConversations(conversationsData);
+        } catch (error) {
+            console.error("Error fetching shared conversations:", error);
+            Alert.alert('Error', 'Could not fetch conversations. Please ensure database functions are installed correctly.');
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    // Memoized fetchMessages
+    const fetchMessages = React.useCallback(async (conversation, user) => {
+        if (!user || !conversation) return;
+        const customerId = conversation.user.id;
+        setSelectedConversation(conversation);
+        setLoading(true);
+        try {
+            if (conversation.unreadCount > 0) {
+                await supabase.from('messages').update({ is_read: true }).eq('sender_id', customerId).eq('is_read', false);
+                fetchConversations(user);
+            }
+            const { data, error } = await supabase.rpc('get_conversation_messages', { p_customer_id: customerId });
+            if (error) throw error;
+            const messagesWithDetails = await Promise.all((data || []).map(async (msg) => {
+                const { data: sender } = await supabase.from('users').select('id, name, role').eq('id', msg.sender_id).single();
+                return { ...msg, sender };
+            }));
+            setMessages(messagesWithDetails);
+        } catch (error) {
+            console.error("Error fetching messages:", error);
+            Alert.alert('Error', 'Could not fetch message history.');
+        } finally {
+            setLoading(false);
+        }
+    }, [fetchConversations]);
+
     // Get current user from AsyncStorage
     useEffect(() => {
         const loadInitialData = async () => {
             const userJson = await AsyncStorage.getItem('currentUser');
-            if (userJson) {
-                const user = JSON.parse(userJson);
-                setCurrentUser(user);
-            } else {
-                navigation.navigate('Login');
-            }
+            if (userJson) setCurrentUser(JSON.parse(userJson));
+            else navigation.navigate('Login');
         };
         loadInitialData();
     }, [navigation]);
-
-    const fetchConversations = React.useCallback(async (adminId) => {
-        if (!adminId) return;
-        setLoading(true);
-        try {
-            const { data: allMessages, error: msgError } = await supabase
-                .from('messages')
-                .select(`*, sender:sender_id(id, name), receiver:receiver_id(id, name)`)
-                .or(`sender_id.eq.${adminId},receiver_id.eq.${adminId}`)
-                .order('created_at', { ascending: false });
-
-            if (msgError) throw msgError;
-
-            const convosMap = new Map();
-            let totalUnread = 0;
-            allMessages.forEach(msg => {
-                const otherUser = msg.sender_id === adminId ? msg.receiver : msg.sender;
-                if (!otherUser) return;
-
-                if (!convosMap.has(otherUser.id)) {
-                    convosMap.set(otherUser.id, {
-                        user: otherUser,
-                        lastMessage: msg.message,
-                        timestamp: msg.created_at,
-                        unreadCount: 0,
-                    });
-                }
-                
-                if (msg.receiver_id === adminId && !msg.is_read) {
-                    const convo = convosMap.get(otherUser.id);
-                    if (convo) {
-                        convo.unreadCount += 1;
-                    }
-                }
-            });
-
-            for (const convo of convosMap.values()) {
-                totalUnread += convo.unreadCount;
-            }
-            onUnreadCountChange(totalUnread);
-            
-            const sortedConversations = Array.from(convosMap.values()).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-            setConversations(sortedConversations);
-
-        } catch (error) {
-            Alert.alert('Error', 'Could not fetch conversations.');
-        } finally {
-            setLoading(false);
-        }
-    }, [onUnreadCountChange]);
 
     // Fetch conversations when user is loaded
     useFocusEffect(
         React.useCallback(() => {
             if (currentUser) {
-                fetchConversations(currentUser.id);
+                fetchConversations(currentUser);
             }
         }, [currentUser, fetchConversations])
     );
 
-    // Real-time subscription for new messages
+    // Real-time subscription for when the user is actively in a chat
     useEffect(() => {
-        if (!currentUser) return;
+        if (!currentUser || !selectedConversation) return;
 
-        const channel = supabase
-            .channel('public:messages')
-            .on(
-                'postgres_changes',
-                { event: 'INSERT', schema: 'public', table: 'messages' },
-                (payload) => {
-                    const newMessage = payload.new;
-                    const adminId = currentUser.id;
-
-                    if (newMessage.sender_id === adminId) {
-                        return;
-                    }
-
-                    if (selectedConversation && newMessage.sender_id === selectedConversation.user.id && newMessage.receiver_id === adminId) {
-                        const fetchAndAddMessage = async () => {
-                             const {data, error} = await supabase.from('messages').select('*, sender:sender_id(id, name), receiver:receiver_id(id, name)').eq('id', newMessage.id).single();
-                             if (!error && data) {
-                                 setMessages((prevMessages) => {
-                                     if (prevMessages.some(m => m.id === data.id)) {
-                                         return prevMessages;
-                                     }
-                                     return [...prevMessages, data];
-                                 });
-                             }
-                         }
-                         fetchAndAddMessage();
-                    }
-                    fetchConversations(adminId);
+        const channel = supabase.channel(`messaging-tab-realtime-${currentUser.id}`)
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+                const customerInChatId = selectedConversation.user.id;
+                const newMessage = payload.new;
+                // If the new message belongs to the currently open conversation, refetch messages
+                if (newMessage.sender_id === customerInChatId || newMessage.receiver_id === customerInChatId) {
+                    fetchMessages(selectedConversation, currentUser);
                 }
-            )
-            .subscribe();
+            }).subscribe();
 
         return () => {
             supabase.removeChannel(channel);
         };
-    }, [currentUser, selectedConversation, fetchConversations]);
-
-    const fetchMessages = async (conversation) => {
-        if (!currentUser) return;
-        
-        const otherUserId = conversation.user.id;
-        const unreadToClear = conversation.unreadCount;
-
-        if (unreadToClear > 0) {
-            const { error: updateError } = await supabase
-                .from('messages')
-                .update({ is_read: true })
-                .eq('receiver_id', currentUser.id)
-                .eq('sender_id', otherUserId)
-                .eq('is_read', false);
-
-            if (updateError) {
-                console.error("Error marking messages as read:", updateError);
-            } else {
-                setConversations(prev => prev.map(c => 
-                    c.user.id === otherUserId ? { ...c, unreadCount: 0 } : c
-                ));
-                onUnreadCountChange(prevTotal => Math.max(0, prevTotal - unreadToClear));
-            }
-        }
-
-        setSelectedConversation(conversation);
-        setLoading(true);
-        try {
-            const { data, error } = await supabase
-                .from('messages')
-                .select(`*, sender:sender_id(id, name), receiver:receiver_id(id, name)`)
-                .or(`and(sender_id.eq.${currentUser.id},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${currentUser.id})`)
-                .order('created_at', { ascending: true });
-
-            if (error) throw error;
-            setMessages(data);
-        } catch (error) {
-            Alert.alert('Error', 'Could not fetch messages.');
-        } finally {
-            setLoading(false);
-        }
-    };
+    }, [currentUser, selectedConversation, fetchMessages]);
 
     const handleSendMessage = async () => {
         if (!newMessage.trim() || !selectedConversation || !currentUser) return;
-
         const receiverId = selectedConversation.user.id;
         const messageText = newMessage.trim();
-        
-        const tempMessageId = `temp_${Date.now()}_${Math.random()}`;
-        const optimisticMessage = {
-            id: tempMessageId,
-            sender_id: currentUser.id,
-            receiver_id: receiverId,
-            message: messageText,
-            created_at: new Date().toISOString(),
-            sender: { id: currentUser.id, name: 'Admin' },
-            receiver: selectedConversation.user,
-            isTemporary: true,
-        };
-        setMessages(prevMessages => [...prevMessages, optimisticMessage]);
         setNewMessage('');
 
         try {
-            const { data, error } = await supabase
-                .from('messages')
-                .insert({ sender_id: currentUser.id, receiver_id: receiverId, message: messageText })
-                .select()
-                .single();
-            
+            const { error } = await supabase.rpc('send_message_as_staff', {
+                p_receiver_id: receiverId,
+                p_message_text: messageText
+            });
             if (error) throw error;
-            
-            setMessages(prev => prev.map(m => (m.id === tempMessageId ? { ...data, sender: optimisticMessage.sender, receiver: optimisticMessage.receiver } : m)));
-            fetchConversations(currentUser.id);
+            // Optimistically update UI - for simplicity, we just refetch
+            fetchMessages(selectedConversation, currentUser);
         } catch (error) {
-            Alert.alert('Error', 'Could not send message.');
-            setMessages(prev => prev.filter(m => m.id !== tempMessageId));
+            console.error("Error sending message:", error);
+            Alert.alert('Error', error.message || 'Could not send message.');
             setNewMessage(messageText); 
         }
     };
@@ -2289,7 +2267,7 @@ const MessagingTab = ({ onUnreadCountChange }) => {
     const renderConversationItem = ({ item }) => {
         const isUnread = item.unreadCount > 0;
         return (
-            <TouchableOpacity style={styles.chatItem} onPress={() => fetchMessages(item)}>
+            <TouchableOpacity style={styles.chatItem} onPress={() => fetchMessages(item, currentUser)}>
                 <View style={styles.chatAvatar}>
                      <Text style={styles.chatAvatarText}>{item.user.name ? item.user.name.charAt(0).toUpperCase() : 'U'}</Text>
                 </View>
@@ -2298,7 +2276,7 @@ const MessagingTab = ({ onUnreadCountChange }) => {
                     <Text style={[styles.chatMessage, isUnread && styles.chatMessageUnread]} numberOfLines={1}>{item.lastMessage}</Text>
                 </View>
                 <View style={styles.chatMeta}>
-          <Text style={styles.chatUserTime}>{formatMessageTimestamp(item.timestamp)}</Text>
+                    <Text style={styles.chatUserTime}>{formatMessageTimestamp(item.timestamp)}</Text>
                     {isUnread && (
                         <View style={styles.unreadBadge}>
                             <Text style={styles.unreadText}>{item.unreadCount}</Text>
@@ -2310,17 +2288,17 @@ const MessagingTab = ({ onUnreadCountChange }) => {
     };
 
     const renderMessageItem = ({ item }) => {
-        const isSentByAdmin = item.sender_id === currentUser.id;
+        const isSentByMe = item.sender_id === currentUser.id;
         return (
-            <View style={[styles.messageWrapper, isSentByAdmin ? styles.messageSentWrapper : styles.messageReceivedWrapper]}>
-                {!isSentByAdmin && (
+            <View style={[styles.messageWrapper, isSentByMe ? styles.messageSentWrapper : styles.messageReceivedWrapper]}>
+                {!isSentByMe && (
                     <View style={styles.messageAvatar}>
-                        <Text style={styles.chatAvatarText}>{item.sender.name ? item.sender.name.charAt(0).toUpperCase() : 'U'}</Text>
+                        <Text style={styles.chatAvatarText}>{item.sender && item.sender.name ? item.sender.name.charAt(0).toUpperCase() : 'U'}</Text>
                     </View>
                 )}
-                <View style={[styles.messageBubble, isSentByAdmin ? styles.messageSentBubble : styles.messageReceivedBubble, item.isTemporary && { opacity: 0.6 }]}>
-                    <Text style={isSentByAdmin ? styles.messageTextSent : styles.messageTextReceived}>{item.message}</Text>
-                    <Text style={[styles.messageTime, isSentByAdmin ? styles.messageTimeSent : styles.messageTimeReceived]}>{formatMessageTimestamp(item.created_at)}</Text>
+                <View style={[styles.messageBubble, isSentByMe ? styles.messageSentBubble : styles.messageReceivedBubble]}>
+                    <Text style={isSentByMe ? styles.messageTextSent : styles.messageTextReceived}>{item.message}</Text>
+                    <Text style={[styles.messageTime, isSentByMe ? styles.messageTimeSent : styles.messageTimeReceived]}>{formatMessageTimestamp(item.created_at)}</Text>
                 </View>
             </View>
         );
@@ -2336,32 +2314,17 @@ const MessagingTab = ({ onUnreadCountChange }) => {
                     <Text style={styles.chatHeaderTitle}>{selectedConversation.user.name}</Text>
                     <View style={{width: 24}}/>
                 </View>
-                {loading && messages.length === 0 ? (
-                    <ActivityIndicator style={{ marginTop: 20 }} size="large" color="#ec4899" />
-                ) : (
+                {loading && messages.length === 0 ? ( <ActivityIndicator style={{ marginTop: 20 }} size="large" color="#ec4899" /> ) : (
                     <FlatList
-                        ref={flatListRef}
-                        data={messages}
-                        renderItem={renderMessageItem}
-                        keyExtractor={(item) => item.id.toString()}
-                        style={styles.chatMessagesContainer}
-                        contentContainerStyle={{ padding: 10 }}
-                        onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
+                        ref={flatListRef} data={messages} renderItem={renderMessageItem} keyExtractor={(item) => item.id.toString()}
+                        style={styles.chatMessagesContainer} contentContainerStyle={{ padding: 10 }}
+                        onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
                         onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
                     />
                 )}
                 <View style={styles.chatInputContainer}>
-                    <TextInput
-                        style={styles.chatInput}
-                        placeholder="Type a message..."
-                        value={newMessage}
-                        onChangeText={setNewMessage}
-                        onSubmitEditing={handleSendMessage}
-                        placeholderTextColor="#999"
-                    />
-                    <TouchableOpacity style={styles.chatSendButton} onPress={handleSendMessage}>
-                        <Ionicons name="send" size={20} color="#fff" />
-                    </TouchableOpacity>
+                    <TextInput style={styles.chatInput} placeholder="Type a message..." value={newMessage} onChangeText={setNewMessage} onSubmitEditing={handleSendMessage} placeholderTextColor="#999" />
+                    <TouchableOpacity style={styles.chatSendButton} onPress={handleSendMessage}><Ionicons name="send" size={20} color="#fff" /></TouchableOpacity>
                 </View>
             </View>
         )
@@ -2370,15 +2333,10 @@ const MessagingTab = ({ onUnreadCountChange }) => {
     return (
         <View style={styles.tabContent}>
             <Text style={styles.tabTitle}>Conversations</Text>
-            {loading ? (
-                <ActivityIndicator style={{ marginTop: 20 }} size="large" color="#ec4899" />
-            ) : (
+            {loading && !conversations.length ? ( <ActivityIndicator style={{ marginTop: 20 }} size="large" color="#ec4899" /> ) : (
                 <FlatList
-                    data={conversations}
-                    renderItem={renderConversationItem}
-                    keyExtractor={(item) => item.user?.id?.toString() || item.timestamp}
-                    onRefresh={() => fetchConversations(currentUser.id)}
-                    refreshing={loading}
+                    data={conversations} renderItem={renderConversationItem} keyExtractor={(item) => item.user?.id?.toString()}
+                    onRefresh={() => fetchConversations(currentUser)} refreshing={loading}
                     ListEmptyComponent={<Text style={styles.emptyText}>No conversations found.</Text>}
                 />
             )}
@@ -2653,188 +2611,502 @@ const SalesTab = () => {
 
 // ==================== ABOUT TAB ====================
 const AboutTab = () => {
-  const [formData, setFormData] = useState({
-    description: '',
-    mission: '',
-    vision: ''
-  });
-  const [loading, setLoading] = useState(false);
+    const [aboutData, setAboutData] = useState({
+        story: '',
+        about_description: '',
+        promise: '',
+        ownerQuote: '',
+        ownerImage: null,
+        ourShopImage: null,
+        customBouquetsDescription: '',
+        customBouquetsImage: null,
+        eventDecorationsDescription: '',
+        eventDecorationsImage: null,
+        specialOrdersDescription: '',
+        specialOrdersImage: null,
+        promises_responsibly_sourced_description: '',
+        promises_responsibly_sourced_image: null,
+        promises_crafted_by_experts_description: '',
+        promises_crafted_by_experts_image: null,
+        promises_caring_for_moments_description: '',
+        promises_caring_for_moments_image: null,
+    });
+    const [loading, setLoading] = useState(true);
+    const [isSaving, setIsSaving] = useState(false);
 
-  useEffect(() => {
-    loadData();
-  }, []);
+    const fetchAboutData = async () => {
+        setLoading(true);
+        try {
+            const { data, error } = await supabase
+                .from('app_content')
+                .select('key, value')
+                .in('key', [
+                    'about_story', 'about_description', 'about_promise', 'about_owner_quote', 'about_owner_image', 'about_our_shop_img',
+                    'about_custom_bouquets_desc', 'about_custom_bouquets_img',
+                    'about_event_decorations_desc', 'about_event_decorations_img',
+                    'about_special_orders_desc', 'about_special_orders_img',
+                    'promises_responsibly_sourced_description', 'promises_responsibly_sourced_image',
+                    'promises_crafted_by_experts_description', 'promises_crafted_by_experts_image',
+                    'promises_caring_for_moments_description', 'promises_caring_for_moments_image'
+                ]);
 
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      const response = await adminAPI.getAbout();
-      if (response.data.content) {
-        setFormData(response.data.content);
-      }
-    } catch (error) {
-      console.error('Error loading about:', error);
-    } finally {
-      setLoading(false);
+            if (error) throw error;
+
+            const info = data.reduce((acc, { key, value }) => {
+                if (key === 'about_story') acc.story = value;
+                if (key === 'about_description') acc.about_description = value;
+                if (key === 'about_promise') acc.promise = value;
+                if (key === 'about_owner_quote') acc.ownerQuote = value;
+                if (key === 'about_owner_image') acc.ownerImage = value;
+                if (key === 'about_our_shop_img') acc.ourShopImage = value;
+                if (key === 'about_custom_bouquets_desc') acc.customBouquetsDescription = value;
+                if (key === 'about_custom_bouquets_img') acc.customBouquetsImage = value;
+                if (key === 'about_event_decorations_desc') acc.eventDecorationsDescription = value;
+                if (key === 'about_event_decorations_img') acc.eventDecorationsImage = value;
+                if (key === 'about_special_orders_desc') acc.specialOrdersDescription = value;
+                if (key === 'about_special_orders_img') acc.specialOrdersImage = value;
+                if (key === 'promises_responsibly_sourced_description') acc.promises_responsibly_sourced_description = value;
+                if (key === 'promises_responsibly_sourced_image') acc.promises_responsibly_sourced_image = value;
+                if (key === 'promises_crafted_by_experts_description') acc.promises_crafted_by_experts_description = value;
+                if (key === 'promises_crafted_by_experts_image') acc.promises_crafted_by_experts_image = value;
+                if (key === 'promises_caring_for_moments_description') acc.promises_caring_for_moments_description = value;
+                if (key === 'promises_caring_for_moments_image') acc.promises_caring_for_moments_image = value;
+                return acc;
+            }, { 
+                story: '', about_description: '', promise: '', ownerQuote: '', ownerImage: null, ourShopImage: null,
+                customBouquetsDescription: '', customBouquetsImage: null,
+                eventDecorationsDescription: '', eventDecorationsImage: null,
+                specialOrdersDescription: '', specialOrdersImage: null,
+                promises_responsibly_sourced_description: '', promises_responsibly_sourced_image: null,
+                promises_crafted_by_experts_description: '', promises_crafted_by_experts_image: null,
+                promises_caring_for_moments_description: '', promises_caring_for_moments_image: null,
+            });
+            setAboutData(info);
+        } catch (error) {
+            Alert.alert('Error fetching about data', error.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchAboutData();
+    }, []);
+
+    const pickImage = async (field) => {
+        try {
+          const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: true,
+            aspect: [1, 1],
+            quality: 0.8,
+            base64: true,
+          });
+    
+          if (!result.canceled) {
+            setAboutData(prev => ({ ...prev, [field]: result.assets[0] }));
+          }
+        } catch (error) {
+          console.error(`Error launching image library for ${field}:`, error);
+          Alert.alert('Error', 'Failed to open image library. Please try again.');
+        }
+    };
+
+    const handleSave = async () => {
+        setIsSaving(true);
+        try {
+            let updates = [];
+            const textFields = {
+                about_story: aboutData.story,
+                about_description: aboutData.about_description,
+                about_promise: aboutData.promise,
+                about_owner_quote: aboutData.ownerQuote,
+                about_custom_bouquets_desc: aboutData.customBouquetsDescription,
+                about_event_decorations_desc: aboutData.eventDecorationsDescription,
+                about_special_orders_desc: aboutData.specialOrdersDescription,
+                promises_responsibly_sourced_description: aboutData.promises_responsibly_sourced_description,
+                promises_crafted_by_experts_description: aboutData.promises_crafted_by_experts_description,
+                promises_caring_for_moments_description: aboutData.promises_caring_for_moments_description,
+            };
+    
+            for (const [key, value] of Object.entries(textFields)) {
+                updates.push({ key, value });
+            }
+    
+            const handleImageUpload = async (imageAsset, fileName, keyName) => {
+                if (imageAsset && typeof imageAsset === 'object' && imageAsset.base64) {
+                    const arrayBuffer = decode(imageAsset.base64);
+                    const filePath = `${fileName}.jpg`;
+                    const contentType = imageAsset.mimeType || 'image/jpeg';
+    
+                    const { error: uploadError } = await supabase.storage
+                        .from('about-images')
+                        .upload(filePath, arrayBuffer, { contentType, upsert: true });
+    
+                    if (uploadError) throw uploadError;
+    
+                    const { data: urlData } = supabase.storage.from('about-images').getPublicUrl(filePath);
+                    if (!urlData) throw new Error(`Could not get public URL for ${fileName}.`);
+                    
+                    const imageUrl = `${urlData.publicUrl}?t=${new Date().getTime()}`;
+                    updates.push({ key: keyName, value: imageUrl });
+                }
+            };
+    
+            await handleImageUpload(aboutData.ownerImage, 'owner', 'about_owner_image');
+            await handleImageUpload(aboutData.ourShopImage, 'our_shop', 'about_our_shop_img');
+            await handleImageUpload(aboutData.customBouquetsImage, 'custom_bouquets', 'about_custom_bouquets_img');
+            await handleImageUpload(aboutData.eventDecorationsImage, 'event_decorations', 'about_event_decorations_img');
+            await handleImageUpload(aboutData.specialOrdersImage, 'special_orders', 'about_special_orders_img');
+            await handleImageUpload(aboutData.promises_responsibly_sourced_image, 'responsibly_sourced', 'promises_responsibly_sourced_image');
+            await handleImageUpload(aboutData.promises_crafted_by_experts_image, 'crafted_by_experts', 'promises_crafted_by_experts_image');
+            await handleImageUpload(aboutData.promises_caring_for_moments_image, 'caring_for_moments', 'promises_caring_for_moments_image');
+
+            const { error: upsertError } = await supabase
+                .from('app_content')
+                .upsert(updates, { onConflict: 'key' });
+
+            if (upsertError) throw upsertError;
+
+            Alert.alert('Success', 'About page content has been updated.');
+        } catch (error) {
+            console.error('Error saving about content:', error);
+            Alert.alert('Error saving about content', error.message);
+        } finally {
+            setIsSaving(false);
+            fetchAboutData();
+        }
+    };
+
+    if (loading) {
+        return <ActivityIndicator style={{ marginTop: 20 }} size="large" color="#ec4899" />;
     }
-  };
 
-  const handleSave = async () => {
-    setLoading(true);
-    try {
-      await adminAPI.updateAbout(formData);
-      Alert.alert('Success', 'About content updated');
-    } catch (error) {
-      Alert.alert('Error', 'Failed to update content');
-    } finally {
-      setLoading(false);
-    }
-  };
+    const getImageUri = (image) => image ? (typeof image === 'string' ? image : image.uri) : null;
 
-  if (loading && !formData.description) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#ec4899" />
-      </View>
+        <ScrollView style={styles.tabContent} keyboardShouldPersistTaps="handled">
+            <Text style={styles.tabTitle}>About Page Content</Text>
+            
+            <Text style={styles.inputLabel}>Our Story</Text>
+            <TextInput
+                style={[styles.input, { height: 150, textAlignVertical: 'top' }]}
+                value={aboutData.story}
+                onChangeText={text => setAboutData(prev => ({ ...prev, story: text }))}
+                placeholder="The story of the shop..."
+                multiline
+            />
+
+            <Text style={styles.inputLabel}>About Description</Text>
+            <TextInput
+                style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
+                value={aboutData.about_description}
+                onChangeText={text => setAboutData(prev => ({ ...prev, about_description: text }))}
+                placeholder="A short description for the about page..."
+                multiline
+            />
+
+            <Text style={styles.inputLabel}>Our Shop Image</Text>
+            <TouchableOpacity style={styles.imageUploadBox} onPress={() => pickImage('ourShopImage')}>
+                {getImageUri(aboutData.ourShopImage) ? (
+                  <Image source={{ uri: getImageUri(aboutData.ourShopImage) }} style={styles.uploadedImage} />
+                ) : (
+                  <View style={styles.imageUploadPlaceholder}>
+                    <Ionicons name="camera" size={40} color="#ec4899" />
+                    <Text style={styles.imageUploadText}>Tap to Upload Photo</Text>
+                  </View>
+                )}
+            </TouchableOpacity>
+            
+            <Text style={styles.inputLabel}>Our Promise</Text>
+            <TextInput
+                style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
+                value={aboutData.promise}
+                onChangeText={text => setAboutData(prev => ({ ...prev, promise: text }))}
+                placeholder="The shop's promise to customers..."
+                multiline
+            />
+
+            <Text style={styles.inputLabel}>Owner's Quote</Text>
+            <TextInput
+                style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
+                value={aboutData.ownerQuote}
+                onChangeText={text => setAboutData(prev => ({ ...prev, ownerQuote: text }))}
+                placeholder="A quote from the owner..."
+                multiline
+            />
+
+            <Text style={styles.inputLabel}>Owner's Picture</Text>
+            <TouchableOpacity style={styles.imageUploadBox} onPress={() => pickImage('ownerImage')}>
+                {getImageUri(aboutData.ownerImage) ? (
+                  <Image source={{ uri: getImageUri(aboutData.ownerImage) }} style={styles.uploadedImage} />
+                ) : (
+                  <View style={styles.imageUploadPlaceholder}>
+                    <Ionicons name="camera" size={40} color="#ec4899" />
+                    <Text style={styles.imageUploadText}>Tap to Upload Photo</Text>
+                  </View>
+                )}
+            </TouchableOpacity>
+
+            <View style={styles.menuDivider} />
+            <Text style={styles.sectionTitle}>Services</Text>
+
+            <Text style={styles.inputLabel}>Custom Bouquets Description</Text>
+            <TextInput
+                style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
+                value={aboutData.customBouquetsDescription}
+                onChangeText={text => setAboutData(prev => ({ ...prev, customBouquetsDescription: text }))}
+                placeholder="Description for custom bouquets service..."
+                multiline
+            />
+            <Text style={styles.inputLabel}>Custom Bouquets Image</Text>
+            <TouchableOpacity style={styles.imageUploadBox} onPress={() => pickImage('customBouquetsImage')}>
+                {getImageUri(aboutData.customBouquetsImage) ? (
+                  <Image source={{ uri: getImageUri(aboutData.customBouquetsImage) }} style={styles.uploadedImage} />
+                ) : (
+                  <View style={styles.imageUploadPlaceholder}>
+                    <Ionicons name="camera" size={40} color="#ec4899" />
+                    <Text style={styles.imageUploadText}>Tap to Upload Photo</Text>
+                  </View>
+                )}
+            </TouchableOpacity>
+
+            <View style={styles.menuDivider} />
+
+            <Text style={styles.inputLabel}>Event Decorations Description</Text>
+            <TextInput
+                style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
+                value={aboutData.eventDecorationsDescription}
+                onChangeText={text => setAboutData(prev => ({ ...prev, eventDecorationsDescription: text }))}
+                placeholder="Description for event decorations service..."
+                multiline
+            />
+            <Text style={styles.inputLabel}>Event Decorations Image</Text>
+            <TouchableOpacity style={styles.imageUploadBox} onPress={() => pickImage('eventDecorationsImage')}>
+                {getImageUri(aboutData.eventDecorationsImage) ? (
+                  <Image source={{ uri: getImageUri(aboutData.eventDecorationsImage) }} style={styles.uploadedImage} />
+                ) : (
+                  <View style={styles.imageUploadPlaceholder}>
+                    <Ionicons name="camera" size={40} color="#ec4899" />
+                    <Text style={styles.imageUploadText}>Tap to Upload Photo</Text>
+                  </View>
+                )}
+            </TouchableOpacity>
+
+            <View style={styles.menuDivider} />
+
+            <Text style={styles.inputLabel}>Special Orders Description</Text>
+            <TextInput
+                style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
+                value={aboutData.specialOrdersDescription}
+                onChangeText={text => setAboutData(prev => ({ ...prev, specialOrdersDescription: text }))}
+                placeholder="Description for special orders service..."
+                multiline
+            />
+
+            <View style={styles.menuDivider} />
+            <Text style={styles.sectionTitle}>Promises</Text>
+
+            <Text style={styles.inputLabel}>Responsibly Sourced Description</Text>
+            <TextInput
+                style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
+                value={aboutData.promises_responsibly_sourced_description}
+                onChangeText={text => setAboutData(prev => ({ ...prev, promises_responsibly_sourced_description: text }))}
+                placeholder="Description for responsibly sourced..."
+                multiline
+            />
+            <Text style={styles.inputLabel}>Responsibly Sourced Image</Text>
+            <TouchableOpacity style={styles.imageUploadBox} onPress={() => pickImage('promises_responsibly_sourced_image')}>
+                {getImageUri(aboutData.promises_responsibly_sourced_image) ? (
+                  <Image source={{ uri: getImageUri(aboutData.promises_responsibly_sourced_image) }} style={styles.uploadedImage} />
+                ) : (
+                  <View style={styles.imageUploadPlaceholder}>
+                    <Ionicons name="camera" size={40} color="#ec4899" />
+                    <Text style={styles.imageUploadText}>Tap to Upload Photo</Text>
+                  </View>
+                )}
+            </TouchableOpacity>
+
+            <Text style={styles.inputLabel}>Crafted by Experts Description</Text>
+            <TextInput
+                style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
+                value={aboutData.promises_crafted_by_experts_description}
+                onChangeText={text => setAboutData(prev => ({ ...prev, promises_crafted_by_experts_description: text }))}
+                placeholder="Description for crafted by experts..."
+                multiline
+            />
+            <Text style={styles.inputLabel}>Crafted by Experts Image</Text>
+            <TouchableOpacity style={styles.imageUploadBox} onPress={() => pickImage('promises_crafted_by_experts_image')}>
+                {getImageUri(aboutData.promises_crafted_by_experts_image) ? (
+                  <Image source={{ uri: getImageUri(aboutData.promises_crafted_by_experts_image) }} style={styles.uploadedImage} />
+                ) : (
+                  <View style={styles.imageUploadPlaceholder}>
+                    <Ionicons name="camera" size={40} color="#ec4899" />
+                    <Text style={styles.imageUploadText}>Tap to Upload Photo</Text>
+                  </View>
+                )}
+            </TouchableOpacity>
+
+            <Text style={styles.inputLabel}>Caring for Moments Description</Text>
+            <TextInput
+                style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
+                value={aboutData.promises_caring_for_moments_description}
+                onChangeText={text => setAboutData(prev => ({ ...prev, promises_caring_for_moments_description: text }))}
+                placeholder="Description for caring for moments..."
+                multiline
+            />
+            <Text style={styles.inputLabel}>Caring for Moments Image</Text>
+            <TouchableOpacity style={styles.imageUploadBox} onPress={() => pickImage('promises_caring_for_moments_image')}>
+                {getImageUri(aboutData.promises_caring_for_moments_image) ? (
+                  <Image source={{ uri: getImageUri(aboutData.promises_caring_for_moments_image) }} style={styles.uploadedImage} />
+                ) : (
+                  <View style={styles.imageUploadPlaceholder}>
+                    <Ionicons name="camera" size={40} color="#ec4899" />
+                    <Text style={styles.imageUploadText}>Tap to Upload Photo</Text>
+                  </View>
+                )}
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[styles.addButton, {alignSelf: 'center', marginTop: 20}]} onPress={handleSave} disabled={isSaving}>
+                <Text style={styles.addButtonText}>{isSaving ? 'Saving...' : 'Save Changes'}</Text>
+            </TouchableOpacity>
+        </ScrollView>
     );
-  }
-
-  return (
-    <ScrollView style={styles.tabContent}>
-      <Text style={styles.tabTitle}>About Page Management</Text>
-
-      <Text style={styles.inputLabel}>Our Story</Text>
-      <TextInput
-        style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
-        multiline
-        value={formData.description}
-        onChangeText={(text) => setFormData({ ...formData, description: text })}
-        placeholder="Enter your shop's story..."
-      />
-
-      <Text style={styles.inputLabel}>Our Promise</Text>
-      <TextInput
-        style={[styles.input, { height: 80, textAlignVertical: 'top' }]}
-        multiline
-        value={formData.mission}
-        onChangeText={(text) => setFormData({ ...formData, mission: text })}
-        placeholder="Enter your mission/promise..."
-      />
-
-      <Text style={styles.inputLabel}>Owner Quote (Vision)</Text>
-      <TextInput
-        style={[styles.input, { height: 60, textAlignVertical: 'top' }]}
-        multiline
-        value={formData.vision}
-        onChangeText={(text) => setFormData({ ...formData, vision: text })}
-        placeholder="Enter a quote..."
-      />
-
-      <TouchableOpacity
-        style={[styles.addButton, { marginTop: 20 }]}
-        onPress={handleSave}
-        disabled={loading}
-      >
-        <Text style={styles.addButtonText}>{loading ? 'Saving...' : 'Save Changes'}</Text>
-      </TouchableOpacity>
-      <View style={{ height: 50 }} />
-    </ScrollView>
-  );
 };
 
 // ==================== CONTACT TAB ====================
 const ContactTab = () => {
-  const [formData, setFormData] = useState({
-    address: '',
-    phone: '',
-    email: '',
-    map_url: ''
-  });
-  const [loading, setLoading] = useState(false);
+    const [contactInfo, setContactInfo] = useState({
+        address: '',
+        phone: '',
+        email: '',
+        mapUrl: ''
+    });
+    const [loading, setLoading] = useState(true);
+    const [isSaving, setIsSaving] = useState(false);
 
-  useEffect(() => {
-    loadData();
-  }, []);
+    const fetchContactInfo = async () => {
+        setLoading(true);
+        try {
+            const { data, error } = await supabase
+                .from('app_content')
+                .select('key, value')
+                .in('key', ['contact_address', 'contact_phone', 'contact_email', 'contact_map_url']);
 
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      const response = await adminAPI.getContact();
-      if (response.data.info) {
-        setFormData(response.data.info);
-      }
-    } catch (error) {
-      console.error('Error loading contact:', error);
-    } finally {
-      setLoading(false);
+            if (error) throw error;
+
+            const info = data.reduce((acc, { key, value }) => {
+                if (key === 'contact_address') acc.address = value;
+                if (key === 'contact_phone') acc.phone = value;
+                if (key === 'contact_email') acc.email = value;
+                if (key === 'contact_map_url') acc.mapUrl = value;
+                return acc;
+            }, { address: '', phone: '', email: '', mapUrl: '' });
+            setContactInfo(info);
+        } catch (error) {
+            Alert.alert('Error fetching contact info', error.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchContactInfo();
+    }, []);
+
+    const handleSave = async () => {
+        setIsSaving(true);
+        try {
+            const updates = [
+                { key: 'contact_address', value: contactInfo.address },
+                { key: 'contact_phone', value: contactInfo.phone },
+                { key: 'contact_email', value: contactInfo.email },
+                { key: 'contact_map_url', value: contactInfo.mapUrl },
+            ];
+
+            const { data: existingKeysData, error: fetchError } = await supabase
+              .from('app_content')
+              .select('key')
+              .in('key', updates.map(u => u.key));
+            
+            if(fetchError) throw fetchError;
+
+            const existingKeys = existingKeysData.map(item => item.key);
+            const toUpdate = updates.filter(u => existingKeys.includes(u.key));
+            const toInsert = updates.filter(u => !existingKeys.includes(u.key) && u.value);
+
+            if (toUpdate.length > 0) {
+              for (const item of toUpdate) {
+                const { error } = await supabase
+                  .from('app_content')
+                  .update({ value: item.value, updated_at: new Date().toISOString() })
+                  .eq('key', item.key);
+                if (error) throw new Error(`Failed to update ${item.key}: ${error.message}`);
+              }
+            }
+
+            if (toInsert.length > 0) {
+              const { error } = await supabase.from('app_content').insert(toInsert);
+              if (error) throw new Error(`Failed to insert new keys: ${error.message}`);
+            }
+
+            Alert.alert('Success', 'Contact information has been updated.');
+        } catch (error) {
+            Alert.alert('Error saving contact info', error.message);
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    if (loading) {
+        return <ActivityIndicator style={{ marginTop: 20 }} size="large" color="#ec4899" />;
     }
-  };
 
-  const handleSave = async () => {
-    setLoading(true);
-    try {
-      await adminAPI.updateContact(formData);
-      Alert.alert('Success', 'Contact info updated');
-    } catch (error) {
-      Alert.alert('Error', 'Failed to update info');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (loading && !formData.address) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#ec4899" />
-      </View>
+        <ScrollView style={styles.tabContent} keyboardShouldPersistTaps="handled">
+            <Text style={styles.tabTitle}>Contact Page Settings</Text>
+            
+            <Text style={styles.inputLabel}>Address</Text>
+            <TextInput
+                style={styles.input}
+                value={contactInfo.address}
+                onChangeText={text => setContactInfo(prev => ({ ...prev, address: text }))}
+                placeholder="Shop Address"
+            />
+            
+            <Text style={styles.inputLabel}>Phone Number</Text>
+            <TextInput
+                style={styles.input}
+                value={contactInfo.phone}
+                onChangeText={text => setContactInfo(prev => ({ ...prev, phone: text }))}
+                placeholder="Contact Phone"
+                keyboardType="phone-pad"
+            />
+
+            <Text style={styles.inputLabel}>Email</Text>
+            <TextInput
+                style={styles.input}
+                value={contactInfo.email}
+                onChangeText={text => setContactInfo(prev => ({ ...prev, email: text }))}
+                placeholder="Contact Email"
+                keyboardType="email-address"
+                autoCapitalize="none"
+            />
+
+            <Text style={styles.inputLabel}>Google Maps URL (Embed)</Text>
+            <TextInput
+                style={[styles.input, { height: 120, textAlignVertical: 'top' }]}
+                value={contactInfo.mapUrl}
+                onChangeText={text => setContactInfo(prev => ({ ...prev, mapUrl: text }))}
+                placeholder="Google Maps Embed URL"
+                multiline
+            />
+
+            <TouchableOpacity style={[styles.addButton, {alignSelf: 'center', marginTop: 20}]} onPress={handleSave} disabled={isSaving}>
+                <Text style={styles.addButtonText}>{isSaving ? 'Saving...' : 'Save Changes'}</Text>
+            </TouchableOpacity>
+        </ScrollView>
     );
-  }
-
-  return (
-    <ScrollView style={styles.tabContent}>
-      <Text style={styles.tabTitle}>Contact Page Management</Text>
-
-      <Text style={styles.inputLabel}>Address</Text>
-      <TextInput
-        style={styles.input}
-        value={formData.address}
-        onChangeText={(text) => setFormData({ ...formData, address: text })}
-        placeholder="Full Address"
-      />
-
-      <Text style={styles.inputLabel}>Phone</Text>
-      <TextInput
-        style={styles.input}
-        value={formData.phone}
-        onChangeText={(text) => setFormData({ ...formData, phone: text })}
-        placeholder="Phone Number"
-      />
-
-      <Text style={styles.inputLabel}>Email</Text>
-      <TextInput
-        style={styles.input}
-        value={formData.email}
-        onChangeText={(text) => setFormData({ ...formData, email: text })}
-        placeholder="Email Address"
-      />
-
-      <Text style={styles.inputLabel}>Map URL</Text>
-      <TextInput
-        style={styles.input}
-        value={formData.map_url}
-        onChangeText={(text) => setFormData({ ...formData, map_url: text })}
-        placeholder="Google Maps Embed URL"
-      />
-
-      <TouchableOpacity
-        style={[styles.addButton, { marginTop: 20 }]}
-        onPress={handleSave}
-        disabled={loading}
-      >
-        <Text style={styles.addButtonText}>{loading ? 'Saving...' : 'Save Changes'}</Text>
-      </TouchableOpacity>
-      <View style={{ height: 50 }} />
-    </ScrollView>
-  );
 };
 
 // ==================== EMPLOYEES TAB ====================
@@ -2842,6 +3114,8 @@ const EmployeesTab = () => {
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [employeeToDelete, setEmployeeToDelete] = useState(null);
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -2855,10 +3129,18 @@ const EmployeesTab = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const response = await adminAPI.getEmployees();
-      setEmployees(response.data.employees || []);
+        const { data, error } = await supabase
+            .from('users')
+            .select('*')
+            .eq('role', 'employee');
+
+        if (error) {
+            throw error;
+        }
+      setEmployees(data || []);
     } catch (error) {
       console.error('Error loading employees:', error);
+      Alert.alert('Error', 'Failed to load employees.');
     } finally {
       setLoading(false);
     }
@@ -2869,37 +3151,90 @@ const EmployeesTab = () => {
       Alert.alert('Error', 'All fields are required');
       return;
     }
+    if (formData.password.length < 6) {
+        Alert.alert('Error', 'Password must be at least 6 characters long.');
+        return;
+    }
 
     setLoading(true);
     try {
-      await adminAPI.addEmployee(formData);
-      Alert.alert('Success', 'Employee added');
+      // 1. Create the user in Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: formData.email,
+        password: formData.password,
+        options: {
+          data: {
+            name: formData.name,
+            role: 'employee', // Assign role in metadata
+          },
+        },
+      });
+
+      if (authError) {
+        throw authError;
+      }
+
+      if (!authData.user) {
+          throw new Error("User was not created in authentication system.");
+      }
+
+      // 2. Insert the user into the public.users table
+      const { error: insertError } = await supabase
+        .from('users')
+        .insert({
+          id: authData.user.id,
+          name: formData.name,
+          email: formData.email,
+          role: 'employee', // Explicitly set role in the table
+        });
+
+      if (insertError) {
+          // If insert fails, we should ideally delete the auth user to avoid orphans
+          await supabase.auth.admin.deleteUser(authData.user.id);
+          throw insertError;
+      }
+
+      let successMessage = 'Employee added successfully.';
+      if (authData.user && !authData.session) {
+        successMessage = 'Employee added successfully! Please check the employee\'s email to confirm their account.';
+      }
+      Alert.alert('Success', successMessage);
       setModalVisible(false);
       setFormData({ name: '', email: '', password: '' });
       loadData();
     } catch (error) {
-      Alert.alert('Error', error.response?.data?.message || 'Failed to add employee');
+      Alert.alert('Error', error.message || 'Failed to add employee');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDelete = (id) => {
-    Alert.alert('Delete', 'Are you sure?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await adminAPI.deleteEmployee(id);
-            loadData();
-          } catch (error) {
-            Alert.alert('Error', 'Failed to delete employee');
-          }
+  const handleDelete = (employee) => {
+    setEmployeeToDelete(employee);
+    setDeleteModalVisible(true);
+  };
+  
+  const confirmDelete = async () => {
+    if (!employeeToDelete) return;
+    
+    setLoading(true);
+    setDeleteModalVisible(false);
+
+    try {
+        const { error } = await supabase.rpc('delete_user', { user_id: employeeToDelete.id });
+
+        if (error) {
+            throw error;
         }
-      }
-    ]);
+
+        Alert.alert('Success', 'Employee deleted successfully.');
+        loadData();
+    } catch (error) {
+        Alert.alert('Error', error.message || 'Failed to delete employee.');
+    } finally {
+        setLoading(false);
+        setEmployeeToDelete(null);
+    }
   };
 
   return (
@@ -2927,7 +3262,7 @@ const EmployeesTab = () => {
             </View>
             <TouchableOpacity
               style={styles.deleteButtonSmall}
-              onPress={() => handleDelete(item.id)}
+              onPress={() => handleDelete(item)}
             >
               <Ionicons name="trash-outline" size={20} color="#f44336" />
             </TouchableOpacity>
@@ -2990,6 +3325,38 @@ const EmployeesTab = () => {
                 disabled={loading}
               >
                 <Text style={styles.buttonText}>{loading ? 'Adding...' : 'Add Employee'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+      
+      {/* Delete Confirmation Modal */}
+      <Modal visible={deleteModalVisible} animationType="fade" transparent>
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Confirm Deletion</Text>
+              <TouchableOpacity onPress={() => setDeleteModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#333" />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.modalText}>Are you sure you want to delete the employee '{employeeToDelete?.name}'? This action is irreversible.</Text>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => setDeleteModalVisible(false)}
+              >
+                <Text style={styles.buttonText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalButton, styles.deleteButton]}
+                onPress={confirmDelete}
+                disabled={loading}
+              >
+                <Text style={styles.buttonText}>{loading ? 'Deleting...' : 'Delete'}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -4028,13 +4395,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 15,
-  },
-  statRow: {
+      sectionTitle: {
+      fontSize: 18,
+      fontWeight: 'bold',
+      color: '#333',
+      marginBottom: 20,
+    },  statRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingVertical: 8,

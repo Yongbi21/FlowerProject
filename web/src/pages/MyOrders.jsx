@@ -297,8 +297,8 @@ const MyOrders = () => {
         return labels[status] || status;
     };
 
-    const handleTrackOrder = (orderId) => {
-        navigate(`/order-tracking/${orderId}`);
+    const handleTrackOrder = (orderNum) => {
+        navigate(`/order-tracking/${orderNum}`);
     };
 
     const handleTrackStatus = (order) => {
@@ -306,7 +306,7 @@ const MyOrders = () => {
         if (order.status === 'pending' && order.type) {
             setShowWaitingModal(true);
         } else {
-            handleTrackOrder(order.id);
+            handleTrackOrder(order.order_number || order.request_number || order.id);
         }
     };
 
@@ -991,7 +991,7 @@ const MyOrders = () => {
                                         {order.status !== 'cancelled' && order.status !== 'completed' && !(order.status === 'pending' && order.type) && (
                                             <button 
                                                 className="btn-order-action primary"
-                                                onClick={() => handleTrackOrder(order.id || `order-${index}`)}
+                                                onClick={() => handleTrackOrder(order.order_number || order.request_number || order.id)}
                                             >
                                                 Track Order
                                             </button>

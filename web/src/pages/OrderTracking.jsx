@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { supabase } from '../config/supabase';
 import '../styles/Shop.css';
 
 // Timeline steps for Delivery orders
@@ -22,31 +23,105 @@ const pickupSteps = [
 ];
 
 const OrderTracking = () => {
-    const { orderId } = useParams();
+    const { orderNumber } = useParams();
     const [order, setOrder] = useState(null);
-    const [currentStep, setCurrentStep] = useState(2);
+    const [currentStep, setCurrentStep] = useState(1);
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const orders = JSON.parse(localStorage.getItem('orders') || '[]');
-        const foundOrder = orders.find(o => o.id === orderId);
-        
-        if (foundOrder) {
-            setOrder(foundOrder);
-            const orderDate = new Date(foundOrder.date);
-            const now = new Date();
-            const hoursSinceOrder = (now - orderDate) / (1000 * 60 * 60);
-            
-            const steps = foundOrder.deliveryMethod === 'pickup' ? pickupSteps : deliverySteps;
-            const maxSteps = steps.length;
-            
-            if (hoursSinceOrder < 0.5) setCurrentStep(1);
-            else if (hoursSinceOrder < 1) setCurrentStep(2);
-            else if (hoursSinceOrder < 4) setCurrentStep(3);
-            else if (hoursSinceOrder < 8) setCurrentStep(4);
-            else if (hoursSinceOrder < 24 && maxSteps > 5) setCurrentStep(5);
-            else setCurrentStep(maxSteps);
-        }
-    }, [orderId]);
+        const fetchOrder = async () => {
+            if (!orderNumber) {
+                setLoading(false);
+                return;
+            }
+
+            setLoading(true);
+            const { data: foundOrder, error: dbError } = await supabase
+                .from('orders')
+                .select('*, order_items(*, products(image_url)), addresses(*)')
+                .eq('order_number', orderNumber)
+                .single();
+
+            if (dbError || !foundOrder) {
+                console.error('Error fetching order:', dbError);
+                setOrder(null);
+            } else {
+                const transformedOrder = {
+                    ...foundOrder,
+                    date: foundOrder.created_at,
+                    deliveryMethod: foundOrder.delivery_method,
+                    shippingFee: foundOrder.shipping_fee,
+                    pickupTime: foundOrder.pickup_time,
+                    address: foundOrder.addresses,
+                    type: foundOrder.request_type || null,
+                    items: foundOrder.order_items.map(item => ({
+                        ...item,
+                        image: item.products?.image_url || item.image_url,
+                        qty: item.quantity,
+                    })),
+                };
+                setOrder(transformedOrder);
+
+                const steps = transformedOrder.deliveryMethod === 'pickup' ? pickupSteps : deliverySteps;
+                const finalStatuses = ['delivered', 'completed', 'claimed'];
+                if (finalStatuses.includes(transformedOrder.status)) {
+                    setCurrentStep(steps.length + 1);
+                } else {
+                    const statusMap = {
+                        'pending': 'order_received',
+                        'cancelled': 'cancelled',
+                        'accepted': 'processing',
+                        'processing': 'processing',
+                        'ready_for_delivery': 'ready_for_delivery',
+                        'out_for_delivery': 'out_for_delivery',
+                        'ready_for_pickup': 'ready_for_pickup',
+                    };
+                    
+                    const currentTimelineStatus = statusMap[transformedOrder.status] || 'order_received';
+                    let stepIndex = steps.findIndex(step => step.status === currentTimelineStatus);
+
+                    if (stepIndex === -1) {
+                        stepIndex = 0;
+                    }
+
+                    const paymentStepIndex = steps.findIndex(step => step.status === 'payment');
+                    if (
+                        transformedOrder.payment_method !== 'cod' &&
+                        transformedOrder.payment_status !== 'paid' &&
+                        stepIndex > paymentStepIndex &&
+                        paymentStepIndex !== -1
+                    ) {
+                        stepIndex = paymentStepIndex;
+                    }
+
+                    setCurrentStep(stepIndex + 1);
+                }
+            }
+            setLoading(false);
+        };
+
+        fetchOrder();
+
+        const channel = supabase
+            .channel(`orders:${orderNumber}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'orders',
+                    filter: `order_number=eq.${orderNumber}`,
+                },
+                (payload) => {
+                    fetchOrder();
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [orderNumber]);
 
     const getTrackingSteps = () => {
         if (!order) return deliverySteps;
@@ -72,7 +147,7 @@ const OrderTracking = () => {
     const getExpectedDate = () => {
         if (!order) return '';
         const orderDate = new Date(order.date);
-        const expectedDate = new Date(orderDate.getTime() + 24 * 60 * 60 * 1000);
+        const expectedDate = new Date(orderDate.getTime() + 24 * 60 * 60 * 1000); // 24 hours from order date
         return expectedDate.toLocaleDateString('en-PH', { 
             weekday: 'long',
             month: 'long', 
@@ -82,7 +157,7 @@ const OrderTracking = () => {
 
     const getOrderTypeLabel = () => {
         if (!order) return '';
-        const isCustom = order.orderType === 'custom';
+        const isCustom = order.type; // Use order.type instead of order.orderType
         const isPickup = order.deliveryMethod === 'pickup';
         
         if (isCustom) {
@@ -91,10 +166,38 @@ const OrderTracking = () => {
         return isPickup ? 'E-commerce - Pick Up' : 'E-commerce - Delivery';
     };
 
+    const handleOrderReceived = async () => {
+        if (!order) return;
+
+        const { error } = await supabase
+            .from('orders')
+            .update({ status: 'completed' })
+            .eq('id', order.id);
+
+        if (error) {
+            console.error('Error updating order status:', error);
+            alert('There was an error confirming your order. Please try again.');
+        } else {
+            alert('Thank you for confirming! Your order is now marked as completed.');
+        }
+    };
+
     const trackingSteps = getTrackingSteps();
     const isPickup = order?.deliveryMethod === 'pickup';
     const isFinalStep = currentStep >= trackingSteps.length;
 
+    if (loading) {
+        return (
+            <div className="tracking-container">
+                <div className="container text-center py-5">
+                    <div className="spinner-border text-primary" role="status">
+                        <span className="visually-hidden">Loading...</span>
+                    </div>
+                    <p className="mt-2">Finding your order...</p>
+                </div>
+            </div>
+        );
+    }
     if (!order) {
         return (
             <div className="tracking-container">
@@ -104,7 +207,7 @@ const OrderTracking = () => {
                             <i className="fas fa-search"></i>
                         </div>
                         <h3>Order Not Found</h3>
-                        <p>We couldn't find an order with ID: {orderId}</p>
+                        <p>We couldn't find an order with number: {orderNumber}</p>
                         <Link to="/profile" className="btn-shop-now">View My Orders</Link>
                     </div>
                 </div>
@@ -126,7 +229,7 @@ const OrderTracking = () => {
                 <div className="tracking-header">
                     <div className="tracking-order-info">
                         <div className="tracking-order-id">
-                            <h2>Order #{order.id}</h2>
+                            <h2>Order #{order.order_number}</h2>
                             <div className="tracking-order-date">
                                 Placed on {new Date(order.date).toLocaleDateString('en-PH', {
                                     weekday: 'long',
@@ -140,8 +243,27 @@ const OrderTracking = () => {
                             </span>
                         </div>
                         <div className="tracking-current-status">
+                            {order.status === 'out_for_delivery' && (
+                                <button 
+                                    style={{
+                                        padding: '8px 20px',
+                                        backgroundColor: '#e8f5e9', // Light green
+                                        color: '#2e7d32', // Darker green text
+                                        borderRadius: '25px', // Rounded pill shape
+                                        fontWeight: '600',
+                                        border: 'none',
+                                        cursor: 'pointer',
+                                        whiteSpace: 'nowrap',
+                                        marginBottom: '8px',
+                                        marginRight: '0.5rem', // Replicate gap
+                                    }}
+                                    onClick={handleOrderReceived}
+                                >
+                                    Order Received
+                                </button>
+                            )}
                             <div className="current-status-badge">
-                                {trackingSteps[currentStep - 1]?.title}
+                                {trackingSteps[Math.min(currentStep, trackingSteps.length) - 1]?.title}
                             </div>
                             <div className="expected-delivery">
                                 {!isFinalStep && (
@@ -205,7 +327,11 @@ const OrderTracking = () => {
                                     )}
                                     <div className="delivery-info-row">
                                         <div className="delivery-label">Payment</div>
-                                        <div className="delivery-value">{order.payment?.name}</div>
+                                        <div className="delivery-value">
+                                            {order.payment_method === 'cod' ? 'Cash on Delivery' :
+                                             order.payment_method === 'gcash' ? 'GCash' :
+                                             order.payment_method}
+                                        </div>
                                     </div>
                                 </>
                             ) : (
@@ -226,7 +352,11 @@ const OrderTracking = () => {
                                     </div>
                                     <div className="delivery-info-row">
                                         <div className="delivery-label">Payment</div>
-                                        <div className="delivery-value">{order.payment?.name}</div>
+                                        <div className="delivery-value">
+                                            {order.payment_method === 'cod' ? 'Cash on Delivery' :
+                                             order.payment_method === 'gcash' ? 'GCash' :
+                                             order.payment_method}
+                                        </div>
                                     </div>
                                 </>
                             )}

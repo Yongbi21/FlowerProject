@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import '../styles/Shop.css';
 import { supabase } from '../config/supabase';
-import qrCodeImage from '../assets/qr-code-1.jpg'; // Import the QR code image
+import qrCodeImage from '../assets/qr-code-1.jpg';
 
 const paymentMethods = [
     { id: 'cod', name: 'Cash on Delivery', description: 'Pay when you receive', icon: 'fa-money-bill-wave' },
@@ -26,14 +26,34 @@ const Checkout = ({ setCart, user }) => {
     const [address, setAddress] = useState({
         name: '',
         phone: '',
-        street: ''
+        street: '',
+        barangay: '',
+        city: '',
+        province: ''
     });
     const [savedAddresses, setSavedAddresses] = useState([]);
+    const [selectedAddressId, setSelectedAddressId] = useState(null);
+    const [dynamicShippingFee, setDynamicShippingFee] = useState(100);
+
+    const handleAddressSelect = useCallback((addressId, addresses) => {
+        if (!addresses) return;
+        const selectedAddr = addresses.find(addr => String(addr.id) === String(addressId));
+        if (selectedAddr) {
+            setAddress({
+                name: selectedAddr.name || '',
+                phone: selectedAddr.phone || '',
+                street: selectedAddr.street || '',
+                barangay: selectedAddr.barangay || '',
+                city: selectedAddr.city || '',
+                province: selectedAddr.province || '',
+            });
+            setSelectedAddressId(selectedAddr.id);
+        }
+    }, []);
 
     useEffect(() => {
         const fetchAddresses = async () => {
             if (user) {
-                console.log("Fetching addresses for user.id:", user.id); // Debug log
                 const { data, error } = await supabase
                     .from('addresses')
                     .select('*')
@@ -41,120 +61,59 @@ const Checkout = ({ setCart, user }) => {
 
                 if (error) {
                     console.error('Error fetching addresses:', error);
-                    // Add a log for when an error occurs during fetching
-                    console.log("Supabase fetch addresses error:", error);
                     return;
                 }
                 
-                console.log("Fetched addresses data:", data); // Debug log
                 setSavedAddresses(data);
 
-                if (data.length > 0) {
+                if (data && data.length > 0) {
                     const defaultAddress = data.find(addr => addr.is_default) || data[0];
                     if (defaultAddress) {
-                        setAddress({
-                            name: defaultAddress.name || user?.user_metadata?.name || user?.email || '',
-                            phone: defaultAddress.phone || user?.user_metadata?.phone || '',
-                            street: defaultAddress.street
-                        });
-                        setSelectedAddressId(defaultAddress.id);
+                        handleAddressSelect(defaultAddress.id, data);
                     }
                 } else {
-                    console.log("No saved addresses found for user:", user.id); // Debug log
                     setAddress({
                         name: user?.user_metadata?.name || user?.email || '',
                         phone: user?.user_metadata?.phone || '',
-                        street: ''
+                        street: '',
+                        barangay: '',
+                        city: '',
+                        province: '',
                     });
                     setSelectedAddressId(null);
                 }
             } else {
-                console.log("User not authenticated, not fetching addresses."); // Debug log
                 setSavedAddresses([]);
-                setAddress({
-                    name: '',
-                    phone: '',
-                    street: ''
-                });
+                setAddress({ name: '', phone: '', street: '', barangay: '', city: '', province: '' });
                 setSelectedAddressId(null);
             }
         };
 
         fetchAddresses();
-    }, [user]);
-    const [selectedAddressId, setSelectedAddressId] = useState(null);
-    const [showAddAddressModal, setShowAddAddressModal] = useState(false);
-    const [newAddress, setNewAddress] = useState({
-        label: '',
-        name: '',
-        phone: '',
-        address: ''
-    });
+    }, [user, handleAddressSelect]);
+    
+    useEffect(() => {
+        const fetchFee = async () => {
+            if (deliveryMethod === 'delivery' && address.barangay) {
+                const { data, error } = await supabase
+                    .from('barangay_fee')
+                    .select('delivery_fee')
+                    .ilike('barangay_name', `%${address.barangay}%`);
 
-    const parseAddressToForm = (addressObj) => {
-        // This function is still useful for initial address parsing from a selected saved address (fetched from DB)
-        setAddress({
-            name: addressObj.name || user?.user_metadata?.name || user?.email || '',
-            phone: addressObj.phone || user?.user_metadata?.phone || '',
-            street: addressObj.street
-        });
-    };
-
-    const handleAddressSelect = (addressId) => {
-        const selectedAddr = savedAddresses.find(addr => addr.id === addressId);
-        if (selectedAddr) {
-            parseAddressToForm(selectedAddr);
-            setSelectedAddressId(addressId);
-        }
-    };
-
-    const handleSaveNewAddress = async () => { // Make it async
-        if (!newAddress.label || !address.name || !address.phone || !address.street) {
-            alert('Please fill in all required fields (Label, Name, Phone, Street)');
-            return;
-        }
-
-        if (!user) {
-            alert('You must be logged in to save a new address.');
-            return;
-        }
-
-        const addressToInsert = {
-            user_id: user.id,
-            label: newAddress.label,
-            name: address.name,
-            phone: address.phone,
-            street: address.street,
-            is_default: savedAddresses.length === 0 // Make this the default if it's the first address
+                if (error) {
+                    console.error('Error fetching fee for barangay:', address.barangay, error);
+                    setDynamicShippingFee(100); // Fallback on error
+                } else if (data && data.length > 0) {
+                    setDynamicShippingFee(data[0].delivery_fee); // Use the first match
+                } else {
+                    console.warn(`No fee found for barangay: ${address.barangay}. Using default fee.`);
+                    setDynamicShippingFee(100); // Fallback if no match found
+                }
+            }
         };
 
-        const { data, error } = await supabase
-            .from('addresses')
-            .insert([addressToInsert])
-            .select()
-            .single();
-
-        if (error) {
-            console.error('Error saving new address to Supabase:', error);
-            alert('Failed to save address: ' + error.message);
-            return;
-        }
-
-        const newlySavedAddress = data;
-
-        // Update local state with the new address from DB
-        const updatedAddresses = [...savedAddresses, newlySavedAddress];
-        setSavedAddresses(updatedAddresses);
-
-        // Select the new address
-        parseAddressToForm(newlySavedAddress); // Use the data from Supabase
-        setSelectedAddressId(newlySavedAddress.id);
-
-        // Reset form and close modal
-        setNewAddress({ label: '', name: '', phone: '', address: '' }); // Clear newAddress input only
-        // The `address` state is already set by `parseAddressToForm`
-        setShowAddAddressModal(false);
-    };
+        fetchFee();
+    }, [address.barangay, deliveryMethod]);
 
     useEffect(() => {
         const savedCheckoutItems = localStorage.getItem('checkoutItems');
@@ -165,12 +124,10 @@ const Checkout = ({ setCart, user }) => {
         if (savedOrderType) {
             setOrderType(savedOrderType);
         }
-        // Address loading is now handled in the user effect above
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const subtotal = checkoutItems.reduce((acc, item) => acc + (item.price * (item.qty || 1)), 0);
-    const shippingFee = deliveryMethod === 'pickup' ? 0 : (subtotal >= 2000 ? 0 : 100);
+    const shippingFee = deliveryMethod === 'pickup' ? 0 : (subtotal >= 2000 ? 0 : dynamicShippingFee);
     const total = subtotal + shippingFee;
 
     const handlePaymentChange = (paymentId) => {
@@ -195,13 +152,18 @@ const Checkout = ({ setCart, user }) => {
     const handlePlaceOrder = async () => {
             if (!user) {
                 alert('You must be logged in to place an order. Please log in or sign up.');
-                setIsProcessing(false);
-                navigate('/login'); // Redirect to login page
+                navigate('/login');
                 return;
             }
         
             if (deliveryMethod === 'pickup' && !selectedPickupTime) {
                 alert('Please select a pickup time');
+                return;
+            }
+            
+            if (deliveryMethod === 'delivery' && !selectedAddressId) {
+                alert('Please select a saved address for delivery.');
+                setIsProcessing(false);
                 return;
             }
         
@@ -214,50 +176,10 @@ const Checkout = ({ setCart, user }) => {
         
             let finalAddressId = selectedAddressId;
         
-            // 1. Handle Address: Save new address if needed
-            if (deliveryMethod === 'delivery') {
-                if (!selectedAddressId) {
-                    // This is a new address, save it first.
-                    // This flow is only supported for logged-in users.
-                    // (user is guaranteed to be logged in at this point due to initial check)
-                    // Basic validation for new address form
-                    if (!address.name || !address.phone || !address.street) {
-                        alert('Please fill in all fields for the new delivery address.');
-                        setIsProcessing(false);
-                        return;
-                    }
-        
-                    const newAddressToSave = {
-                        user_id: user.id,
-                        label: 'New Address', // Default label for addresses created at checkout
-                        name: address.name,
-                        phone: address.phone,
-                        street: address.street,
-                        is_default: false
-                    };
-        
-                    const { data: newAddressData, error: newAddressError } = await supabase
-                        .from('addresses')
-                        .insert(newAddressToSave)
-                        .select()
-                        .single();
-        
-                    if (newAddressError) {
-                        console.error('Error saving new address to DB:', newAddressError);
-                        alert('There was an error saving your new address: ' + newAddressError.message + '. Please try again.');
-                        setIsProcessing(false);
-                        return;
-                    }
-        
-                    finalAddressId = newAddressData.id;
-                }
-            }
-        
-            // 2. Handle Receipt Upload
             let uploadedReceiptUrl = null;
             if (receiptFile && selectedPayment === 'gcash') {
                 const fileExt = receiptFile.name.split('.').pop();
-                const fileName = `${user.id}-${Date.now()}.${fileExt}`; // Use user.id here
+                const fileName = `${user.id}-${Date.now()}.${fileExt}`;
                 const filePath = `public/${fileName}`;
         
                 const { error: uploadError } = await supabase.storage
@@ -285,12 +207,12 @@ const Checkout = ({ setCart, user }) => {
                 uploadedReceiptUrl = urlData.publicUrl;
             }
         
-            // 3. Create the Order
-            const order_number = `JFS-${user.id.substring(0, 8)}-${Date.now()}`; // Use user.id here
+            const order_number = `JFS-${user.id.substring(0, 8)}-${Date.now()}`;
         
             const newOrder = {
+                created_at: new Date().toISOString(),
                 order_number: order_number,
-                user_id: user.id, // user is guaranteed to be logged in
+                user_id: user.id,
                 address_id: deliveryMethod === 'delivery' ? finalAddressId : null,
                 payment_method: selectedPayment,
                 payment_status: selectedPayment === 'cod' ? 'to_pay' : 'waiting_for_confirmation',
@@ -315,17 +237,16 @@ const Checkout = ({ setCart, user }) => {
                 setIsProcessing(false);
                 return;
             }
-        // --- Success ---
-        const newOrderId = data.id;
+        const newOrderId = data.id; // Correct: Use data.id for the internal ID
+        const newOrderNumber = data.order_number; // Correct: Use data.order_number for the human-readable number
 
-        // 4. Insert items into order_items table
         const orderItems = checkoutItems.map(item => ({
-            order_id: newOrderId,
+            order_id: newOrderId, // Correct: Link items using the internal ID
             product_id: item.id,
-            name: item.name, // Denormalized
-            price: item.price, // Denormalized
+            name: item.name,
+            price: item.price,
             quantity: item.qty || 1,
-            image_url: item.image_url || item.image || item.photo, // Include image URL
+            image_url: item.image_url || item.image || item.photo,
         }));
 
         const { error: itemsError } = await supabase
@@ -338,7 +259,6 @@ const Checkout = ({ setCart, user }) => {
             return;
         }
 
-        // 5. Create notification 
         const notifications = JSON.parse(localStorage.getItem('notifications') || '[]');
         const newNotification = {
             id: `notif-${Date.now()}`,
@@ -348,11 +268,10 @@ const Checkout = ({ setCart, user }) => {
             icon: 'fa-shopping-bag',
             timestamp: new Date().toISOString(),
             read: false,
-            link: `/order-tracking/${newOrderId}`
+            link: `/order-tracking/${newOrderNumber}`
         };
         localStorage.setItem('notifications', JSON.stringify([newNotification, ...notifications]));
 
-        // 6. Cleanup local storage and state
         const currentCart = JSON.parse(localStorage.getItem('cart') || '[]');
         const checkoutItemIds = checkoutItems.map(item => item.id);
         const remainingCart = currentCart.filter(item => !checkoutItemIds.includes(item.id));
@@ -363,7 +282,31 @@ const Checkout = ({ setCart, user }) => {
 
         if (setCart) setCart(remainingCart);
 
-        navigate(`/order-success/${newOrderId}`);
+        // --- Send Order Confirmation Email via Gmail ---
+        try {
+            const { error: functionError } = await supabase.functions.invoke('send-gmail-email', {
+                body: { 
+                    order_number: newOrderNumber,
+                    order_items: checkoutItems,
+                    total: total,
+                    user_email: user.email,
+                    delivery_method: deliveryMethod,
+                    address: deliveryMethod === 'delivery' ? address : null,
+                    pickup_time: deliveryMethod === 'pickup' ? selectedPickupTime : null,
+                },
+            });
+            if (functionError) {
+                // Non-blocking error, log it to the console
+                console.error("Error sending Gmail confirmation email:", functionError.message);
+            } else {
+                console.log("Order confirmation email function (Gmail) invoked successfully.");
+            }
+        } catch (e) {
+            console.error("Failed to invoke email function:", e.message);
+        }
+        // ---------------------------------------------
+
+        navigate(`/order-success/${newOrderNumber}`);
     };
 
     if (checkoutItems.length === 0 && !isProcessing) {
@@ -393,7 +336,6 @@ const Checkout = ({ setCart, user }) => {
 
                 <div className="row">
                     <div className="col-lg-8">
-                        {/* Delivery Method Selection */}
                         <div className="checkout-section">
                             <h5 className="section-title">
                                 <i className="fas fa-truck"></i>
@@ -418,7 +360,7 @@ const Checkout = ({ setCart, user }) => {
                                             type="radio"
                                             className="form-check-input"
                                             checked={deliveryMethod === 'delivery'}
-                                            onChange={() => setDeliveryMethod('delivery')}
+                                            readOnly
                                         />
                                     </div>
                                 </div>
@@ -439,13 +381,12 @@ const Checkout = ({ setCart, user }) => {
                                             type="radio"
                                             className="form-check-input"
                                             checked={deliveryMethod === 'pickup'}
-                                            onChange={() => setDeliveryMethod('pickup')}
+                                            readOnly
                                         />
                                     </div>
                                 </div>
                             </div>
 
-                            {/* Pickup Time Selection */}
                             {deliveryMethod === 'pickup' && (
                                 <div className="mt-3 p-3 rounded" style={{ background: '#f8f9fa' }}>
                                     <label className="form-label fw-bold">
@@ -473,7 +414,6 @@ const Checkout = ({ setCart, user }) => {
                             )}
                         </div>
 
-                        {/* Delivery Address - Only show if delivery method */}
                         {deliveryMethod === 'delivery' && (
                             <div className="checkout-section">
                                 <h5 className="section-title mb-3">
@@ -481,84 +421,45 @@ const Checkout = ({ setCart, user }) => {
                                     Delivery Address
                                 </h5>
 
-                                <div className="mb-3">
-                                    {savedAddresses.length > 0 ? (
-                                        <>
-                                            <label className="form-label small text-muted fw-bold">Choose from Saved Addresses</label>
+                                {user ? (
+                                    savedAddresses.length > 0 ? (
+                                        <div className="mb-3">
+                                            <label className="form-label small text-muted fw-bold">Select from your saved addresses</label>
                                             <select
                                                 className="form-select"
                                                 value={selectedAddressId || ''}
-                                                onChange={(e) => {
-                                                    if (e.target.value) {
-                                                        handleAddressSelect(e.target.value); // Removed parseInt
-                                                    } else {
-                                                        setSelectedAddressId(null);
-                                                        // Reset to user info if no address selected
-                                                        setAddress({
-                                                            name: user?.name || '',
-                                                            phone: user?.phone || '',
-                                                            street: '',
-                                                            city: '',
-                                                            province: '',
-                                                            zip: ''
-                                                        });
-                                                    }
-                                                }}
+                                                onChange={(e) => handleAddressSelect(e.target.value, savedAddresses)}
                                             >
-                                                <option value="">Enter new address</option>
                                                 {savedAddresses.map(addr => (
                                                     <option key={addr.id} value={addr.id}>
-                                                        {addr.label} {addr.is_default && '(Default)'} - {`${addr.street}`}
+                                                        {addr.label} {addr.is_default && '(Default)'} - {`${addr.street}, ${addr.barangay}, ${addr.city}`}
                                                     </option>
                                                 ))}
                                             </select>
-                                        </>
-                                    ) : (
-                                        <div className="alert alert-info">
-                                            <i className="fas fa-info-circle me-2"></i>
-                                            No saved addresses. 
-                                            {user ? (
-                                                <span> Go to <Link to="/profile" style={{ color: 'var(--shop-pink)' }}>Profile</Link> to add addresses, or fill in the form below.</span>
-                                            ) : (
-                                                <span> Please fill in your delivery address below.</span>
-                                            )}
                                         </div>
-                                    )}
-                                </div>
-
-                                <div className="row g-3">
-                                    <div className="col-md-6">
-                                        <label className="form-label small text-muted">Full Name</label>
-                                        <input
-                                            type="text"
-                                            className="form-control"
-                                            value={address.name}
-                                            onChange={e => setAddress({ ...address, name: e.target.value })}
-                                        />
+                                    ) : (
+                                        <div className="alert alert-warning">
+                                            <i className="fas fa-info-circle me-2"></i>
+                                            You have no saved addresses. Please <Link to="/profile" state={{ activeMenu: 'addresses' }} style={{color: 'var(--shop-pink)'}}>add an address in your profile</Link> before proceeding.
+                                        </div>
+                                    )
+                                ) : (
+                                    <div className="alert alert-danger">
+                                        <i className="fas fa-exclamation-triangle me-2"></i>
+                                        Please <Link to="/login" style={{color: 'var(--shop-pink)'}}>log in</Link> to use the delivery option.
                                     </div>
-                                    <div className="col-md-6">
-                                        <label className="form-label small text-muted">Phone Number</label>
-                                        <input
-                                            type="tel"
-                                            className="form-control"
-                                            value={address.phone}
-                                            onChange={e => setAddress({ ...address, phone: e.target.value })}
-                                        />
-                                    </div>
-                                    <div className="col-12">
-                                        <label className="form-label small text-muted">Street Address</label>
-                                        <input
-                                            type="text"
-                                            className="form-control"
-                                            value={address.street}
-                                            onChange={e => setAddress({ ...address, street: e.target.value })}
-                                        />
-                                    </div>
-                                </div>
+                                )}
+                                
+                                {selectedAddressId && (
+                                     <div className="p-3 rounded" style={{ background: '#f8f9fa' }}>
+                                        <p className='mb-1'><strong>Recipient:</strong> {address.name}</p>
+                                        <p className='mb-1'><strong>Phone:</strong> {address.phone}</p>
+                                        <p className='mb-0'><strong>Address:</strong> {`${address.street}, ${address.barangay}, ${address.city}, ${address.province}`}</p>
+                                     </div>
+                                )}
                             </div>
                         )}
 
-                        {/* Order Items */}
                         <div className="checkout-section">
                             <h5 className="section-title">
                                 <i className="fas fa-box"></i>
@@ -584,7 +485,6 @@ const Checkout = ({ setCart, user }) => {
                             ))}
                         </div>
 
-                        {/* Payment Method */}
                         <div className="checkout-section">
                             <h5 className="section-title">
                                 <i className="fas fa-credit-card"></i>
@@ -609,13 +509,12 @@ const Checkout = ({ setCart, user }) => {
                                             type="radio"
                                             className="form-check-input"
                                             checked={selectedPayment === method.id}
-                                            onChange={() => handlePaymentChange(method.id)}
+                                            readOnly
                                         />
                                     </div>
                                 </div>
                             ))}
 
-                            {/* GCash QR Code and Receipt Upload */}
                             {selectedPayment === 'gcash' && (
                                 <div className="mt-3 p-3 rounded" style={{ background: '#f8f9fa', border: '2px dashed var(--shop-pink)' }}>
                                     <div className="text-center mb-3">
@@ -714,7 +613,7 @@ const Checkout = ({ setCart, user }) => {
                             <button
                                 className="btn-place-order"
                                 onClick={handlePlaceOrder}
-                                disabled={isProcessing}
+                                disabled={isProcessing || (deliveryMethod === 'delivery' && !selectedAddressId)}
                             >
                                 {isProcessing ? (
                                     <>
@@ -737,7 +636,6 @@ const Checkout = ({ setCart, user }) => {
                 </div>
             </div>
 
-            {/* GCash QR Code Modal */}
             {showQRModal && (
                 <div className="modal-overlay" onClick={() => setShowQRModal(false)}>
                     <div className="modal-content-custom" onClick={e => e.stopPropagation()} style={{ maxWidth: '400px' }}>
@@ -829,116 +727,6 @@ const Checkout = ({ setCart, user }) => {
                                 onClick={() => setShowQRModal(false)}
                             >
                                 Done
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Add New Address Modal */}
-            {showAddAddressModal && (
-                <div className="modal-overlay" onClick={() => setShowAddAddressModal(false)}>
-                    <div className="modal-content-custom" onClick={e => e.stopPropagation()}>
-                        <div className="modal-header-custom">
-                            <h4>Add New Address</h4>
-                            <button className="modal-close" onClick={() => setShowAddAddressModal(false)}>
-                                <i className="fas fa-times"></i>
-                            </button>
-                        </div>
-                        <div className="modal-body-custom">
-                            <div className="form-group">
-                                <label className="form-label">Label <span className="text-danger">*</span></label>
-                                <input
-                                    type="text"
-                                    className="form-control-custom"
-                                    value={newAddress.label}
-                                    onChange={e => setNewAddress({ ...newAddress, label: e.target.value })}
-                                    placeholder="e.g., Home, Office"
-                                />
-                            </div>
-                            <div className="form-group">
-                                <label className="form-label">Full Name <span className="text-danger">*</span></label>
-                                <input
-                                    type="text"
-                                    className="form-control-custom"
-                                    value={address.name}
-                                    onChange={e => setAddress({ ...address, name: e.target.value })}
-                                    placeholder={user?.name || 'Enter full name'}
-                                />
-                            </div>
-                            <div className="form-group">
-                                <label className="form-label">Phone Number <span className="text-danger">*</span></label>
-                                <input
-                                    type="tel"
-                                    className="form-control-custom"
-                                    value={address.phone}
-                                    onChange={e => setAddress({ ...address, phone: e.target.value })}
-                                    placeholder={user?.phone || 'Enter phone number'}
-                                />
-                            </div>
-                            <div className="form-group">
-                                <label className="form-label">Street Address <span className="text-danger">*</span></label>
-                                <input
-                                    type="text"
-                                    className="form-control-custom"
-                                    value={address.street}
-                                    onChange={e => setAddress({ ...address, street: e.target.value })}
-                                    placeholder="e.g., 123 Sampaguita St., Brgy. Maligaya"
-                                />
-                            </div>
-                            <div className="row">
-                                <div className="col-md-6">
-                                    <div className="form-group">
-                                        <label className="form-label">City</label>
-                                        <input
-                                            type="text"
-                                            className="form-control-custom"
-                                            value={address.city}
-                                            onChange={e => setAddress({ ...address, city: e.target.value })}
-                                            placeholder="e.g., Quezon City"
-                                        />
-                                    </div>
-                                </div>
-                                <div className="col-md-6">
-                                    <div className="form-group">
-                                        <label className="form-label">Province</label>
-                                        <input
-                                            type="text"
-                                            className="form-control-custom"
-                                            value={address.province}
-                                            onChange={e => setAddress({ ...address, province: e.target.value })}
-                                            placeholder="e.g., Metro Manila"
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="form-group">
-                                <label className="form-label">Zip Code</label>
-                                <input
-                                    type="text"
-                                    className="form-control-custom"
-                                    value={address.zip}
-                                    onChange={e => setAddress({ ...address, zip: e.target.value })}
-                                    placeholder="e.g., 1100"
-                                />
-                            </div>
-                        </div>
-                        <div className="modal-footer-custom">
-                            <button
-                                className="btn btn-outline-secondary"
-                                onClick={() => {
-                                    setShowAddAddressModal(false);
-                                    setNewAddress({ label: '', name: '', phone: '', address: '' });
-                                }}
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                className="btn"
-                                style={{ background: 'var(--shop-pink)', color: 'white' }}
-                                onClick={handleSaveNewAddress}
-                            >
-                                Save Address
                             </button>
                         </div>
                     </div>
