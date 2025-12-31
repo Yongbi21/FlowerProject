@@ -52,6 +52,7 @@ CREATE TABLE products (
   FOREIGN KEY (category_id) REFERENCES categories(id)
 );
 
+
 -- Customer Interactions
 CREATE TABLE wishlist (
   id SERIAL PRIMARY KEY,

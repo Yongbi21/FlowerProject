@@ -9,6 +9,7 @@ import { stockAPI } from '../config/api'; // Import stockAPI
 import '../styles/Customized.css';
 
 const placeholderStemImg = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
+const placeholderImg = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMDAiIGhlaWdodGg9IjEwMCIgdmlld0JveD0iMCAwIDEwMCAxMDAiPjxyZWN0IHdpZHRoPSIxMDAiIGhlaWdodGg9IjEwMCIgZmlsbD0iI2UwZTBlMCIvPjx0ZXh0IHg9IjUwIiB5PSI1MCIgZm9udC1mYW1pbHk9ImFyaWFsIiBmb250LXNpemU9IjEyIiBmaWxsPSIjMzMzIiBhbmNob3ItcGVudD0ibWlkZGxlIiB0ZXh0LWFuY2hvcnM9Im1pZGRsZSI+Tm8gSW1hZ2U8L3RleHQ+PC9zdmc+'; // SVG "No Image" placeholder
 
 const bundleOptions = [3, 6, 12];
 const steps = [
@@ -75,9 +76,9 @@ const Customized = ({ addToCart }) => {
             id: item.id,
             name: item.name,
             price: item.price,
-            img: item.image_url,
-            layerImg: item.image_url,
-            stemImg: item.image_url,
+            img: item.img,
+            layerImg: item.layerImg,
+            stemImg: item.stemImg,
           }));
 
         const processedWrappers = allStockItems
@@ -86,8 +87,8 @@ const Customized = ({ addToCart }) => {
             id: item.id,
             name: item.name,
             price: item.price,
-            img: item.image_url,
-            layerImg: item.image_url,
+            img: item.img,
+            layerImg: item.layerImg,
           }));
 
         const processedRibbons = allStockItems
@@ -96,15 +97,16 @@ const Customized = ({ addToCart }) => {
             id: item.id,
             name: item.name,
             price: item.price,
-            img: item.image_url,
-            layerImg: item.image_url,
+            img: item.img,
+            layerImg: item.layerImg,
           }));
 
         setFlowers(processedFlowers);
         setWrappers(processedWrappers);
         setRibbons(processedRibbons);
+
       } catch (error) {
-        console.error('Error fetching customization data:', error);
+        console.error('Error fetching customization data:', error.message || error);
         alert('Failed to load customization options. Please try again.');
       } finally {
         setLoadingCustomizationData(false);
@@ -116,6 +118,16 @@ const Customized = ({ addToCart }) => {
 
   const handleBundleSelect = (size) => {
     setSelection((prev) => ({ ...prev, bundleSize: size }));
+    setCustomBundleSizeInput(''); // Clear custom input when a predefined bundle is selected
+  };
+
+  const handleCustomBundleChange = (e) => {
+    const value = e.target.value;
+    // Allow empty string for initial input, but then validate as number >= 2
+    if (value === '' || (/^\d+$/.test(value) && parseInt(value, 10) >= 2)) {
+      setCustomBundleSizeInput(value);
+      setSelection((prev) => ({ ...prev, bundleSize: value === '' ? 0 : parseInt(value, 10) }));
+    }
   };
 
   const handleOptionSelect = (type, id) => {
@@ -174,9 +186,10 @@ const Customized = ({ addToCart }) => {
       if (previewRef.current) {
         try {
           const canvas = await html2canvas(previewRef.current, {
-            backgroundColor: null,
+            backgroundColor: null, // Allow transparent background
             scale: 1,
             logging: false,
+            useCORS: true, // Enable cross-origin image support
           });
           photoBase64 = canvas.toDataURL('image/png');
         } catch (canvasError) {
@@ -309,7 +322,7 @@ const Customized = ({ addToCart }) => {
             className={`option-card ${selectedId === item.id ? 'selected' : ''}`}
             onClick={() => handleOptionSelect(groupKey, item.id)}
           >
-            <img src={item.img} alt={item.name} className="option-img" />
+            <img src={item.img || placeholderImg} alt={item.name} className="option-img" />
             <div className="option-name">{item.name}</div>
             <div className="option-price">+{formatPrice(item.price)}{groupKey === 'flowers' ? '/pc' : ''}</div>
           </button>
@@ -355,7 +368,7 @@ const Customized = ({ addToCart }) => {
           <div className="canvas-container">
             <div className="bouquet-stage" ref={previewRef}>
               {selection.wrapper && (
-                <img src={selection.wrapper.layerImg} alt="Wrapper" className="layer" style={{ zIndex: 1, top: '50%' }} />
+                <img src={selection.wrapper.layerImg || placeholderImg} alt="Wrapper" className="layer" style={{ zIndex: 1, top: '50%' }} />
               )}
 
               {/* Flower Zone - Constrained Area */}
@@ -402,7 +415,7 @@ const Customized = ({ addToCart }) => {
 
               {selection.ribbon && (
                 <img
-                  src={selection.ribbon.layerImg}
+                  src={selection.ribbon.layerImg || placeholderImg}
                   alt="Ribbon"
                   className="layer"
                   style={{ zIndex: 3, top: '65%' }}
@@ -470,12 +483,29 @@ const Customized = ({ addToCart }) => {
                     <button
                       key={size}
                       type="button"
-                      className={`bundle-pill ${selection.bundleSize === size ? 'active' : ''}`}
+                      className={`bundle-pill ${selection.bundleSize === size && customBundleSizeInput === '' ? 'active' : ''}`}
                       onClick={() => handleBundleSelect(size)}
                     >
                       {size} Stems
                     </button>
                   ))}
+                </div>
+              </div>
+
+              {/* New Custom Stems Input */}
+              <div className="control-group">
+                <label>Custom Stems</label>
+                <div className="custom-bundle-input-card">
+                  <input
+                    type="number"
+                    min="2"
+                    step="1"
+                    value={customBundleSizeInput}
+                    onChange={handleCustomBundleChange}
+                    placeholder="e.g. 2"
+                    className="custom-stem-input"
+                  />
+
                 </div>
               </div>
 

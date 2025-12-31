@@ -1347,332 +1347,713 @@ const StockTab = () => {
   const [editingStock, setEditingStock] = useState(null);
   const [stockFormData, setStockFormData] = useState({
     name: '',
-    category: 'Ribbons',
     price: '',
     quantity: '',
     unit: '',
     reorder_level: '10',
-    is_available: true
+    is_available: true, // Boolean status field
+    image: null,
   });
 
-  useEffect(() => {
-    loadStock();
-  }, []);
-
-  const loadStock = async () => {
-    setLoading(true);
-    try {
-      const response = await adminAPI.getAllStock();
-      setStockItems(response.data.stock || []);
-    } catch (error) {
-      console.error('Error loading stock:', error);
-      Alert.alert('Error', 'Failed to load stock');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await loadStock();
-    setRefreshing(false);
-  };
-
-  const resetForm = () => {
-    setStockFormData({
-      name: '',
-      category: activeStockTab,
-      price: '',
-      quantity: '',
-      unit: '',
-      reorder_level: '10',
-      is_available: true
-    });
-    setEditingStock(null);
-  };
-
-  const handleEditStock = (item) => {
-    setEditingStock(item);
-    setStockFormData({
-      name: item.name,
-      category: item.category,
-      price: item.price ? item.price.toString() : '',
-      quantity: item.quantity ? item.quantity.toString() : '',
-      unit: item.unit || '',
-      reorder_level: item.reorder_level ? item.reorder_level.toString() : '10',
-      is_available: Boolean(item.is_available)
-    });
-    setModalVisible(true);
-  };
-
-  const handleDeleteStock = (id) => {
-    Alert.alert(
-      'Delete Item',
-      'Are you sure you want to delete this item?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await adminAPI.deleteStock(id);
-              Alert.alert('Success', 'Item deleted');
-              loadStock();
-            } catch (error) {
-              Alert.alert('Error', 'Failed to delete item');
-            }
+    useEffect(() => {
+      loadStock();
+    }, []);
+  
+        const loadStock = async () => {
+  
+          setLoading(true);
+  
+          try {
+  
+            const response = await adminAPI.getAllStock();
+  
+            setStockItems(response.data || []);
+  
+          } catch (error) {
+  
+            console.error('Error loading stock:', error);
+  
+            Alert.alert('Error', 'Failed to load stock');
+  
+          } finally {
+  
+            setLoading(false);
+  
           }
-        }
-      ]
-    );
-  };
-
-  const handleSaveStock = async () => {
-    if (!stockFormData.name || !stockFormData.quantity) {
-      Alert.alert('Error', 'Please fill in Name and Quantity');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const data = {
-        ...stockFormData,
-        price: parseFloat(stockFormData.price) || 0,
-        quantity: parseInt(stockFormData.quantity) || 0,
-        reorder_level: parseInt(stockFormData.reorder_level) || 10,
-      };
-
-      if (editingStock) {
-        await adminAPI.updateStock(editingStock.id, data);
-        Alert.alert('Success', 'Item updated successfully');
-      } else {
-        await adminAPI.createStock(data);
-        Alert.alert('Success', 'Item added successfully');
-      }
-
-      setModalVisible(false);
-      resetForm();
-      await loadStock();
-    } catch (error) {
-      console.error('Error saving stock:', error);
-      Alert.alert('Error', 'Failed to save item');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const filteredStock = stockItems.filter(item =>
-    item.category === activeStockTab
-  );
-
-  const renderStockItem = ({ item }) => (
-    <View style={styles.stockCard}>
-      <View style={styles.stockInfo}>
-        <Text style={styles.stockName}>{item.name}</Text>
-        <Text style={styles.stockPrice}>₱{item.price || '0'} / {item.unit || 'unit'}</Text>
-        <Text style={styles.stockQuantity}>Qty: {item.quantity}</Text>
-        <View style={styles.stockAvailability}>
-          <View style={[styles.availabilityDot, { backgroundColor: item.is_available ? '#4CAF50' : '#f44336' }]} />
-          <Text style={styles.stockAvailabilityText}>
-            {item.is_available ? 'Available' : 'Unavailable'}
-          </Text>
-        </View>
-      </View>
-      <View style={styles.stockActions}>
-        <TouchableOpacity
-          style={styles.editButtonSmall}
-          onPress={() => handleEditStock(item)}
-        >
-          <Ionicons name="create-outline" size={20} color="#2196F3" />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.deleteButtonSmall}
-          onPress={() => handleDeleteStock(item.id)}
-        >
-          <Ionicons name="trash-outline" size={20} color="#f44336" />
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-
-  if (loading && !refreshing && !modalVisible) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#ec4899" />
-      </View>
-    );
-  }
-
-  return (
-    <View style={styles.tabContent}>
-      <TouchableOpacity
-        style={styles.addButton}
-        onPress={() => {
-          resetForm();
+  
+        };
+  
+      
+  
+        const onRefresh = async () => {
+  
+          setRefreshing(true);
+  
+          await loadStock();
+  
+          setRefreshing(false);
+  
+        };
+  
+      
+  
+        const resetForm = () => {
+  
+          setStockFormData({
+  
+            name: '',
+  
+            price: '',
+  
+            quantity: '',
+  
+            unit: '',
+  
+            reorder_level: '10',
+  
+            is_available: true, // Boolean status field
+  
+            image: null,
+  
+          });
+  
+          setEditingStock(null);
+  
+        };
+  
+      
+  
+        const pickImage = async () => {
+  
+          try {
+  
+            const result = await ImagePicker.launchImageLibraryAsync({
+  
+              mediaTypes: ImagePicker.MediaTypeOptions.Images,
+  
+              allowsEditing: true,
+  
+              aspect: [4, 3],
+  
+              quality: 1,
+  
+              base64: true,
+  
+            });
+  
+      
+  
+            if (!result.canceled) {
+  
+              setStockFormData({ ...stockFormData, image: result.assets[0] });
+  
+            }
+  
+          } catch (error) {
+  
+            console.error('Error launching image library:', error);
+  
+            Alert.alert('Error', 'Failed to open image library. Please try again.');
+  
+          }
+  
+        };
+  
+      
+  
+        const takePhoto = async () => {
+  
+          try {
+  
+            const { status } = await ImagePicker.requestCameraPermissionsAsync();
+  
+            if (status !== 'granted') {
+  
+              Alert.alert('Permission needed', 'Camera permission is required to take photos');
+  
+              return;
+  
+            }
+  
+      
+  
+            const result = await ImagePicker.launchCameraAsync({
+  
+              allowsEditing: true,
+  
+              aspect: [4, 3],
+  
+              quality: 1,
+  
+              base64: true,
+  
+            });
+  
+      
+  
+            if (!result.canceled) {
+  
+              setStockFormData({ ...stockFormData, image: result.assets[0] });
+  
+            }
+  
+          } catch (error) {
+  
+            console.error('Error launching camera:', error);
+  
+            Alert.alert('Error', 'Failed to open camera. Please try again.');
+  
+          }
+  
+        };
+  
+      
+  
+        const handleEditStock = (item) => {
+  
+          setEditingStock(item);
+  
+          setStockFormData({
+  
+            name: item.name,
+  
+            price: item.price ? item.price.toString() : '',
+  
+            quantity: item.quantity ? item.quantity.toString() : '',
+  
+            unit: item.unit || '',
+  
+            reorder_level: item.reorder_level ? item.reorder_level.toString() : '10',
+  
+            is_available: item.is_available, // Corrected: use item.is_available from API
+  
+            image: item.image_url ? { uri: item.image_url.startsWith('http') ? item.image_url : `${BASE_URL}${item.image_url}` } : null,
+  
+          });
+  
           setModalVisible(true);
-        }}
-      >
-        <Ionicons name="add" size={20} color="#fff" />
-        <Text style={styles.addButtonText}>Add {activeStockTab.slice(0, -1)}</Text>
-      </TouchableOpacity>
-
-      {/* Stock Category Tabs */}
-      <View style={styles.stockTabs}>
-        {['Wrappers', 'Ribbons', 'Flowers'].map((tab) => (
-          <TouchableOpacity
-            key={tab}
-            style={[styles.stockTab, activeStockTab === tab && styles.stockTabActive]}
-            onPress={() => setActiveStockTab(tab)}
-          >
-            <Ionicons
-              name={tab === 'Wrappers' ? 'gift' : tab === 'Ribbons' ? 'ribbon' : 'flower'}
-              size={20}
-              color={activeStockTab === tab ? '#ec4899' : '#666'}
-            />
-            <Text style={[styles.stockTabText, activeStockTab === tab && styles.stockTabTextActive]}>
-              {tab}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      <FlatList
-        data={filteredStock}
-        renderItem={renderStockItem}
-        keyExtractor={(item) => item.id.toString()}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#ec4899']} />
+  
+        };
+  
+      
+  
+        const handleDeleteStock = (id) => {
+  
+          Alert.alert(
+  
+            'Delete Item',
+  
+            'Are you sure you want to delete this item?',
+  
+            [
+  
+              { text: 'Cancel', style: 'cancel' },
+  
+              {
+  
+                text: 'Delete',
+  
+                style: 'destructive',
+  
+                onPress: async () => {
+  
+                  try {
+  
+                    await adminAPI.deleteStock(id);
+  
+                    Alert.alert('Success', 'Item deleted');
+  
+                    loadStock();
+  
+                  } catch (error) {
+  
+                    Alert.alert('Error', 'Failed to delete item');
+  
+                  }
+  
+                }
+  
+              }
+  
+            ]
+  
+          );
+  
+        };
+  
+      
+  
+        const handleSaveStock = async () => {
+  
+          if (!stockFormData.name || !stockFormData.quantity) {
+  
+            Alert.alert('Error', 'Please fill in Name and Quantity');
+  
+            return;
+  
+          }
+  
+      
+  
+          setLoading(true);
+  
+          try {
+  
+            const data = {
+  
+              ...stockFormData,
+  
+              category: activeStockTab, // Add this line to include the category from activeStockTab
+  
+              price: parseFloat(stockFormData.price) || 0,
+  
+              quantity: parseInt(stockFormData.quantity) || 0,
+  
+              reorder_level: parseInt(stockFormData.reorder_level) || 10,
+  
+              is_available: stockFormData.is_available, // Corrected: send is_available
+  
+              image: stockFormData.image,
+  
+            };
+  
+      
+  
+            if (editingStock) {
+  
+              await adminAPI.updateStock(editingStock.id, { ...data, old_image_url: editingStock.image_url });
+  
+              Alert.alert('Success', 'Item updated successfully');
+  
+            } else {
+  
+              await adminAPI.createStock(data);
+  
+              Alert.alert('Success', 'Item added successfully');
+  
+            }          setModalVisible(false);
+          resetForm();
+          await loadStock();
+        } catch (error) {
+          console.error('Error saving stock:', error);
+          Alert.alert('Error', error.message || 'Failed to save item');
+        } finally {
+          setLoading(false);
         }
-        ListEmptyComponent={
-          <Text style={styles.emptyText}>No {activeStockTab.toLowerCase()} found</Text>
-        }
-      />
-
-      {/* Add/Edit Stock Modal */}
-      <Modal visible={modalVisible} animationType="slide" transparent>
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                {editingStock ? 'Edit Stock Item' : 'Add Stock Item'}
-              </Text>
-              <TouchableOpacity onPress={() => setModalVisible(false)}>
-                <Ionicons name="close" size={24} color="#333" />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView showsVerticalScrollIndicator={false}>
-              <Text style={styles.inputLabel}>Item Name *</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter item name"
-                value={stockFormData.name}
-                onChangeText={(text) => setStockFormData({ ...stockFormData, name: text })}
-              />
-
-              <Text style={styles.inputLabel}>Category</Text>
-              <View style={styles.categoryGrid}>
-                {['Wrappers', 'Ribbons', 'Flowers'].map((cat) => (
-                  <TouchableOpacity
-                    key={cat}
-                    style={[
-                      styles.modalCategoryChip,
-                      stockFormData.category === cat && styles.modalCategoryChipActive
-                    ]}
-                    onPress={() => setStockFormData({ ...stockFormData, category: cat })}
-                  >
-                    <Text style={[
-                      styles.modalCategoryChipText,
-                      stockFormData.category === cat && styles.modalCategoryChipTextActive
-                    ]}>
-                      {cat}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+      };
+    
+      const filteredStock = stockItems.filter(item =>
+        item.category === activeStockTab
+      );
+    
+          const renderStockItem = ({ item }) => {
+    
+            return (
+    
+            <View style={styles.productCard}>
+    
+              <View style={styles.imageContainer}>
+    
+                {item.image_url ? (
+    
+                  <Image
+    
+                    source={{ uri: item.image_url.startsWith('http') ? item.image_url : `${BASE_URL}${item.image_url}` }}
+    
+                    style={styles.productImage}
+    
+                  />
+    
+                ) : (
+    
+                  <View style={styles.productImagePlaceholder}>
+    
+                    <Ionicons name="image-outline" size={40} color="#ccc" />
+    
+                    <Text style={styles.placeholderText}>No Image</Text>
+    
+                  </View>
+    
+                )}
+    
               </View>
-
-              <View style={styles.rowInputs}>
-                <View style={styles.halfInput}>
-                  <Text style={styles.inputLabel}>Price</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="0.00"
-                    keyboardType="numeric"
-                    value={stockFormData.price}
-                    onChangeText={(text) => setStockFormData({ ...stockFormData, price: text })}
-                  />
+    
+              <View style={styles.productInfo}>
+    
+                <Text style={styles.productName}>{item.name}</Text>
+    
+                <Text style={styles.productCategory}>{item.category || 'Uncategorized'}</Text>
+    
+                <View style={styles.priceRow}>
+    
+                  <Text style={styles.productPrice}>₱{item.price || '0'} / {item.unit || 'unit'}</Text>
+    
+                  <Text style={styles.productStock}>Qty: {item.quantity}</Text>
+    
                 </View>
-                <View style={styles.halfInput}>
-                  <Text style={styles.inputLabel}>Quantity *</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="0"
-                    keyboardType="numeric"
-                    value={stockFormData.quantity}
-                    onChangeText={(text) => setStockFormData({ ...stockFormData, quantity: text })}
-                  />
+    
+                <View style={styles.stockAvailability}>
+    
+                  <View style={[styles.availabilityDot, { backgroundColor: item.is_available ? '#4CAF50' : '#f44336' }]} />
+    
+                  <Text style={styles.stockAvailabilityText}>
+    
+                    {item.is_available ? 'Available' : 'Unavailable'}
+    
+                  </Text>
+    
                 </View>
+    
               </View>
-
-              <View style={styles.rowInputs}>
-                <View style={styles.halfInput}>
-                  <Text style={styles.inputLabel}>Unit</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="e.g. meters"
-                    value={stockFormData.unit}
-                    onChangeText={(text) => setStockFormData({ ...stockFormData, unit: text })}
-                  />
-                </View>
-                <View style={styles.halfInput}>
-                  <Text style={styles.inputLabel}>Reorder Level</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="10"
-                    keyboardType="numeric"
-                    value={stockFormData.reorder_level}
-                    onChangeText={(text) => setStockFormData({ ...stockFormData, reorder_level: text })}
-                  />
-                </View>
-              </View>
-
-              <View style={styles.switchContainer}>
-                <Text style={styles.inputLabel}>Available</Text>
-                <TouchableOpacity
-                  style={[styles.switch, stockFormData.is_available && styles.switchActive]}
-                  onPress={() => setStockFormData({ ...stockFormData, is_available: !stockFormData.is_available })}
-                >
-                  <View style={[styles.switchKnob, stockFormData.is_available && styles.switchKnobActive]} />
+    
+              <View style={styles.productActions}>
+    
+                <TouchableOpacity style={styles.editButton} onPress={() => handleEditStock(item)}>
+    
+                  <Ionicons name="create-outline" size={18} color="#fff" />
+    
+                  <Text style={styles.buttonText}>Edit</Text>
+    
                 </TouchableOpacity>
+    
+                <TouchableOpacity style={styles.deleteButton} onPress={() => handleDeleteStock(item.id)}>
+    
+                  <Ionicons name="trash-outline" size={18} color="#fff" />
+    
+                  <Text style={styles.buttonText}>Delete</Text>
+    
+                </TouchableOpacity>
+    
               </View>
-
-            </ScrollView>
-
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton]}
-                onPress={() => setModalVisible(false)}
-              >
-                <Text style={styles.buttonText}>Cancel</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.modalButton, styles.saveButton]}
-                onPress={handleSaveStock}
-                disabled={loading}
-              >
-                <Text style={styles.buttonText}>
-                  {loading ? 'Saving...' : 'Save Item'}
-                </Text>
-              </TouchableOpacity>
+    
             </View>
-          </View>
-        </View>
-      </Modal>
-    </View>
-  );
-};
+    
+          );
+    
+          };        if (loading && !refreshing && !modalVisible) {
+          return (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#ec4899" />
+            </View>
+          );
+        }
+      
+                return (
+      
+                  <View style={styles.tabContent}>
+      
+                    <TouchableOpacity style={styles.addButton} onPress={() => { resetForm(); setModalVisible(true); }}>
+      
+                      <Ionicons name="add" size={20} color="#fff" />
+      
+                      <Text style={styles.addButtonText}>Add {activeStockTab.slice(0, -1)}</Text>
+      
+                    </TouchableOpacity>
+      
+                    {/* Stock Category Tabs */}
+      
+                    <View style={styles.stockTabs}>
+      
+                      {['Wrappers', 'Ribbons', 'Flowers'].map((tab) => (
+      
+                        <TouchableOpacity
+      
+                          key={tab}
+      
+                          style={[styles.stockTab, activeStockTab === tab && styles.stockTabActive]}
+      
+                          onPress={() => setActiveStockTab(tab)}
+      
+                        >
+      
+                          <Ionicons
+      
+                            name={tab === 'Wrappers' ? 'gift' : tab === 'Ribbons' ? 'ribbon' : 'flower'}
+      
+                            size={20}
+      
+                            color={activeStockTab === tab ? '#ec4899' : '#666'}
+      
+                          />
+      
+                          <Text style={[styles.stockTabText, activeStockTab === tab && styles.stockTabTextActive]}>
+      
+                            {tab}
+      
+                          </Text>
+      
+                        </TouchableOpacity>
+      
+                      ))}
+      
+                    </View>
+      
+                    <FlatList
+      
+                      data={filteredStock}
+      
+                      renderItem={renderStockItem}
+      
+                      keyExtractor={(item) => item.id.toString()}
+      
+                      refreshControl={
+      
+                        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#ec4899']} />
+      
+                      }
+      
+                      ListEmptyComponent={
+      
+                        <Text style={styles.emptyText}>No {activeStockTab.toLowerCase()} found</Text>
+      
+                      }
+      
+                    />
+      
+                    {/* Add/Edit Stock Modal */}
+      
+                    <Modal visible={modalVisible} animationType="slide" transparent>
+      
+                      <View style={styles.modalContainer}>
+      
+                        <View style={styles.modalContent}>
+      
+                          <View style={styles.modalHeader}>
+      
+                            <Text style={styles.modalTitle}>
+      
+                              {editingStock ? 'Edit Stock Item' : 'Add Stock Item'}
+      
+                            </Text>
+      
+                            <TouchableOpacity onPress={() => setModalVisible(false)}>
+      
+                              <Ionicons name="close" size={24} color="#333" />
+      
+                            </TouchableOpacity>
+      
+                          </View>
+      
+                          <ScrollView showsVerticalScrollIndicator={false}>
+      
+                            <Text style={styles.inputLabel}>Item Name *</Text>
+      
+                            <TextInput
+      
+                              style={styles.input}
+      
+                              placeholder="Enter item name"
+      
+                              value={stockFormData.name}
+      
+                              onChangeText={(text) => setStockFormData({ ...stockFormData, name: text })}
+      
+                            />
+      
+                            <View style={styles.rowInputs}>
+      
+                              <View style={styles.halfInput}>
+      
+                                <Text style={styles.inputLabel}>Price</Text>
+      
+                                <TextInput
+      
+                                  style={styles.input}
+      
+                                  placeholder="0.00"
+      
+                                  keyboardType="numeric"
+      
+                                  value={stockFormData.price}
+      
+                                  onChangeText={(text) => setStockFormData({ ...stockFormData, price: text })}
+      
+                                />
+      
+                              </View>
+      
+                              <View style={styles.halfInput}>
+      
+                                <Text style={styles.inputLabel}>Quantity *</Text>
+      
+                                <TextInput
+      
+                                  style={styles.input}
+      
+                                  placeholder="0"
+      
+                                  keyboardType="numeric"
+      
+                                  value={stockFormData.quantity}
+      
+                                  onChangeText={(text) => setStockFormData({ ...stockFormData, quantity: text })}
+      
+                                />
+      
+                              </View>
+      
+                            </View>
+      
+                            <View style={styles.rowInputs}>
+      
+                              <View style={styles.halfInput}>
+      
+                                <Text style={styles.inputLabel}>Unit</Text>
+      
+                                <TextInput
+      
+                                  style={styles.input}
+      
+                                  placeholder="e.g. meters"
+      
+                                  value={stockFormData.unit}
+      
+                                  onChangeText={(text) => setStockFormData({ ...stockFormData, unit: text })}
+      
+                                />
+      
+                              </View>
+      
+                              <View style={styles.halfInput}>
+      
+                                <Text style={styles.inputLabel}>Reorder Level</Text>
+      
+                                <TextInput
+      
+                                  style={styles.input}
+      
+                                  placeholder="10"
+      
+                                  keyboardType="numeric"
+      
+                                  value={stockFormData.reorder_level}
+      
+                                  onChangeText={(text) => setStockFormData({ ...stockFormData, reorder_level: text })}
+      
+                                />
+      
+                              </View>
+      
+                            </View>
+      
+                            <Text style={styles.inputLabel}>Status</Text>
+      
+                            <View style={styles.categoryGrid}>
+      
+                              {[{ label: 'Available', value: true }, { label: 'Unavailable', value: false }].map((option) => (
+      
+                                <TouchableOpacity
+      
+                                  key={option.label}
+      
+                                  style={[
+      
+                                    styles.modalCategoryChip,
+      
+                                    stockFormData.is_available === option.value && styles.modalCategoryChipActive
+      
+                                  ]}
+      
+                                  onPress={() => setStockFormData({ ...stockFormData, is_available: option.value })}
+      
+                                >
+      
+                                  <Text style={[
+      
+                                    styles.modalCategoryChipText,
+      
+                                    stockFormData.is_available === option.value && styles.modalCategoryChipTextActive
+      
+                                  ]}>
+      
+                                    {option.label}
+      
+                                  </Text>
+      
+                                </TouchableOpacity>
+      
+                              ))}
+      
+                            </View>
+      
+                            <Text style={styles.inputLabel}>Stock Image</Text>
+      
+                            <TouchableOpacity style={styles.imageUploadBox} onPress={pickImage}>
+      
+                              {stockFormData.image ? (
+      
+                                <Image source={{ uri: stockFormData.image.uri }} style={styles.uploadedImage} />
+      
+                              ) : (
+      
+                                <View style={styles.imageUploadPlaceholder}>
+      
+                                  <Ionicons name="camera" size={40} color="#ec4899" />
+      
+                                  <Text style={styles.imageUploadText}>Tap to Upload Photo</Text>
+      
+                                  <Text style={styles.imageUploadSubtext}>or take a picture</Text>
+      
+                                </View>
+      
+                              )}
+      
+                            </TouchableOpacity>
+      
+                            <TouchableOpacity style={styles.takePhotoButton} onPress={takePhoto}>
+      
+                              <Ionicons name="camera-outline" size={20} color="#ec4899" />
+      
+                              <Text style={styles.takePhotoText}>Take Photo</Text>
+      
+                            </TouchableOpacity>
+      
+                          </ScrollView>
+      
+                          <View style={styles.modalButtons}>
+      
+                            <TouchableOpacity
+      
+                              style={[styles.modalButton, styles.cancelButton]}
+      
+                              onPress={() => setModalVisible(false)}
+      
+                            >
+      
+                              <Text style={styles.buttonText}>Cancel</Text>
+      
+                            </TouchableOpacity>
+      
+                            <TouchableOpacity
+      
+                              style={[styles.modalButton, styles.saveButton]}
+      
+                              onPress={handleSaveStock}
+      
+                              disabled={loading}
+      
+                            >
+      
+                              <Text style={styles.buttonText}>
+      
+                                {loading ? 'Saving...' : 'Save Item'}
+      
+                              </Text>
+      
+                            </TouchableOpacity>
+      
+                          </View>
+      
+                        </View>
+      
+                      </View>
+      
+                    </Modal>
+      
+                  </View>
+      
+                );
+      };
 
 // ==================== REQUESTS TAB ====================
 // Helper component for consistent detail display
@@ -1722,6 +2103,19 @@ const RequestsTab = () => {
       <DetailSection label="Occasion:" value={request.occasion} />
       <DetailSection label="Preferences:" value={request.notes} />
       <DetailSection label="Add-on:" value={request.addon} />
+    </>
+  );
+
+  const renderCustomizedDetails = (request) => (
+    <>
+      <DetailSection label="Quantity (Stems):" value={request.data?.bundleSize?.toString()} />
+      <DetailSection label="Flower Type:" value={request.data?.flower?.name} />
+      <DetailSection label="Wrapper:" value={request.data?.wrapper?.name} />
+      <DetailSection label="Ribbon:" value={request.data?.ribbon?.name} />
+      {/* Optionally, you might want to show individual prices or total price for customized items */}
+      {request.final_price && (
+        <DetailSection label="Final Price:" value={`₱${request.final_price.toFixed(2)}`} />
+      )}
     </>
   );
 
@@ -1854,6 +2248,7 @@ const RequestsTab = () => {
                 {/* Use helper functions to render details based on type */}
                 {selectedRequest.type === 'booking' && renderBookingDetails(selectedRequest)}
                 {selectedRequest.type === 'special_order' && renderSpecialOrderDetails(selectedRequest)}
+                {selectedRequest.type === 'customized' && renderCustomizedDetails(selectedRequest)}
 
 
                 {selectedRequest.image_url && (
@@ -4353,6 +4748,12 @@ const styles = StyleSheet.create({
   stockQuantity: {
     fontSize: 14,
     color: '#666',
+  },
+  switchStatusText: {
+    fontSize: 14,
+    color: '#666',
+    marginLeft: 10,
+    fontWeight: '600',
   },
   // Sales Tab Styles
   salesSummaryContainer: {

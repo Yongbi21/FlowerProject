@@ -1,19 +1,3 @@
-"Internal Server Error: Error: Invalid login: 535-5.7.8 Username and Password not accepted. For more information, go to\n535 5.7.8  https://support.google.com/mail/?p=BadCredentials 41be03b00d2f7-c1e7ca0baf3sm30569221a12.34 - gsmtp\n    at SMTPConnection._formatError (file:///var/tmp/sb-compile-edge-runtime/node_modules/localhost/nodemailer/6.9.7/lib/smtp-connection/index.js:790:19)\n    at SMTPConnection._actionAUTHComplete (file:///var/tmp/sb-compile-edge-runtime/node_modules/localhost/nodemailer/6.9.7/lib/smtp-connection/index.js:1564:34)\n    at SMTPConnection.<anonymous> (file:///var/tmp/sb-compile-edge-runtime/node_modules/localhost/nodemailer/6.9.7/lib/smtp-connection/index.js:546:26)\n    at SMTPConnection._processResponse (file:///var/tmp/sb-compile-edge-runtime/node_modules/localhost/nodemailer/6.9.7/lib/smtp-connection/index.js:969:20)\n    at SMTPConnection._onData (file:///var/tmp/sb-compile-edge-runtime/node_modules/localhost/nodemailer/6.9.7/lib/smtp-connection/index.js:755:14)\n    at TLSSocket.SMTPConnection._onSocketData (file:///var/tmp/sb-compile-edge-runtime/node_modules/localhost/nodemailer/6.9.7/lib/smtp-connection/index.js:193:44)\n    at TLSSocket.emit (ext:deno_node/_events.mjs:393:28)\n    at addChunk (ext:deno_node/_stream.mjs:2437:16)\n    at readableAddChunk (ext:deno_node/_stream.mjs:2416:13)\n    at TLSSocket.Readable.push (ext:deno_node/_stream.mjs:2355:14) {\n  code: \"EAUTH\",\n  response: \"535-5.7.8 Username and Password not accepted. For more information, go to\\n\" +\n    \"535 5.7.8  https://support.google.com/mail/?p=BadCredentials 41be03b00d2f7-c1e7ca0baf3sm30569221a12.34 - gsmtp\",\n  responseCode: 535,\n  command: \"AUTH PLAIN\"\n}\n"
-[
-  {
-    "boot_time": null,
-    "cpu_time_used": null,
-    "deployment_id": "luzcecstkebntjnfonwv_659e6595-b2e5-49bf-9d72-722bd5169412_2",
-    "event_type": "Log",
-    "execution_id": "7f1635e0-090c-4033-a0a8-c42c30d39c41",
-    "function_id": "659e6595-b2e5-49bf-9d72-722bd5169412",
-    "level": "error",
-    "memory_used": [],
-    "project_ref": "luzcecstkebntjnfonwv",
-    "reason": null,
-    "region": "ap-northeast-2",
-    "served_by": "supabase-edge-runtime-1.69.28 (compatible with Deno v2.1.4)",
-    "timestamp": "2025-12-31T07:33:34.625Z",
-    "version": "2"
-  }
-]
+Profile.jsx:360 Loaded 5 orders and 3 requests for current user
+client:810 [vite] hot updated: /src/pages/Customized.jsx
+Customized.jsx:199 Captured photo Base64: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAlgAAAJYCAYAAAC+ZpjcAAAAAXNSR0IArs4c6QAAHbFJREFUeF7t1j...
