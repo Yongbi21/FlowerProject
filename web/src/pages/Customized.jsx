@@ -1,88 +1,14 @@
-import React, { useMemo, useState, useRef } from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import Draggable from 'react-draggable';
 import { FaChevronLeft, FaArrowRotateLeft, FaScroll, FaRibbon, FaSeedling } from 'react-icons/fa6';
 import html2canvas from 'html2canvas';
 import RequestSuccessModal from '../components/RequestSuccessModal';
 import { supabase } from '../config/supabase';
+import { stockAPI } from '../config/api'; // Import stockAPI
 import '../styles/Customized.css';
-import darkBlueWrapperImg from '../assets/pictures/darkbluewrapper.png';
-import blueWrapperImg from '../assets/pictures/bluewrapper.png';
-import greenWrapperImg from '../assets/pictures/greenwrapper.png';
-import pinkWrapperImg from '../assets/pictures/pinkwrapper.png';
-import redWrapperImg from '../assets/pictures/redwrapper.png';
-import violetWrapperImg from '../assets/pictures/violetwrapper.png';
-import blackWrapperImg from '../assets/pictures/blackwrapper.png';
-import blackRibbonImg from '../assets/pictures/black-ribbon.png';
-import blueRibbonImg from '../assets/pictures/blue-ribbon.png';
-import goldRibbonImg from '../assets/pictures/gold-ribbon.png';
-import peachRibbonImg from '../assets/pictures/peach-ribbon.png';
-import pinkRibbonImg from '../assets/pictures/pink-ribbon.png';
-import redRibbonImg from '../assets/pictures/red-ribbon.png';
-import violetRibbonImg from '../assets/pictures/violet-ribbon.png';
-import whiteRibbonImg from '../assets/pictures/white-ribbon.png';
-import whiteRoseCustomizedImg from "../assets/pictures/white-rose-customized.png";
-import redRoseCustomizedImg from "../assets/pictures/red-rose-customized.png";
-import pinkRoseCustomizedImg from "../assets/pictures/pink-rose-customized.png";
-import chrysanthemumImg from "../assets/pictures/Chrysanthemum.png";
 
 const placeholderStemImg = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
-
-const customizationData = {
-  flowers: [
-    {
-      id: 'f1',
-      name: 'White Rose Luxe',
-      price: 180,
-      img: whiteRoseCustomizedImg,
-      layerImg: whiteRoseCustomizedImg,
-      stemImg: whiteRoseCustomizedImg
-    },
-    {
-      id: 'f2',
-      name: 'Red Rose Couture',
-      price: 185,
-      img: redRoseCustomizedImg,
-      layerImg: redRoseCustomizedImg,
-      stemImg: redRoseCustomizedImg
-    },
-    {
-      id: 'f3',
-      name: 'Pink Rose Custom',
-      price: 175,
-      img: pinkRoseCustomizedImg,
-      layerImg: pinkRoseCustomizedImg,
-      stemImg: pinkRoseCustomizedImg
-    },
-    {
-      id: 'f4',
-      name: 'Chrysanthemum',
-      price: 165,
-      img: chrysanthemumImg,
-      layerImg: chrysanthemumImg,
-      stemImg: chrysanthemumImg
-    }
-  ],
-  wrappers: [
-    { id: 'w1', name: 'Dark Blue Wrap', price: 80, img: darkBlueWrapperImg, layerImg: darkBlueWrapperImg },
-    { id: 'w2', name: 'Blue Satin', price: 85, img: blueWrapperImg, layerImg: blueWrapperImg },
-    { id: 'w3', name: 'Green Meadow', price: 85, img: greenWrapperImg, layerImg: greenWrapperImg },
-    { id: 'w4', name: 'Pink Bloom', price: 90, img: pinkWrapperImg, layerImg: pinkWrapperImg },
-    { id: 'w5', name: 'Red Royale', price: 95, img: redWrapperImg, layerImg: redWrapperImg },
-    { id: 'w6', name: 'Violet Whisper', price: 95, img: violetWrapperImg, layerImg: violetWrapperImg },
-    { id: 'w7', name: 'Midnight Black', price: 100, img: blackWrapperImg, layerImg: blackWrapperImg }
-  ],
-  ribbons: [
-    { id: 'r1', name: 'Midnight Black', price: 35, img: blackRibbonImg, layerImg: blackRibbonImg },
-    { id: 'r2', name: 'Cobalt Blue', price: 35, img: blueRibbonImg, layerImg: blueRibbonImg },
-    { id: 'r3', name: 'Golden Glow', price: 40, img: goldRibbonImg, layerImg: goldRibbonImg },
-    { id: 'r4', name: 'Crimson Silk', price: 35, img: redRibbonImg, layerImg: redRibbonImg },
-    { id: 'r5', name: 'Blush Pink', price: 35, img: pinkRibbonImg, layerImg: pinkRibbonImg },
-    { id: 'r6', name: 'Peach Sorbet', price: 35, img: peachRibbonImg, layerImg: peachRibbonImg },
-    { id: 'r7', name: 'Violet Shine', price: 38, img: violetRibbonImg, layerImg: violetRibbonImg },
-    { id: 'r8', name: 'Classic White', price: 30, img: whiteRibbonImg, layerImg: whiteRibbonImg }
-  ]
-};
 
 const bundleOptions = [3, 6, 12];
 const steps = [
@@ -126,16 +52,82 @@ const Customized = ({ addToCart }) => {
     wrapper: null,
     ribbon: null
   });
+  const [customBundleSizeInput, setCustomBundleSizeInput] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [capturedPhoto, setCapturedPhoto] = useState(null);
   const previewRef = useRef(null);
+
+  // New state for dynamic customization data
+  const [flowers, setFlowers] = useState([]);
+  const [wrappers, setWrappers] = useState([]);
+  const [ribbons, setRibbons] = useState([]);
+  const [loadingCustomizationData, setLoadingCustomizationData] = useState(true);
+
+  useEffect(() => {
+    const fetchCustomizationData = async () => {
+      try {
+        const response = await stockAPI.getAll();
+        const allStockItems = response.data || [];
+
+        const processedFlowers = allStockItems
+          .filter(item => item.category === 'Flowers')
+          .map(item => ({
+            id: item.id,
+            name: item.name,
+            price: item.price,
+            img: item.image_url,
+            layerImg: item.image_url,
+            stemImg: item.image_url,
+          }));
+
+        const processedWrappers = allStockItems
+          .filter(item => item.category === 'Wrappers')
+          .map(item => ({
+            id: item.id,
+            name: item.name,
+            price: item.price,
+            img: item.image_url,
+            layerImg: item.image_url,
+          }));
+
+        const processedRibbons = allStockItems
+          .filter(item => item.category === 'Ribbons')
+          .map(item => ({
+            id: item.id,
+            name: item.name,
+            price: item.price,
+            img: item.image_url,
+            layerImg: item.image_url,
+          }));
+
+        setFlowers(processedFlowers);
+        setWrappers(processedWrappers);
+        setRibbons(processedRibbons);
+      } catch (error) {
+        console.error('Error fetching customization data:', error);
+        alert('Failed to load customization options. Please try again.');
+      } finally {
+        setLoadingCustomizationData(false);
+      }
+    };
+
+    fetchCustomizationData();
+  }, []); // Run once on component mount
 
   const handleBundleSelect = (size) => {
     setSelection((prev) => ({ ...prev, bundleSize: size }));
   };
 
   const handleOptionSelect = (type, id) => {
-    const item = customizationData[type].find((entry) => entry.id === id);
+    let item = null;
+    if (type === 'flowers') {
+      item = flowers.find((entry) => entry.id === id);
+    } else if (type === 'wrappers') {
+      item = wrappers.find((entry) => entry.id === id);
+    } else if (type === 'ribbons') {
+      item = ribbons.find((entry) => entry.id === id);
+    }
+    
     if (!item) return;
     setSelection((prev) => {
       const next = { ...prev, [type === 'flowers' ? 'flower' : type === 'wrappers' ? 'wrapper' : 'ribbon']: item };
@@ -291,22 +283,40 @@ const Customized = ({ addToCart }) => {
 
   const formatPrice = (value) => `₱${value.toLocaleString('en-PH')}`;
 
-  const renderOptions = (groupKey, selectedId) => (
-    <div className="grid-options" id={`${groupKey}Options`}>
-      {customizationData[groupKey].map((item) => (
-        <button
-          key={item.id}
-          type="button"
-          className={`option-card ${selectedId === item.id ? 'selected' : ''}`}
-          onClick={() => handleOptionSelect(groupKey, item.id)}
-        >
-          <img src={item.img} alt={item.name} className="option-img" />
-          <div className="option-name">{item.name}</div>
-          <div className="option-price">+{formatPrice(item.price)}{groupKey === 'flowers' ? '/pc' : ''}</div>
-        </button>
-      ))}
-    </div>
-  );
+  const renderOptions = (groupKey, selectedId) => {
+    let options = [];
+    if (groupKey === 'flowers') {
+      options = flowers;
+    } else if (groupKey === 'wrappers') {
+      options = wrappers;
+    } else if (groupKey === 'ribbons') {
+      options = ribbons;
+    }
+
+    if (loadingCustomizationData) {
+      return <div className="loading-indicator">Loading options...</div>;
+    }
+    if (options.length === 0) {
+      return <div className="no-options">No {groupKey} available.</div>;
+    }
+
+    return (
+      <div className="grid-options" id={`${groupKey}Options`}>
+        {options.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={`option-card ${selectedId === item.id ? 'selected' : ''}`}
+            onClick={() => handleOptionSelect(groupKey, item.id)}
+          >
+            <img src={item.img} alt={item.name} className="option-img" />
+            <div className="option-name">{item.name}</div>
+            <div className="option-price">+{formatPrice(item.price)}{groupKey === 'flowers' ? '/pc' : ''}</div>
+          </button>
+        ))}
+      </div>
+    );
+  };
 
   return (
     <div className="customize-page">
