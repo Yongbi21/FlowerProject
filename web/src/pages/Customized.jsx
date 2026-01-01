@@ -1,88 +1,15 @@
-import React, { useMemo, useState, useRef } from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import Draggable from 'react-draggable';
 import { FaChevronLeft, FaArrowRotateLeft, FaScroll, FaRibbon, FaSeedling } from 'react-icons/fa6';
 import html2canvas from 'html2canvas';
 import RequestSuccessModal from '../components/RequestSuccessModal';
 import { supabase } from '../config/supabase';
+import { stockAPI } from '../config/api'; // Import stockAPI
 import '../styles/Customized.css';
-import darkBlueWrapperImg from '../assets/pictures/darkbluewrapper.png';
-import blueWrapperImg from '../assets/pictures/bluewrapper.png';
-import greenWrapperImg from '../assets/pictures/greenwrapper.png';
-import pinkWrapperImg from '../assets/pictures/pinkwrapper.png';
-import redWrapperImg from '../assets/pictures/redwrapper.png';
-import violetWrapperImg from '../assets/pictures/violetwrapper.png';
-import blackWrapperImg from '../assets/pictures/blackwrapper.png';
-import blackRibbonImg from '../assets/pictures/black-ribbon.png';
-import blueRibbonImg from '../assets/pictures/blue-ribbon.png';
-import goldRibbonImg from '../assets/pictures/gold-ribbon.png';
-import peachRibbonImg from '../assets/pictures/peach-ribbon.png';
-import pinkRibbonImg from '../assets/pictures/pink-ribbon.png';
-import redRibbonImg from '../assets/pictures/red-ribbon.png';
-import violetRibbonImg from '../assets/pictures/violet-ribbon.png';
-import whiteRibbonImg from '../assets/pictures/white-ribbon.png';
-import whiteRoseCustomizedImg from "../assets/pictures/white-rose-customized.png";
-import redRoseCustomizedImg from "../assets/pictures/red-rose-customized.png";
-import pinkRoseCustomizedImg from "../assets/pictures/pink-rose-customized.png";
-import chrysanthemumImg from "../assets/pictures/Chrysanthemum.png";
 
 const placeholderStemImg = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
-
-const customizationData = {
-  flowers: [
-    {
-      id: 'f1',
-      name: 'White Rose Luxe',
-      price: 180,
-      img: whiteRoseCustomizedImg,
-      layerImg: whiteRoseCustomizedImg,
-      stemImg: whiteRoseCustomizedImg
-    },
-    {
-      id: 'f2',
-      name: 'Red Rose Couture',
-      price: 185,
-      img: redRoseCustomizedImg,
-      layerImg: redRoseCustomizedImg,
-      stemImg: redRoseCustomizedImg
-    },
-    {
-      id: 'f3',
-      name: 'Pink Rose Custom',
-      price: 175,
-      img: pinkRoseCustomizedImg,
-      layerImg: pinkRoseCustomizedImg,
-      stemImg: pinkRoseCustomizedImg
-    },
-    {
-      id: 'f4',
-      name: 'Chrysanthemum',
-      price: 165,
-      img: chrysanthemumImg,
-      layerImg: chrysanthemumImg,
-      stemImg: chrysanthemumImg
-    }
-  ],
-  wrappers: [
-    { id: 'w1', name: 'Dark Blue Wrap', price: 80, img: darkBlueWrapperImg, layerImg: darkBlueWrapperImg },
-    { id: 'w2', name: 'Blue Satin', price: 85, img: blueWrapperImg, layerImg: blueWrapperImg },
-    { id: 'w3', name: 'Green Meadow', price: 85, img: greenWrapperImg, layerImg: greenWrapperImg },
-    { id: 'w4', name: 'Pink Bloom', price: 90, img: pinkWrapperImg, layerImg: pinkWrapperImg },
-    { id: 'w5', name: 'Red Royale', price: 95, img: redWrapperImg, layerImg: redWrapperImg },
-    { id: 'w6', name: 'Violet Whisper', price: 95, img: violetWrapperImg, layerImg: violetWrapperImg },
-    { id: 'w7', name: 'Midnight Black', price: 100, img: blackWrapperImg, layerImg: blackWrapperImg }
-  ],
-  ribbons: [
-    { id: 'r1', name: 'Midnight Black', price: 35, img: blackRibbonImg, layerImg: blackRibbonImg },
-    { id: 'r2', name: 'Cobalt Blue', price: 35, img: blueRibbonImg, layerImg: blueRibbonImg },
-    { id: 'r3', name: 'Golden Glow', price: 40, img: goldRibbonImg, layerImg: goldRibbonImg },
-    { id: 'r4', name: 'Crimson Silk', price: 35, img: redRibbonImg, layerImg: redRibbonImg },
-    { id: 'r5', name: 'Blush Pink', price: 35, img: pinkRibbonImg, layerImg: pinkRibbonImg },
-    { id: 'r6', name: 'Peach Sorbet', price: 35, img: peachRibbonImg, layerImg: peachRibbonImg },
-    { id: 'r7', name: 'Violet Shine', price: 38, img: violetRibbonImg, layerImg: violetRibbonImg },
-    { id: 'r8', name: 'Classic White', price: 30, img: whiteRibbonImg, layerImg: whiteRibbonImg }
-  ]
-};
+const placeholderImg = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMDAiIGhlaWdodGg9IjEwMCIgdmlld0JveD0iMCAwIDEwMCAxMDAiPjxyZWN0IHdpZHRoPSIxMDAiIGhlaWdodGg9IjEwMCIgZmlsbD0iI2UwZTBlMCIvPjx0ZXh0IHg9IjUwIiB5PSI1MCIgZm9udC1mYW1pbHk9ImFyaWFsIiBmb250LXNpemU9IjEyIiBmaWxsPSIjMzMzIiBhbmNob3ItcGVudD0ibWlkZGxlIiB0ZXh0LWFuY2hvcnM9Im1pZGRsZSI+Tm8gSW1hZ2U8L3RleHQ+PC9zdmc+'; // SVG "No Image" placeholder
 
 const bundleOptions = [3, 6, 12];
 const steps = [
@@ -126,16 +53,93 @@ const Customized = ({ addToCart }) => {
     wrapper: null,
     ribbon: null
   });
+  const [customBundleSizeInput, setCustomBundleSizeInput] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [capturedPhoto, setCapturedPhoto] = useState(null);
   const previewRef = useRef(null);
 
+  // New state for dynamic customization data
+  const [flowers, setFlowers] = useState([]);
+  const [wrappers, setWrappers] = useState([]);
+  const [ribbons, setRibbons] = useState([]);
+  const [loadingCustomizationData, setLoadingCustomizationData] = useState(true);
+
+  useEffect(() => {
+    const fetchCustomizationData = async () => {
+      try {
+        const response = await stockAPI.getAll();
+        const allStockItems = response.data || [];
+
+        const processedFlowers = allStockItems
+          .filter(item => item.category === 'Flowers')
+          .map(item => ({
+            id: item.id,
+            name: item.name,
+            price: item.price,
+            img: item.img,
+            layerImg: item.layerImg,
+            stemImg: item.stemImg,
+          }));
+
+        const processedWrappers = allStockItems
+          .filter(item => item.category === 'Wrappers')
+          .map(item => ({
+            id: item.id,
+            name: item.name,
+            price: item.price,
+            img: item.img,
+            layerImg: item.layerImg,
+          }));
+
+        const processedRibbons = allStockItems
+          .filter(item => item.category === 'Ribbons')
+          .map(item => ({
+            id: item.id,
+            name: item.name,
+            price: item.price,
+            img: item.img,
+            layerImg: item.layerImg,
+          }));
+
+        setFlowers(processedFlowers);
+        setWrappers(processedWrappers);
+        setRibbons(processedRibbons);
+
+      } catch (error) {
+        console.error('Error fetching customization data:', error.message || error);
+        alert('Failed to load customization options. Please try again.');
+      } finally {
+        setLoadingCustomizationData(false);
+      }
+    };
+
+    fetchCustomizationData();
+  }, []); // Run once on component mount
+
   const handleBundleSelect = (size) => {
     setSelection((prev) => ({ ...prev, bundleSize: size }));
+    setCustomBundleSizeInput(''); // Clear custom input when a predefined bundle is selected
+  };
+
+  const handleCustomBundleChange = (e) => {
+    const value = e.target.value;
+    // Allow empty string for initial input, but then validate as number >= 2
+    if (value === '' || (/^\d+$/.test(value) && parseInt(value, 10) >= 2)) {
+      setCustomBundleSizeInput(value);
+      setSelection((prev) => ({ ...prev, bundleSize: value === '' ? 0 : parseInt(value, 10) }));
+    }
   };
 
   const handleOptionSelect = (type, id) => {
-    const item = customizationData[type].find((entry) => entry.id === id);
+    let item = null;
+    if (type === 'flowers') {
+      item = flowers.find((entry) => entry.id === id);
+    } else if (type === 'wrappers') {
+      item = wrappers.find((entry) => entry.id === id);
+    } else if (type === 'ribbons') {
+      item = ribbons.find((entry) => entry.id === id);
+    }
+    
     if (!item) return;
     setSelection((prev) => {
       const next = { ...prev, [type === 'flowers' ? 'flower' : type === 'wrappers' ? 'wrapper' : 'ribbon']: item };
@@ -182,9 +186,10 @@ const Customized = ({ addToCart }) => {
       if (previewRef.current) {
         try {
           const canvas = await html2canvas(previewRef.current, {
-            backgroundColor: null,
+            backgroundColor: null, // Allow transparent background
             scale: 1,
             logging: false,
+            useCORS: true, // Enable cross-origin image support
           });
           photoBase64 = canvas.toDataURL('image/png');
         } catch (canvasError) {
@@ -291,22 +296,40 @@ const Customized = ({ addToCart }) => {
 
   const formatPrice = (value) => `₱${value.toLocaleString('en-PH')}`;
 
-  const renderOptions = (groupKey, selectedId) => (
-    <div className="grid-options" id={`${groupKey}Options`}>
-      {customizationData[groupKey].map((item) => (
-        <button
-          key={item.id}
-          type="button"
-          className={`option-card ${selectedId === item.id ? 'selected' : ''}`}
-          onClick={() => handleOptionSelect(groupKey, item.id)}
-        >
-          <img src={item.img} alt={item.name} className="option-img" />
-          <div className="option-name">{item.name}</div>
-          <div className="option-price">+{formatPrice(item.price)}{groupKey === 'flowers' ? '/pc' : ''}</div>
-        </button>
-      ))}
-    </div>
-  );
+  const renderOptions = (groupKey, selectedId) => {
+    let options = [];
+    if (groupKey === 'flowers') {
+      options = flowers;
+    } else if (groupKey === 'wrappers') {
+      options = wrappers;
+    } else if (groupKey === 'ribbons') {
+      options = ribbons;
+    }
+
+    if (loadingCustomizationData) {
+      return <div className="loading-indicator">Loading options...</div>;
+    }
+    if (options.length === 0) {
+      return <div className="no-options">No {groupKey} available.</div>;
+    }
+
+    return (
+      <div className="grid-options" id={`${groupKey}Options`}>
+        {options.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={`option-card ${selectedId === item.id ? 'selected' : ''}`}
+            onClick={() => handleOptionSelect(groupKey, item.id)}
+          >
+            <img src={item.img || placeholderImg} alt={item.name} className="option-img" />
+            <div className="option-name">{item.name}</div>
+            <div className="option-price">+{formatPrice(item.price)}{groupKey === 'flowers' ? '/pc' : ''}</div>
+          </button>
+        ))}
+      </div>
+    );
+  };
 
   return (
     <div className="customize-page">
@@ -345,7 +368,7 @@ const Customized = ({ addToCart }) => {
           <div className="canvas-container">
             <div className="bouquet-stage" ref={previewRef}>
               {selection.wrapper && (
-                <img src={selection.wrapper.layerImg} alt="Wrapper" className="layer" style={{ zIndex: 1, top: '50%' }} />
+                <img src={selection.wrapper.layerImg || placeholderImg} alt="Wrapper" className="layer" style={{ zIndex: 1, top: '50%' }} />
               )}
 
               {/* Flower Zone - Constrained Area */}
@@ -392,7 +415,7 @@ const Customized = ({ addToCart }) => {
 
               {selection.ribbon && (
                 <img
-                  src={selection.ribbon.layerImg}
+                  src={selection.ribbon.layerImg || placeholderImg}
                   alt="Ribbon"
                   className="layer"
                   style={{ zIndex: 3, top: '65%' }}
@@ -460,12 +483,29 @@ const Customized = ({ addToCart }) => {
                     <button
                       key={size}
                       type="button"
-                      className={`bundle-pill ${selection.bundleSize === size ? 'active' : ''}`}
+                      className={`bundle-pill ${selection.bundleSize === size && customBundleSizeInput === '' ? 'active' : ''}`}
                       onClick={() => handleBundleSelect(size)}
                     >
                       {size} Stems
                     </button>
                   ))}
+                </div>
+              </div>
+
+              {/* New Custom Stems Input */}
+              <div className="control-group">
+                <label>Custom Stems</label>
+                <div className="custom-bundle-input-card">
+                  <input
+                    type="number"
+                    min="2"
+                    step="1"
+                    value={customBundleSizeInput}
+                    onChange={handleCustomBundleChange}
+                    placeholder="e.g. 2"
+                    className="custom-stem-input"
+                  />
+
                 </div>
               </div>
 

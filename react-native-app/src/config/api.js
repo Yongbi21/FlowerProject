@@ -257,26 +257,88 @@ export const orderAPI = {
     }
 };
 
-// Auth API - using AsyncStorage for demo/local mode
+// Auth API - using Supabase for real authentication
 export const authAPI = {
-    adminLogin: async (data) => {
-        const adminUser = {
-            id: 1,
-            email: data.email,
-            name: 'Admin',
-            role: 'admin'
+    adminLogin: async ({ email, password }) => {
+        // 1. Sign in with Supabase Auth
+        const { data: sessionData, error: signInError } = await supabase.auth.signInWithPassword({
+            email,
+            password,
+        });
+
+        if (signInError) {
+            console.error('Supabase sign-in error:', signInError);
+            throw signInError;
+        }
+
+        if (!sessionData.user) {
+            throw new Error('Login failed: No user data returned.');
+        }
+
+        const { user, session } = sessionData;
+
+        // 2. Fetch user profile from 'users' table to check role
+        const { data: profile, error: profileError } = await supabase
+            .from('users')
+            .select('role, name')
+            .eq('id', user.id)
+            .single();
+
+        if (profileError) {
+            console.error('Error fetching user profile:', profileError);
+            // Sign out the user as we can't verify their role
+            await supabase.auth.signOut();
+            throw new Error('Could not verify user role. Your account might not be set up correctly.');
+        }
+
+        // 3. Check the role
+        if (profile.role !== 'admin' && profile.role !== 'employee') {
+            // Sign out the user because they don't have the required role
+            await supabase.auth.signOut();
+            throw new Error('Access Denied: You do not have permission to access this dashboard.');
+        }
+
+        // 4. Combine auth user data with public profile data
+        const fullUser = {
+            ...user,
+            ...profile, // This will add 'role' and 'name' to the user object
         };
-        const token = 'local-admin-token';
-        return { data: { token, user: adminUser } };
+
+        // 5. Return data in the format expected by LoginScreen.js
+        return {
+            data: {
+                token: session.access_token,
+                user: fullUser,
+            }
+        };
+    },
+
+    logout: async () => {
+        const { error } = await supabase.auth.signOut();
+        if (error) {
+            console.error('Error logging out from Supabase:', error);
+        }
+        // AsyncStorage cleanup will be handled in the component
+        return { data: { success: true } };
     },
 
     changePassword: async (data) => {
+        // This would be implemented using supabase.auth.updateUser
         return { data: { success: true, message: 'Password changed successfully' } };
     },
 
     getMe: async () => {
-        const user = await AsyncStorage.getItem('currentUser');
-        return { data: user ? JSON.parse(user) : null };
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { data: null };
+
+        // Also fetch profile to get role
+        const { data: profile } = await supabase
+            .from('users')
+            .select('role, name')
+            .eq('id', user.id)
+            .single();
+        
+        return { data: { ...user, ...profile } };
     }
 };
 
@@ -300,6 +362,7 @@ export const adminAPI = {
 
 
                 users (
+                    id,
                     name,
                     email,
                     phone
@@ -346,7 +409,6 @@ export const adminAPI = {
                 customer_email: customerEmail,
                 customer_phone: customerPhone,
                 items: items,
-                users: undefined, // Remove the raw users object
                 order_items: undefined, // Remove the raw order_items object
             };
         });
@@ -379,6 +441,21 @@ export const adminAPI = {
 
         if (error) {
             console.error('Error updating order payment method:', error);
+            throw error;
+        }
+        return { data: { success: true, order: data } };
+    },
+
+    updateOrderPaymentStatus: async (id, status) => {
+        const { data, error } = await supabase
+            .from('orders')
+            .update({ payment_status: status })
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (error) {
+            console.error('Error updating order payment status:', error);
             throw error;
         }
         return { data: { success: true, order: data } };
@@ -436,6 +513,7 @@ export const adminAPI = {
                 status,
                 image_url,
                 notes,
+                data,
                 created_at,
                 users (
                     name,
@@ -467,7 +545,7 @@ export const adminAPI = {
                 user_name: userData.name,
                 user_email: userData.email,
                 user_phone: userData.phone,
-                // No longer spreading requestData here
+                data: req.data,
             };
         });
 
@@ -510,33 +588,192 @@ export const adminAPI = {
     },
 
     getAllStock: async () => {
-        const stock = JSON.parse(await AsyncStorage.getItem('stock') || '[]');
+        const { data: stock, error } = await supabase
+            .from('stock_products')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+        if (error) {
+            console.error('Supabase query error for stock_products:', error);
+            return { data: [] };
+        }
         return { data: stock };
     },
 
-    createStock: async (data) => {
-        const stock = JSON.parse(await AsyncStorage.getItem('stock') || '[]');
-        const newStock = { ...data, id: Date.now() };
-        stock.push(newStock);
-        await AsyncStorage.setItem('stock', JSON.stringify(stock));
+    createStock: async (formData) => {
+        let imageUrl = null;
+        const imageFile = formData.image;
+
+        if (imageFile && imageFile.base64) {
+            try {
+                const fileName = imageFile.fileName || `stock-${Date.now()}.jpg`;
+                const contentType = imageFile.mimeType || 'image/jpeg';
+                const arrayBuffer = decode(imageFile.base64);
+                
+                const { data: uploadData, error: uploadError } = await supabase.storage
+                    .from('stock-images')
+                    .upload(fileName, arrayBuffer, {
+                        cacheControl: '3600',
+                        upsert: false,
+                        contentType,
+                    });
+
+                if (uploadError) {
+                    throw uploadError;
+                }
+                
+                const { data: publicUrlData } = supabase.storage
+                    .from('stock-images')
+                    .getPublicUrl(uploadData.path);
+                
+                imageUrl = publicUrlData.publicUrl;
+                
+            } catch (error) {
+                console.error('Error processing stock image:', error);
+                throw new Error('Failed to upload stock image: ' + error.message);
+            }
+        }
+
+        const stockToInsert = {
+            name: formData.name,
+            category: formData.category,
+            price: parseFloat(formData.price) || 0,
+            quantity: parseInt(formData.quantity, 10) || 0,
+            unit: formData.unit || '',
+            reorder_level: parseInt(formData.reorder_level, 10) || 10,
+            is_available: formData.is_available, // Mapped from is_available in form
+            image_url: imageUrl,
+        };
+
+        const { data: newStock, error } = await supabase
+            .from('stock_products')
+            .insert([stockToInsert])
+            .select()
+            .single();
+
+        if (error) {
+            console.error('Database insert error for stock:', error);
+            throw error;
+        }
+
         return { data: newStock };
     },
 
-    updateStock: async (id, data) => {
-        const stock = JSON.parse(await AsyncStorage.getItem('stock') || '[]');
-        const index = stock.findIndex(s => s.id === id);
-        if (index !== -1) {
-            stock[index] = { ...stock[index], ...data };
-            await AsyncStorage.setItem('stock', JSON.stringify(stock));
-            return { data: stock[index] };
+    updateStock: async (id, formData) => {
+        let imageUrl = formData.image_url_hidden; // This might be the existing image URL
+        const imageFile = formData.image;
+        const oldImageUrl = formData.old_image_url; // Assuming this is passed for old image deletion
+
+        if (imageFile && imageFile.base64) {
+            try {
+                const fileName = imageFile.fileName || `stock-${Date.now()}.jpg`;
+                const contentType = imageFile.mimeType || 'image/jpeg';
+                const arrayBuffer = decode(imageFile.base64);
+
+                const { data: uploadData, error: uploadError } = await supabase.storage
+                    .from('stock-images')
+                    .upload(fileName, arrayBuffer, {
+                        cacheControl: '3600',
+                        upsert: true,
+                        contentType,
+                    });
+
+                if (uploadError) {
+                    throw uploadError;
+                }
+                
+                const { data: publicUrlData } = supabase.storage
+                    .from('stock-images')
+                    .getPublicUrl(uploadData.path);
+                
+                imageUrl = publicUrlData.publicUrl;
+
+                // Delete old image if it exists and a new one was uploaded
+                if (oldImageUrl && oldImageUrl !== imageUrl) {
+                    const oldFileName = oldImageUrl.split('/').pop();
+                    await supabase.storage.from('stock-images').remove([oldFileName]);
+                }
+                
+            } catch (error) {
+                console.error('Error processing stock image for update:', error);
+                throw new Error('Failed to upload stock image for update: ' + error.message);
+            }
+        } else if (imageFile === null) {
+            // If image was explicitly removed by setting to null
+            if (oldImageUrl) {
+                const oldFileName = oldImageUrl.split('/').pop();
+                await supabase.storage.from('stock-images').remove([oldFileName]);
+            }
+            imageUrl = null;
+        } else if (imageFile && imageFile.uri && imageFile.uri.startsWith('http')) {
+            // No new image, keep existing one
+            imageUrl = imageFile.uri;
         }
-        return { data: null };
+
+
+        const stockToUpdate = {
+            name: formData.name,
+            category: formData.category,
+            price: parseFloat(formData.price) || 0,
+            quantity: parseInt(formData.quantity, 10) || 0,
+            unit: formData.unit || '',
+            reorder_level: parseInt(formData.reorder_level, 10) || 10,
+            is_available: formData.is_available, // Mapped from is_available in form
+            image_url: imageUrl,
+            updated_at: new Date().toISOString(),
+        };
+        
+        const { data: updatedStock, error } = await supabase
+            .from('stock_products')
+            .update(stockToUpdate)
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (error) {
+            console.error('Error updating stock:', error);
+            throw error;
+        }
+
+        return { data: updatedStock };
     },
 
     deleteStock: async (id) => {
-        const stock = JSON.parse(await AsyncStorage.getItem('stock') || '[]');
-        const filtered = stock.filter(s => s.id !== id);
-        await AsyncStorage.setItem('stock', JSON.stringify(filtered));
+        // First, get the image_url to delete the image from storage
+        const { data: stockItem, error: fetchError } = await supabase
+            .from('stock_products')
+            .select('image_url')
+            .eq('id', id)
+            .single();
+
+        if (fetchError) {
+            console.error('Error fetching stock item for deletion:', fetchError);
+            throw fetchError;
+        }
+
+        if (stockItem.image_url) {
+            const fileName = stockItem.image_url.split('/').pop();
+            const { error: deleteImageError } = await supabase.storage
+                .from('stock-images')
+                .remove([fileName]);
+
+            if (deleteImageError) {
+                console.error('Error deleting stock image:', deleteImageError);
+                // Continue with deleting the record even if image deletion fails
+            }
+        }
+
+        // Then, delete the stock item record
+        const { error: deleteRecordError } = await supabase
+            .from('stock_products')
+            .delete()
+            .eq('id', id);
+
+        if (deleteRecordError) {
+            console.error('Error deleting stock record:', deleteRecordError);
+            throw deleteRecordError;
+        }
+
         return { data: { success: true } };
     },
 
@@ -586,6 +823,81 @@ export const adminAPI = {
 
     deleteEmployee: async (id) => {
         return { data: { success: true } };
+    },
+
+    getAllConversations: async () => {
+        const adminId = (await authAPI.getMe())?.data?.id;
+        if (!adminId) return { data: [] };
+
+        const { data: messages, error } = await supabase
+            .from('messages')
+            .select(`
+                *,
+                sender:sender_id(id, name, email),
+                receiver:receiver_id(id, name, email)
+            `)
+            .or(`sender_id.eq.${adminId},receiver_id.eq.${adminId}`)
+            .order('created_at', { ascending: false });
+
+        if (error) {
+            console.error('Error fetching all messages:', error);
+            return { data: [] };
+        }
+
+        const conversations = new Map();
+        messages.forEach(message => {
+            const otherUser = message.sender_id === adminId ? message.receiver : message.sender;
+            if (!otherUser) return;
+
+            if (!conversations.has(otherUser.id)) {
+                conversations.set(otherUser.id, {
+                    user: otherUser,
+                    lastMessage: message.message,
+                    timestamp: message.created_at,
+                });
+            }
+        });
+
+        const sortedConversations = Array.from(conversations.values())
+            .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+            
+        return { data: sortedConversations };
+    },
+
+    getMessagesWithUser: async (userId) => {
+        const adminId = (await authAPI.getMe())?.data?.id;
+        if (!adminId) return { data: [] };
+
+        const { data, error } = await supabase
+            .from('messages')
+            .select('*')
+            .or(`and(sender_id.eq.${adminId},receiver_id.eq.${userId}),and(sender_id.eq.${userId},receiver_id.eq.${adminId})`)
+            .order('created_at', { ascending: true });
+
+        if (error) {
+            console.error('Error fetching messages:', error);
+            return { data: [] };
+        }
+        return { data };
+    },
+
+    sendMessage: async (receiverId, messageText) => {
+        const adminId = (await authAPI.getMe())?.data?.id;
+        if (!adminId) return { error: { message: "Not logged in" } };
+
+        const message = {
+            sender_id: adminId,
+            receiver_id: receiverId,
+            message: messageText,
+        };
+
+        const { data, error } = await supabase.from('messages').insert([message]).select().single();
+        
+        if (error) {
+            console.error('Error sending message:', error);
+            return { error };
+        }
+        return { data };
     }
 };
 

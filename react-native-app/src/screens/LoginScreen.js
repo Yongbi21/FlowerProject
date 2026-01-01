@@ -47,20 +47,29 @@ const LoginScreen = () => {
       console.error('Error response:', error.response);
       console.error('Error message:', error.message);
 
-      let errorMessage = 'Could not connect to server. ';
+      let errorMessage = 'Could not connect to server.';
 
-      if (error.response) {
-        // Server responded with error
+      // Check for specific Supabase error messages or custom errors from authAPI
+      if (error.message.includes('AuthApiError')) {
+        // Supabase authentication errors
+        errorMessage = error.message.replace('AuthApiError: ', '');
+        Alert.alert('Login Failed', errorMessage);
+      } else if (error.message.includes('Access Denied')) {
+        // Custom error for role-based access denied
+        Alert.alert('Access Denied', error.message);
+      } else if (error.response) {
+        // Server responded with error (e.g., from an API call)
         errorMessage = error.response.data?.message || 'Invalid credentials';
+        Alert.alert('Login Failed', errorMessage);
       } else if (error.request) {
-        // Request made but no response
-        errorMessage = 'No response from server. Check your connection.';
+        // Request made but no response (network error)
+        errorMessage = 'No response from server. Check your internet connection.';
+        Alert.alert('Login Failed', errorMessage);
       } else {
         // Something else happened
-        errorMessage = error.message || 'An error occurred';
+        errorMessage = error.message || 'An unexpected error occurred during login.';
+        Alert.alert('Login Failed', errorMessage);
       }
-
-      Alert.alert('Login Failed', errorMessage);
     } finally {
       setLoading(false);
     }

@@ -297,8 +297,8 @@ const MyOrders = () => {
         return labels[status] || status;
     };
 
-    const handleTrackOrder = (orderId) => {
-        navigate(`/order-tracking/${orderId}`);
+    const handleTrackOrder = (orderNum) => {
+        navigate(`/order-tracking/${orderNum}`);
     };
 
     const handleTrackStatus = (order) => {
@@ -306,7 +306,7 @@ const MyOrders = () => {
         if (order.status === 'pending' && order.type) {
             setShowWaitingModal(true);
         } else {
-            handleTrackOrder(order.id);
+            handleTrackOrder(order.order_number || order.request_number || order.id);
         }
     };
 
@@ -392,14 +392,36 @@ const MyOrders = () => {
     };
 
     const formatMessageTime = (timestamp) => {
-        const date = new Date(timestamp);
-        const now = new Date();
-        const isToday = date.toDateString() === now.toDateString();
-        
-        if (isToday) {
-            return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+        if (!timestamp) return '';
+        try {
+            const date = new Date(timestamp);
+            const now = new Date();
+            
+            const isToday = now.toDateString() === date.toDateString();
+            if (isToday) {
+                return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+            }
+            
+            // not today, calculate days ago
+            const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const startOfMessageDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+            const diffTime = startOfToday.getTime() - startOfMessageDate.getTime();
+            const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+
+            if (diffDays === 1) {
+              return '1 day ago';
+            }
+            
+            if (diffDays > 1) {
+              return `${diffDays} days ago`;
+            }
+
+            // Fallback for dates that are somehow in the future or same day but `isToday` is false (edge case)
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+        } catch (e) {
+            return timestamp;
         }
-        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
     };
 
     const groupMessagesByDate = (messages) => {
@@ -969,7 +991,7 @@ const MyOrders = () => {
                                         {order.status !== 'cancelled' && order.status !== 'completed' && !(order.status === 'pending' && order.type) && (
                                             <button 
                                                 className="btn-order-action primary"
-                                                onClick={() => handleTrackOrder(order.id || `order-${index}`)}
+                                                onClick={() => handleTrackOrder(order.order_number || order.request_number || order.id)}
                                             >
                                                 Track Order
                                             </button>

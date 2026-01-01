@@ -171,8 +171,8 @@ function AppContent() {
         <Route path="/special-order" element={<SpecialOrder user={user} />} />
         <Route path="/product/:productId" element={<ProductDetail addToCart={addToCart} />} />
         <Route path="/checkout" element={<Checkout setCart={setCart} user={user} />} />
-        <Route path="/order-success/:orderId" element={<OrderSuccess />} />
-        <Route path="/order-tracking/:orderId" element={<OrderTracking />} />
+        <Route path="/order-success/:orderNumber" element={<OrderSuccess />} />
+        <Route path="/order-tracking/:orderNumber" element={<OrderTracking />} />
         <Route path="/profile" element={<Profile user={user} logout={logout} />} />
         <Route path="/my-orders" element={<MyOrders />} />
         <Route path="/notifications" element={<Notifications />} />

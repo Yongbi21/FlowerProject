@@ -9,7 +9,7 @@ export const productAPI = {
     getAll: (params) => {
         return new Promise((resolve) => {
             const products = JSON.parse(localStorage.getItem('products') || '[]');
-            let filtered = products.filter(p => p.is_active);
+            let filtered = products.filter(p => p.is_available);
 
             if (params?.category_id) {
                 filtered = filtered.filter(p => p.category_id === parseInt(params.category_id));
@@ -64,7 +64,7 @@ export const categoryAPI = {
     getAll: () => {
         return new Promise((resolve) => {
             const categories = JSON.parse(localStorage.getItem('categories') || '[]');
-            resolve({ data: categories.filter(c => c.is_active) });
+            resolve({ data: categories.filter(c => c.is_available) });
         });
     }
 };
@@ -507,6 +507,42 @@ export const cartAPI = {
     }
 };
 
+import { supabase } from '../config/supabase'; // Import supabase client
+
+// Stock API - fetching from Supabase
+export const stockAPI = {
+    getAll: async () => {
+        try {
+            const { data, error } = await supabase
+                .from('stock_products') // Assuming your table name is 'stock_products'
+                .select('*')
+                .eq('is_available', true); // Assuming you only want available stock items
+
+            if (error) throw error;
+
+            // Map data to the format expected by Customized.jsx
+            const mappedData = data.map(item => ({
+                id: item.id,
+                name: item.name,
+                category: item.category,
+                price: item.price,
+                img: item.image_url,
+                layerImg: item.image_url,
+                stemImg: item.image_url, // Flowers will use this, others can just ignore
+                unit: item.unit,
+                reorder_level: item.reorder_level,
+                is_available: item.is_available,
+            }));
+            
+            
+            return { data: mappedData };
+        } catch (error) {
+            console.error('Error fetching stock items from Supabase:', error.message || error);
+            throw error;
+        }
+    }
+};
+
 // Default export for importing as 'api'
 export default {
     productAPI,
@@ -521,5 +557,6 @@ export default {
     notificationAPI,
     messageAPI,
     reviewAPI,
-    cartAPI
+    cartAPI,
+    stockAPI
 };

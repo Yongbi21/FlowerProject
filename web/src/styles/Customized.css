@@ -836,3 +836,41 @@
         height: 90px;
     }
 }
+
+.customize-page .custom-bundle-input-card {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: var(--secondary-color);
+    padding: 0.5rem 1rem;
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--border-color); /* Add default border */
+    transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+    max-width: 140px; /* New: Limit width to 140px */
+}
+
+.customize-page .custom-bundle-input-card:focus-within { /* Use focus-within for parent */
+    border-color: var(--primary-color); /* Pink border on focus */
+    box-shadow: 0 0 0 3px rgba(214, 51, 132, 0.2); /* Pink shadow on focus */
+}
+
+.customize-page .custom-stem-input {
+    flex: 1;
+    border: none;
+    background: transparent;
+    font-size: 1rem;
+    font-weight: 500;
+    color: var(--text-main);
+    padding: 0.25rem 0;
+    width: 100%;
+    text-align: center;
+}
+
+.customize-page .custom-stem-input:focus {
+    outline: none;
+}
+
+.customize-page .custom-stem-input::placeholder {
+    color: var(--text-muted);
+}

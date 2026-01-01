@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { supabase } from '../config/supabase';
 import '../styles/Navbar.css';
 
 const Navbar = ({ cartCount, user, logout }) => {
@@ -8,6 +9,39 @@ const Navbar = ({ cartCount, user, logout }) => {
     const [showNotifications, setShowNotifications] = useState(false);
     const [unreadCount, setUnreadCount] = useState(0);
     const [isMobile, setIsMobile] = useState(false);
+    const [unreadMessageCount, setUnreadMessageCount] = useState(0);
+
+    useEffect(() => {
+        if (!user) {
+            setUnreadMessageCount(0);
+            return;
+        }
+
+        const fetchUnreadCount = async () => {
+            const { count, error } = await supabase
+                .from('messages')
+                .select('*', { count: 'exact', head: true })
+                .eq('receiver_id', user.id)
+                .eq('is_read', false);
+
+            if (!error) {
+                setUnreadMessageCount(count);
+            }
+        };
+
+        fetchUnreadCount();
+
+        const messagesChannel = supabase.channel('public:messages')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, payload => {
+                fetchUnreadCount();
+            })
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(messagesChannel);
+        };
+    }, [user]);
+
 
     useEffect(() => {
         // Check if mobile on mount and resize
@@ -113,12 +147,28 @@ const Navbar = ({ cartCount, user, logout }) => {
                             <Link to="/wishlist" className="btn-icon">
                                 <i className="fa-regular fa-heart"></i>
                             </Link>
+
+                            <Link to="/profile" state={{ activeMenu: 'messages' }} className="btn-icon">
+                                <i className="fa-regular fa-message"></i> {/* Changed from fa-bell */}
+                                {unreadMessageCount > 0 && (
+                                    <span className="badge-count">{unreadMessageCount > 9 ? '9+' : unreadMessageCount}</span>
+                                )}
+                            </Link>
+                            
                             <div className="notification-wrapper position-relative">
                                 {/* ... existing notification code ... */}
                             </div>
                             <Link to="/cart" className="btn-icon">
                                 <i className="fa-solid fa-cart-shopping"></i>
                                 <span className="badge-count">{cartCount}</span>
+                            </Link>
+
+                            {/* Generic Notification Bell - moved here */}
+                            <Link to="/notifications" className="btn-icon">
+                                <i className="fa-regular fa-bell"></i>
+                                {unreadCount > 0 && (
+                                    <span className="badge-count">{unreadCount > 9 ? '9+' : unreadCount}</span>
+                                )}
                             </Link>
 
                             {user ? (

@@ -38,7 +38,7 @@ const Login = ({ onLogin }) => {
                     id: user.id,
                     name: user.user_metadata.name || user.email, // Use name from metadata or fallback to email
                     email: user.email,
-                    phone: null, // Phone is not collected at login
+                    phone: user.user_metadata.phone || null, // Correctly syncs phone from metadata
                     role: 'customer' // Default role
                 }, { onConflict: 'id' }); // Upsert by id
 

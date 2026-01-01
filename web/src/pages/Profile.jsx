@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import Select from 'react-select';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import '../styles/Shop.css';
 import { supabase } from '../config/supabase';
 
@@ -26,7 +27,22 @@ const menuItems = [
 
 const Profile = ({ user, logout }) => {
     const navigate = useNavigate();
-    const [activeMenu, setActiveMenu] = useState('orders');
+    const location = useLocation();
+
+    // Effect to handle redirection if user is not logged in
+    useEffect(() => {
+        if (!user) {
+            navigate('/login');
+        }
+    }, [user, navigate]);
+
+    // If user is not present, render nothing (or a loading spinner)
+    // All hooks must be called unconditionally after this check
+    if (!user) {
+        return null;
+    }
+
+    const [activeMenu, setActiveMenu] = useState(location.state?.activeMenu || 'orders');
     const [activeOrderTab, setActiveOrderTab] = useState('all');
     const [orders, setOrders] = useState([]);
     const [addresses, setAddresses] = useState([]);
@@ -37,11 +53,241 @@ const Profile = ({ user, logout }) => {
         name: '',
         phone: '',
         street: '',
+        barangay: '',
         city: '',
         province: ''
     });
+    
+    // NEW STATE for address dropdowns
+    const [provinces, setProvinces] = useState([]);
+    const [cities, setCities] = useState([]);
+    const [barangays, setBarangays] = useState([]);
+    const [addressLoading, setAddressLoading] = useState(null); // Can be 'provinces', 'cities', 'barangays'
+    
+    const [selectedProvince, setSelectedProvince] = useState(null);
+    const [selectedCity, setSelectedCity] = useState(null);
+    const [selectedBarangay, setSelectedBarangay] = useState(null);
+
+
     const [messages, setMessages] = useState([]);
-    const [newMessage, setNewMessage] = '';
+    const [newMessage, setNewMessage] = useState('');
+    const [adminId, setAdminId] = useState(null);
+
+    // NEW: Fetch provinces when modal opens
+    useEffect(() => {
+        if (showAddressModal) {
+            setAddressLoading('provinces');
+            fetch('https://psgc.gitlab.io/api/provinces/')
+                .then(response => response.json())
+                .then(data => {
+                    const provinceOptions = data.map(p => ({ value: p.code, label: p.name }));
+                    setProvinces(provinceOptions);
+                })
+                .catch(error => console.error('Error fetching provinces:', error))
+                .finally(() => setAddressLoading(null));
+        }
+    }, [showAddressModal]);
+
+    // NEW: Fetch cities when province changes
+    useEffect(() => {
+        if (selectedProvince?.value) {
+            setAddressLoading('cities');
+            setCities([]);
+            setBarangays([]);
+            setSelectedCity(null);
+            setSelectedBarangay(null);
+            setAddressForm(prev => ({ ...prev, city: '', barangay: '' }));
+            
+            fetch(`https://psgc.gitlab.io/api/provinces/${selectedProvince.value}/cities-municipalities/`)
+                .then(response => response.json())
+                .then(data => {
+                    const cityOptions = data.map(c => ({ value: c.code, label: c.name }));
+                    setCities(cityOptions);
+                })
+                .catch(error => console.error('Error fetching cities:', error))
+                .finally(() => setAddressLoading(null));
+        } else {
+            setCities([]);
+            setBarangays([]);
+        }
+    }, [selectedProvince]);
+
+    // NEW: Fetch barangays when city changes
+    useEffect(() => {
+        if (selectedCity?.value) {
+            setAddressLoading('barangays');
+            setBarangays([]);
+            setSelectedBarangay(null);
+            setAddressForm(prev => ({ ...prev, barangay: '' }));
+
+            fetch(`https://psgc.gitlab.io/api/cities-municipalities/${selectedCity.value}/barangays/`)
+                .then(response => response.json())
+                .then(data => {
+                    const barangayOptions = data.map(b => ({ value: b.code, label: b.name }));
+                    setBarangays(barangayOptions);
+                })
+                .catch(error => console.error('Error fetching barangays:', error))
+                .finally(() => setAddressLoading(null));
+        } else {
+            setBarangays([]);
+        }
+    }, [selectedCity]);
+
+    // NEW: Handle pre-filling dropdowns when editing an address
+    useEffect(() => {
+        if (editingAddress && provinces.length > 0) {
+            const currentProvince = provinces.find(p => p.label === editingAddress.province);
+            if (currentProvince) {
+                setSelectedProvince(currentProvince);
+            }
+        }
+    }, [editingAddress, provinces]);
+
+    useEffect(() => {
+        if (editingAddress && cities.length > 0) {
+            const currentCity = cities.find(c => c.label === editingAddress.city);
+            if (currentCity) {
+                setSelectedCity(currentCity);
+            }
+        }
+    }, [editingAddress, cities]);
+
+    useEffect(() => {
+        if (editingAddress && barangays.length > 0) {
+            const currentBarangay = barangays.find(b => b.label === editingAddress.barangay);
+            if (currentBarangay) {
+                setSelectedBarangay(currentBarangay);
+            }
+        }
+    }, [editingAddress, barangays]);
+
+
+    const formatMessageTime = (timestamp) => {
+        if (!timestamp) return '';
+        try {
+            const date = new Date(timestamp);
+            const now = new Date();
+            
+            const isToday = now.toDateString() === date.toDateString();
+            if (isToday) {
+                return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+            }
+            
+            const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const startOfMessageDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+            const diffTime = startOfToday.getTime() - startOfMessageDate.getTime();
+            const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+
+            if (diffDays === 1) {
+              return '1 day ago';
+            }
+            
+            if (diffDays > 1) {
+              return `${diffDays} days ago`;
+            }
+
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+        } catch (e) {
+            return timestamp;
+        }
+    };
+
+    useEffect(() => {
+        if (!user) return;
+    
+        let staffIds = [];
+    
+        const setupMessaging = async () => {
+            // 1. Get all staff members (admins and employees)
+            const { data: staffUsers, error: staffError } = await supabase
+                .from('users')
+                .select('id')
+                .in('role', ['admin', 'employee']);
+            
+            if (staffError) {
+                console.error('Error fetching staff IDs:', staffError);
+                // As a fallback, we might still want to fetch messages from the primary admin if one exists
+                const { data: adminUser, error: adminError } = await supabase.from('users').select('id').eq('role', 'admin').limit(1).single();
+                if (adminUser) {
+                    staffIds = [adminUser.id];
+                }
+            } else {
+                staffIds = staffUsers.map(u => u.id);
+            }
+            
+            if (staffIds.length === 0) {
+                console.warn("No staff users found to fetch messages from.");
+                return;
+            }
+
+            // 2. Fetch initial messages between current user and ANY staff member
+            const { data, error } = await supabase
+                .from('messages')
+                .select('*')
+                .or(`and(sender_id.eq.${user.id},receiver_id.in.(${staffIds.join(',')})),and(receiver_id.eq.${user.id},sender_id.in.(${staffIds.join(',')}))`)
+                .order('created_at', { ascending: true });
+    
+            if (error) {
+                console.error('Error fetching messages:', error);
+            } else {
+                setMessages(data || []);
+            }
+
+            // 3. Mark messages from any staff as read
+            if (activeMenu === 'messages') {
+                await supabase
+                    .from('messages')
+                    .update({ is_read: true })
+                    .eq('receiver_id', user.id)
+                    .in('sender_id', staffIds);
+            }
+        };
+
+        setupMessaging();
+    
+        // 4. Set up real-time subscription
+        const subscription = supabase
+            .channel('public:messages')
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+                const newMessage = payload.new;
+                // A message is relevant if it's TO me from ANY staff, or FROM me to ANY staff.
+                const isRelevant = (staffIds.includes(newMessage.sender_id) && newMessage.receiver_id === user.id) || 
+                                   (newMessage.sender_id === user.id && staffIds.includes(newMessage.receiver_id));
+
+                if (isRelevant) {
+                    setMessages((prevMessages) => {
+                        if (prevMessages.some(msg => msg.id === newMessage.id)) return prevMessages;
+                        return [...prevMessages, newMessage]
+                    });
+                    // Also mark as read if the messages tab is active
+                    if (activeMenu === 'messages' && newMessage.receiver_id === user.id) {
+                         supabase
+                            .from('messages')
+                            .update({ is_read: true })
+                            .eq('id', newMessage.id)
+                            .then();
+                    }
+                }
+            })
+            .subscribe();
+    
+        return () => {
+            supabase.removeChannel(subscription);
+        };
+    }, [user, activeMenu]);
+
+    // This useEffect is to find a primary admin to send messages TO.
+    useEffect(() => {
+        const fetchAdminId = async () => {
+            const { data, error } = await supabase.from('users').select('id').eq('role', 'admin').limit(1).single();
+            if (error) console.error('Error fetching admin ID for sending:', error);
+            else if (data) setAdminId(data.id);
+            else console.warn('No admin user found to send messages to.');
+        };
+        fetchAdminId();
+    }, []);
+
     const [showCancelModal, setShowCancelModal] = useState(false);
     const [orderToCancel, setOrderToCancel] = useState(null);
     const [showWaitingModal, setShowWaitingModal] = useState(false);
@@ -226,16 +472,12 @@ const Profile = ({ user, logout }) => {
         }
     };
 
-    // Redirect if not logged in
+    // Load orders when user is available
     useEffect(() => {
-        if (!user) {
-            navigate('/login');
-            return;
+        if (user) {
+            loadOrders(user.id);
         }
-        loadOrders(user.id); // Load orders when user is available
-    }, [user, navigate]);
-
-    if (!user) return null;
+    }, [user]); // Only re-run if user changes
 
     // Fetch addresses from Supabase
     useEffect(() => {
@@ -257,22 +499,26 @@ const Profile = ({ user, logout }) => {
     }, [user]);
 
     const handleSaveAddress = async () => {
-        if (!addressForm.label || !addressForm.name || !addressForm.phone || !addressForm.street || !addressForm.city || !addressForm.province) {
-            alert('Please fill in all required fields (Label, Name, Phone, Street, City, Province)');
+        if (!addressForm.label || !addressForm.name || !addressForm.phone || !addressForm.street || !addressForm.barangay || !addressForm.city || !addressForm.province) {
+            alert('Please fill in all required fields (Label, Name, Phone, Street, Barangay, City, Province)');
             return;
         }
 
-        if (!user) {
+        const { data: { user: currentUser }, error: userError } = await supabase.auth.getUser();
+
+        if (userError || !currentUser) {
             alert('You must be logged in to save an address.');
+            console.error('Error fetching user for saving address:', userError);
             return;
         }
 
         const addressData = {
-            user_id: user.id,
+            user_id: currentUser.id,
             label: addressForm.label,
             name: addressForm.name,
             phone: addressForm.phone,
             street: addressForm.street,
+            barangay: addressForm.barangay,
             city: addressForm.city,
             province: addressForm.province,
             is_default: addresses.length === 0 && !editingAddress // If no existing addresses and not editing, set as default
@@ -308,7 +554,7 @@ const Profile = ({ user, logout }) => {
         }
 
         setShowAddressModal(false);
-        setAddressForm({ label: '', name: user?.user_metadata?.name || user?.email || '', phone: user?.user_metadata?.phone || '', street: '' });
+        setAddressForm({ label: '', name: user?.user_metadata?.name || user?.email || '', phone: user?.user_metadata?.phone || '', street: '', barangay: '', city: '', province: '' });
         setEditingAddress(null);
     };
 
@@ -403,8 +649,8 @@ const Profile = ({ user, logout }) => {
         return labels[status] || status;
     };
 
-    const handleTrackOrder = (orderId) => {
-        navigate(`/order-tracking/${orderId}`);
+    const handleTrackOrder = (orderNumber) => {
+        navigate(`/order-tracking/${orderNumber}`);
     };
 
     const handleTrackStatus = (order) => {
@@ -412,7 +658,7 @@ const Profile = ({ user, logout }) => {
         if (order.status === 'pending' && order.type) {
             setShowWaitingModal(true);
         } else {
-            handleTrackOrder(order.id);
+            handleTrackOrder(order.order_number || order.id);
         }
     };
 
@@ -495,39 +741,22 @@ const Profile = ({ user, logout }) => {
         navigate('/cart');
     };
 
-    const sendMessage = () => {
-        if (!newMessage.trim()) return;
+    const sendMessage = async () => {
+        if (!newMessage.trim() || !user || !adminId) return;
 
-        const userMsg = {
-            id: messages.length + 1,
-            sender: 'user',
-            text: newMessage.trim(),
-            time: new Date().toISOString()
+        const message = {
+            sender_id: user.id,
+            receiver_id: adminId, // Admin user ID
+            message: newMessage.trim(),
         };
 
-        const updatedMessages = [...messages, userMsg];
-        setMessages(updatedMessages);
-        localStorage.setItem('userMessages', JSON.stringify(updatedMessages));
-        setNewMessage('');
+        const { error } = await supabase.from('messages').insert([message]);
 
-        // Simulate shop auto-reply after 1 second
-        setTimeout(() => {
-            const replies = [
-                "Thank you for your message! Our team will get back to you shortly.",
-                "We appreciate your inquiry! Please allow us some time to respond.",
-                "Got it! One of our staff will assist you soon.",
-                "Thank you for reaching out! We'll respond as soon as possible."
-            ];
-            const shopReply = {
-                id: updatedMessages.length + 1,
-                sender: 'shop',
-                text: replies[Math.floor(Math.random() * replies.length)],
-                time: new Date().toISOString()
-            };
-            const newMessages = [...updatedMessages, shopReply];
-            setMessages(newMessages);
-            localStorage.setItem('userMessages', JSON.stringify(newMessages));
-        }, 1000);
+        if (error) {
+            console.error('Error sending message:', error);
+        } else {
+            setNewMessage('');
+        }
     };
 
     const renderOrdersContent = () => (
@@ -748,7 +977,7 @@ const Profile = ({ user, logout }) => {
                                                         <div className="small text-muted">
                                                             {typeof order.address === 'string'
                                                                 ? order.address
-                                                                : `${order.address.street}, ${order.address.city}, ${order.address.province}`
+                                                                : `${order.address.street}, ${order.address.barangay}, ${order.address.city}, ${order.address.province}`
                                                             }
                                                         </div>
                                                     </div>
@@ -836,11 +1065,17 @@ const Profile = ({ user, logout }) => {
                     style={{ background: 'var(--shop-pink)', color: 'white' }}
                     onClick={() => {
                         setEditingAddress(null);
+                        setSelectedProvince(null);
+                        setSelectedCity(null);
+                        setSelectedBarangay(null);
                         setAddressForm({
                             label: '',
                             name: user?.user_metadata?.name || '', // Use user_metadata
                             phone: user?.user_metadata?.phone || '', // Use user_metadata
-                            street: '', city: '', province: ''
+                            street: '',
+                            barangay: '',
+                            city: '', 
+                            province: ''
                         });
                         setShowAddressModal(true);
                     }}
@@ -866,9 +1101,9 @@ const Profile = ({ user, logout }) => {
                                         name: addr.name || '',
                                         phone: addr.phone || '',
                                         street: addr.street,
+                                        barangay: addr.barangay || '',
                                         city: addr.city,
                                         province: addr.province,
-                                       
                                     });
                                     setShowAddressModal(true);
                                 }}
@@ -887,7 +1122,7 @@ const Profile = ({ user, logout }) => {
                     </div>
                     <div className="address-name mt-2">{addr.name}</div>
                     <div className="address-phone">{addr.phone}</div>
-                    <div className="address-detail mt-2">{`${addr.street}, ${addr.city}, ${addr.province}`}</div>
+                    <div className="address-detail mt-2">{`${addr.street}, ${addr.barangay}, ${addr.city}, ${addr.province}`}</div>
                     {!addr.is_default && (
                         <button
                             className="btn btn-outline-secondary btn-sm mt-3"
@@ -1024,91 +1259,80 @@ const Profile = ({ user, logout }) => {
         </>
     );
 
-    const renderMessagesContent = () => (
-        <>
-            <div className="d-flex justify-content-between align-items-center mb-4">
-                <h5 className="fw-bold mb-0">
-                    <i className="fas fa-comments me-2" style={{ color: 'var(--shop-pink)' }}></i>
-                    Chat with Us
-                </h5>
-                <span className="badge" style={{ background: 'var(--shop-pink-light)', color: 'var(--shop-pink)' }}>
-                    <i className="fas fa-circle me-1" style={{ fontSize: '0.5rem' }}></i>
-                    Online
-                </span>
-            </div>
-
-            <div
-                className="messages-container rounded p-3 mb-3"
-                style={{
-                    background: '#f8f9fa',
-                    height: '400px',
-                    overflowY: 'auto',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '12px'
-                }}
-            >
-                {messages.map((msg, index) => (
-                    <div
-                        key={index}
-                        className={`d-flex ${msg.sender === 'user' ? 'justify-content-end' : 'justify-content-start'}`}
+    const renderMessagesContent = () => {
+        // Check for complete profile from the fetched profile data
+        const isProfileComplete = profileData && profileData.name && profileData.phone;
+    
+        if (!isProfileComplete) {
+            return (
+                <div className="text-center p-5">
+                    <i className="fas fa-user-edit fa-3x text-muted mb-3"></i>
+                    <h5 className="fw-bold">Complete Your Profile</h5>
+                    <p className="text-muted">Please complete your profile setup in the "Account Settings" tab before you can send messages.</p>
+                    <button
+                        className="btn mt-3"
+                        style={{ background: 'var(--shop-pink)', color: 'white' }}
+                        onClick={() => setActiveMenu('settings')}
                     >
-                        <div
-                            className="message-bubble p-3 rounded-3"
-                            style={{
-                                maxWidth: '75%',
-                                background: msg.sender === 'user' ? 'var(--shop-pink)' : 'white',
-                                color: msg.sender === 'user' ? 'white' : '#333',
-                                boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-                            }}
-                        >
-                            {msg.sender === 'shop' && (
-                                <div className="d-flex align-items-center mb-2">
-                                    <div
-                                        className="rounded-circle d-flex align-items-center justify-content-center me-2"
-                                        style={{ width: '24px', height: '24px', background: 'var(--shop-pink-light)' }}
-                                    >
-                                        <i className="fas fa-store" style={{ fontSize: '0.7rem', color: 'var(--shop-pink)' }}></i>
+                        Go to Account Settings
+                    </button>
+                </div>
+            );
+        }
+    
+        return (
+            <>
+                <div className="d-flex justify-content-between align-items-center mb-4">
+                    <h5 className="fw-bold mb-0">
+                        <i className="fas fa-comments me-2" style={{ color: 'var(--shop-pink)' }}></i>
+                        Chat with Us
+                    </h5>
+                    <span className="badge" style={{ background: 'var(--shop-pink-light)', color: 'var(--shop-pink)' }}>
+                        <i className="fas fa-circle me-1" style={{ fontSize: '0.5rem' }}></i>
+                        Online
+                    </span>
+                </div>
+    
+                <div className="messages-container">
+                    {messages.map((msg, index) => {
+                        const isSent = msg.sender_id === user.id;
+                        return (
+                            <div key={index} className={`message-wrapper ${isSent ? 'sent' : 'received'}`}>
+                                {!isSent && (
+                                     <div className="message-avatar">
+                                        <i className="fas fa-store"></i>
+                                     </div>
+                                )}
+                                <div className={`message-bubble ${isSent ? 'sent' : 'received'}`}>
+                                    <p className="message-text">{msg.message}</p>
+                                    <div className={`message-time ${isSent ? 'sent' : 'received'}`}>
+                                        {formatMessageTime(msg.created_at)}
                                     </div>
-                                    <small className="fw-bold" style={{ color: 'var(--shop-pink)' }}>Jocery's Flower Shop</small>
                                 </div>
-                            )}
-                            <p className="mb-1" style={{ fontSize: '0.95rem' }}>{msg.text}</p>
-                            <small className={msg.sender === 'user' ? 'text-white-50' : 'text-muted'} style={{ fontSize: '0.75rem' }}>
-                                {new Date(msg.time).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })}
-                            </small>
-                        </div>
-                    </div>
-                ))}
-            </div>
-
-            <div className="input-group">
-                <input
-                    type="text"
-                    className="form-control rounded-pill rounded-end"
-                    placeholder="Type your message..."
-                    value={newMessage}
-                    onChange={(e) => setNewMessage(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
-                    style={{ borderRight: 'none' }}
-                />
-                <button
-                    className="btn rounded-pill rounded-start px-4"
-                    style={{ background: 'var(--shop-pink)', color: 'white', borderLeft: 'none' }}
-                    onClick={sendMessage}
-                >
-                    <i className="fas fa-paper-plane"></i>
-                </button>
-            </div>
-
-            <div className="mt-3 p-3 rounded" style={{ background: 'var(--shop-pink-light)' }}>
-                <small className="text-muted">
-                    <i className="fas fa-info-circle me-2" style={{ color: 'var(--shop-pink)' }}></i>
-                    <strong>Quick Help:</strong> You can ask about product availability, order status, custom arrangements, delivery times, or any other inquiries.
-                </small>
-            </div>
-        </>
-    );
+                            </div>
+                        );
+                    })}
+                </div>
+    
+                <div className="chat-input-container">
+                    <input
+                        type="text"
+                        className="chat-input"
+                        placeholder="Type your message..."
+                        value={newMessage}
+                        onChange={(e) => setNewMessage(e.target.value)}
+                        onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                    />
+                    <button
+                        className="chat-send-button"
+                        onClick={sendMessage}
+                    >
+                        <i className="fas fa-paper-plane"></i>
+                    </button>
+                </div>
+            </>
+        );
+    };
 
     const renderContent = () => {
         switch (activeMenu) {
@@ -1118,6 +1342,20 @@ const Profile = ({ user, logout }) => {
             case 'settings': return renderSettingsContent();
             default: return renderOrdersContent();
         }
+    };
+
+    const selectStyles = {
+        control: (provided) => ({
+            ...provided,
+            borderColor: '#ddd',
+            borderRadius: '8px',
+            padding: '4px',
+            fontSize: '16px',
+        }),
+        menu: (provided) => ({
+            ...provided,
+            zIndex: 1050, // Ensure dropdown appears above other content
+        }),
     };
 
     return (
@@ -1210,6 +1448,54 @@ const Profile = ({ user, logout }) => {
                                     onChange={e => setAddressForm({ ...addressForm, phone: e.target.value })}
                                 />
                             </div>
+
+                             <div className="form-group">
+                                <label className="form-label">Province</label>
+                                <Select
+                                    styles={selectStyles}
+                                    options={provinces}
+                                    isLoading={addressLoading === 'provinces'}
+                                    placeholder="Select Province"
+                                    onChange={option => {
+                                        setSelectedProvince(option);
+                                        setAddressForm({ ...addressForm, province: option ? option.label : '' });
+                                    }}
+                                    value={selectedProvince}
+                                    isClearable
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">City / Municipality</label>
+                                <Select
+                                    styles={selectStyles}
+                                    options={cities}
+                                    isLoading={addressLoading === 'cities'}
+                                    placeholder="Select City/Municipality"
+                                    onChange={option => {
+                                        setSelectedCity(option);
+                                        setAddressForm({ ...addressForm, city: option ? option.label : '' });
+                                    }}
+                                    value={selectedCity}
+                                    isDisabled={!selectedProvince}
+                                    isClearable
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Barangay</label>
+                                <Select
+                                    styles={selectStyles}
+                                    options={barangays}
+                                    isLoading={addressLoading === 'barangays'}
+                                    placeholder="Select Barangay"
+                                    onChange={option => {
+                                        setSelectedBarangay(option);
+                                        setAddressForm({ ...addressForm, barangay: option ? option.label : '' });
+                                    }}
+                                    value={selectedBarangay}
+                                    isDisabled={!selectedCity}
+                                    isClearable
+                                />
+                            </div>
                             <div className="form-group">
                                 <label className="form-label">Street Address</label>
                                 <input
@@ -1217,29 +1503,10 @@ const Profile = ({ user, logout }) => {
                                     className="form-control-custom"
                                     value={addressForm.street}
                                     onChange={e => setAddressForm({ ...addressForm, street: e.target.value })}
-                                    placeholder="e.g., 123 Sampaguita St., Brgy. Maligaya"
+                                    placeholder="e.g., House No., Street Name, Subdivision"
                                 />
                             </div>
-                            <div className="form-group">
-                                <label className="form-label">City</label>
-                                <input
-                                    type="text"
-                                    className="form-control-custom"
-                                    value={addressForm.city}
-                                    onChange={e => setAddressForm({ ...addressForm, city: e.target.value })}
-                                    placeholder="e.g., Quezon City"
-                                />
-                            </div>
-                            <div className="form-group">
-                                <label className="form-label">Province</label>
-                                <input
-                                    type="text"
-                                    className="form-control-custom"
-                                    value={addressForm.province}
-                                    onChange={e => setAddressForm({ ...addressForm, province: e.target.value })}
-                                    placeholder="e.g., Metro Manila"
-                                />
-                            </div>
+                            
                             <button
                                 className="btn"
                                 style={{ background: 'var(--shop-pink)', color: 'white' }}

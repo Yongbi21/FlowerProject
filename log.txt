@@ -1,13 +1,11 @@
- WARN  [expo-image-picker] `ImagePicker.MediaTypeOptions` have been deprecated. Use `ImagePicker.MediaType` or an array of `ImagePicker.MediaType` instead.
- LOG  === CREATE PRODUCT DEBUG ===
- LOG  imageFile type: object
- LOG  imageFile: {"assetId": null, "base64": null, "duration": null, "exif": null, "fileName": "a34609d5-0ddf-4cda-9e41-841060365d08.png", "fileSize": 39550, "height": 540, "mimeType": "image/png", "rotation": null, "type": "image", "uri": "file:///data/user/0/host.exp.exponent/cache/ImagePicker/a34609d5-0ddf-4cda-9e41-841060365d08.png", "width": 720}
- LOG  imageFile.uri: file:///data/user/0/host.exp.exponent/cache/ImagePicker/a34609d5-0ddf-4cda-9e41-841060365d08.png
- LOG  imageFile.fileName: a34609d5-0ddf-4cda-9e41-841060365d08.png
- LOG  imageFile.type: image
- LOG  Fetching image from URI: file:///data/user/0/host.exp.exponent/cache/ImagePicker/a34609d5-0ddf-4cda-9e41-841060365d08.png
- LOG  Blob created, size: 39550 type: image/png
- LOG  Uploading to Supabase with filename: a34609d5-0ddf-4cda-9e41-841060365d08.png
- ERROR  Supabase upload error: [StorageUnknownError: Network request failed]
- ERROR  Error processing image: [StorageUnknownError: Network request failed]
- ERROR  Error saving product: [Error: Failed to upload image: Network request failed]
+C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\src\screens\AdminDashboard.js:1153 Uncaught TypeError: Cannot read properties of undefined (reading 'id')
+    at onPress (C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\src\screens\AdminDashboard.js:1153:65)
+    at onClick (C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-native-web\dist\modules\usePressEvents\PressResponder.js:314:13)
+    at executeDispatch (C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:16368:9)
+    at runWithFiberInDEV (C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:1519:30)
+    at processDispatchQueue (C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:16418:19)
+    at C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:17016:9
+    at batchedUpdates$1 (C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:3262:40)
+    at dispatchEventForPluginEventSystem (C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:16572:7)
+    at dispatchEvent (C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:20658:11)
+    at dispatchDiscreteEvent (C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:20626:11)

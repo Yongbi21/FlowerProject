@@ -1,6 +1,7 @@
 // AdminDashboard.js - Complete Version with Full UI + API Integration
 // Restored all features from original design
 
+import { decode } from 'base64-arraybuffer';
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -18,10 +19,12 @@ import {
   SafeAreaView,
   Platform,
   StatusBar,
+  Linking,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useNavigation } from '@react-navigation/native';
-import { productAPI, adminAPI, categoryAPI, BASE_URL } from '../config/api';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { productAPI, adminAPI, categoryAPI, authAPI, BASE_URL } from '../config/api';
+import { supabase } from '../config/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import Toast from 'react-native-toast-message';
@@ -34,9 +37,43 @@ const formatTimestamp = (dateString) => {
     const day = String(date.getDate()).padStart(2, '0');
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const year = date.getFullYear();
-    const hours = String(date.getHours()).padStart(2, '0');
+    
+    let hours = date.getHours();
     const minutes = String(date.getMinutes()).padStart(2, '0');
-    return `${day}/${month}/${year} ${hours}:${minutes}`;
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12; // The hour '0' should be '12'
+    hours = String(hours).padStart(2, '0'); // Pad with leading zero
+
+    return `${day}/${month}/${year} ${hours}:${minutes} ${ampm}`;
+  } catch (e) {
+    return dateString;
+  }
+};
+
+const formatMessageTimestamp = (dateString) => {
+  if (!dateString) return '';
+  try {
+    const date = new Date(dateString);
+    const now = new Date();
+    
+    const isToday = now.toDateString() === date.toDateString();
+    if (isToday) {
+        return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    }
+    
+    // not today, calculate days ago
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfMessageDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const diffTime = startOfToday.getTime() - startOfMessageDate.getTime();
+    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 1) {
+      return '1 day ago';
+    }
+    
+    return `${diffDays} days ago`;
+
   } catch (e) {
     return dateString;
   }
@@ -64,35 +101,73 @@ const AdminDashboard = () => {
   const navigation = useNavigation();
   const [activeTab, setActiveTab] = useState('catalogue');
   const [menuVisible, setMenuVisible] = useState(false);
-  const [userRole, setUserRole] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [unreadMessageCount, setUnreadMessageCount] = useState(0);
+  const [customerToMessage, setCustomerToMessage] = useState(null); // New state for customer to message
 
   useEffect(() => {
-    checkUser();
-  }, []);
+    const checkUserAndSubscribe = async () => {
+      setLoading(true);
+      try {
+        const currentUserJson = await AsyncStorage.getItem('currentUser');
+        if (!currentUserJson) {
+          navigation.navigate('Login');
+          return;
+        }
 
-  const checkUser = async () => {
-    try {
-      const currentUser = await AsyncStorage.getItem('currentUser');
-      if (!currentUser) {
+        const user = JSON.parse(currentUserJson);
+        if (user.role !== 'admin' && user.role !== 'employee') {
+          Alert.alert('Access Denied', 'You do not have permission to access this page');
+          navigation.navigate('Login');
+          return;
+        }
+
+        setCurrentUser(user);
+      } catch (error) {
+        console.error('Error checking user:', error);
         navigation.navigate('Login');
-        return;
+      } finally {
+        setLoading(false);
       }
+    };
 
-      const user = JSON.parse(currentUser);
-      if (user.role !== 'admin' && user.role !== 'employee') {
-        Alert.alert('Access Denied', 'You do not have permission to access this page');
-        navigation.navigate('Login');
-        return;
+    checkUserAndSubscribe();
+  }, [navigation]);
+
+  // Effect for real-time message count
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const fetchUnreadCount = async () => {
+      try {
+        const { data, error } = await supabase.rpc('get_shared_conversations');
+        if (error) throw error;
+        
+        const totalUnread = (data || []).reduce((sum, convo) => sum + (convo.unreadCount || 0), 0);
+        setUnreadMessageCount(totalUnread);
+      } catch (error) {
+        console.error("Error fetching unread message count:", error);
       }
+    };
+    
+    // Fetch initial count
+    fetchUnreadCount();
 
-      setUserRole(user.role);
-      setLoading(false);
-    } catch (error) {
-      console.error('Error checking user:', error);
-      navigation.navigate('Login');
-    }
-  };
+    // Set up real-time subscription for new messages
+    const channel = supabase.channel('public:messages')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+        // When a new message comes in, refetch the count
+        fetchUnreadCount();
+      })
+      .subscribe();
+
+    // Cleanup subscription on unmount
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentUser]);
+
 
   const handleLogout = () => {
     Alert.alert(
@@ -103,6 +178,7 @@ const AdminDashboard = () => {
         {
           text: 'Logout',
           onPress: async () => {
+            await authAPI.logout(); // Sign out from Supabase
             await AsyncStorage.removeItem('currentUser');
             await AsyncStorage.removeItem('token');
             navigation.navigate('Login');
@@ -114,7 +190,7 @@ const AdminDashboard = () => {
 
   const renderTabContent = () => {
     // Prevent employees from accessing admin-only tabs
-    if (userRole === 'employee' && (activeTab === 'sales' || activeTab === 'about' || activeTab === 'contact' || activeTab === 'employees')) {
+    if (currentUser?.role === 'employee' && (activeTab === 'sales' || activeTab === 'about' || activeTab === 'contact' || activeTab === 'employees')) {
       return <CatalogueTab />;
     }
 
@@ -122,7 +198,7 @@ const AdminDashboard = () => {
       case 'catalogue':
         return <CatalogueTab />;
       case 'orders':
-        return <OrdersTab />;
+        return <OrdersTab setActiveTab={setActiveTab} handleSelectCustomerForMessage={handleSelectCustomerForMessage} />;
       case 'stock':
         return <StockTab />;
       case 'requests':
@@ -130,7 +206,7 @@ const AdminDashboard = () => {
       case 'notifications':
         return <NotificationsTab />;
       case 'messaging':
-        return <MessagingTab />;
+        return <MessagingTab customerToMessage={customerToMessage} setCustomerToMessage={setCustomerToMessage} />;
       case 'sales':
         return <SalesTab />;
       case 'about':
@@ -142,6 +218,11 @@ const AdminDashboard = () => {
       default:
         return <CatalogueTab />;
     }
+  };
+
+  const handleSelectCustomerForMessage = (customer) => {
+    setCustomerToMessage(customer);
+    setActiveTab('messaging');
   };
 
   if (loading) {
@@ -236,13 +317,21 @@ const AdminDashboard = () => {
 
         <TouchableOpacity
           style={styles.navItem}
-          onPress={() => setActiveTab('messaging')}
+          onPress={() => {
+            setActiveTab('messaging');
+            setUnreadMessageCount(0);
+          }}
         >
           <Ionicons
             name="chatbubbles"
             size={24}
             color={activeTab === 'messaging' ? '#ec4899' : '#999'}
           />
+            {unreadMessageCount > 0 && (
+                <View style={styles.navBadge}>
+                    <Text style={styles.navBadgeText}>{unreadMessageCount}</Text>
+                </View>
+            )}
           <Text style={[styles.navText, activeTab === 'messaging' && styles.navTextActive]}>
             Messagi..
           </Text>
@@ -300,14 +389,14 @@ const AdminDashboard = () => {
                 <Text style={styles.menuItemText}>Messaging</Text>
               </TouchableOpacity>
 
-              {userRole === 'admin' && (
+              {currentUser?.role === 'admin' && (
                 <TouchableOpacity style={styles.menuItem} onPress={() => { setActiveTab('sales'); setMenuVisible(false); }}>
                   <Ionicons name="cash-outline" size={20} color="#333" />
                   <Text style={styles.menuItemText}>Sales</Text>
                 </TouchableOpacity>
               )}
 
-              {userRole === 'admin' && (
+              {currentUser?.role === 'admin' && (
                 <>
                   <View style={styles.menuDivider} />
 
@@ -579,6 +668,7 @@ const CatalogueTab = () => {
       <View style={styles.productInfo}>
         <Text style={styles.productName}>{item.name}</Text>
         <Text style={styles.productCategory}>{item.category_name || 'Uncategorized'}</Text>
+        {item.description && <Text style={styles.productDescription}>{item.description}</Text>}
 
         <View style={styles.priceRow}>
           <Text style={styles.productPrice}>₱{item.price}</Text>
@@ -716,12 +806,14 @@ const CatalogueTab = () => {
               </TouchableOpacity>
 
               <Text style={styles.inputLabel}>Description</Text>
+              <Text style={styles.inputHelperText}>Max 20 words</Text>
               <TextInput
                 style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
                 placeholder="Enter product description"
                 value={formData.description}
                 onChangeText={(text) => setFormData({ ...formData, description: text })}
                 multiline
+                maxLength={20 * 5} // Approximate max length for 20 words
               />
 
               <Text style={styles.inputLabel}>Product Image</Text>
@@ -844,38 +936,69 @@ const CatalogueTab = () => {
 };
 
 // ==================== ORDERS TAB ====================
-const OrdersTab = () => {
+const OrdersTab = ({ setActiveTab, handleSelectCustomerForMessage }) => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   
   // State for Modals
-  const [declineModalVisible, setDeclineModalVisible] = useState(false);
-  const [orderToDecline, setOrderToDecline] = useState(null);
   const [statusModalVisible, setStatusModalVisible] = useState(false);
   const [orderToUpdate, setOrderToUpdate] = useState(null);
   const [selectedStatus, setSelectedStatus] = useState(null);
   const [receiptModalVisible, setReceiptModalVisible] = useState(false);
   const [selectedReceiptUrl, setSelectedReceiptUrl] = useState(null);
+  const [declineModalVisible, setDeclineModalVisible] = useState(false);
+  const [orderToDecline, setOrderToDecline] = useState(null);
 
   const statusOptions = ['pending', 'processing', 'out_for_delivery', 'ready_for_pick_up', 'claimed', 'completed', 'cancelled'];
 
+  const deliveryStepperStatuses = [
+    { id: 'pending', label: 'Pending', description: 'Order received' },
+    { id: 'processing', label: 'Processing', description: 'Being prepared' },
+    { id: 'out_for_delivery', label: 'Out for Delivery', description: 'On the way' },
+    { id: 'completed', label: 'Completed', description: 'Delivered successfully' }
+  ];
+
+  const pickupStepperStatuses = [
+      { id: 'pending', label: 'Pending', description: 'Order received' },
+      { id: 'processing', label: 'Processing', description: 'Being prepared' },
+      { id: 'ready_for_pickup', label: 'Ready for Pick Up', description: 'Ready for customer' },
+      { id: 'completed', label: 'Completed', description: 'Picked up by customer' }
+  ];
+
   const openReceiptModal = (url) => {
     const finalUrl = url.startsWith('http') ? url : `${BASE_URL}${url}`;
-    console.log('Attempting to open receipt modal with URL:', finalUrl); // Added console log
     setSelectedReceiptUrl(finalUrl);
     setReceiptModalVisible(true);
   };
 
-  useEffect(() => {
-    loadOrders();
-  }, []);
+  useFocusEffect(
+    React.useCallback(() => {
+      loadOrders();
+
+      const channel = supabase
+        .channel('public:orders')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'orders' },
+          (payload) => {
+            loadOrders();
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }, [])
+  );
 
   const loadOrders = async () => {
     setLoading(true);
     try {
       const response = await adminAPI.getAllOrders();
-      setOrders(response.data || []);
+      const sortedOrders = (response.data || []).sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+      setOrders(sortedOrders);
     } catch (error) {
       console.error('Error loading orders:', error);
       setOrders([]);
@@ -893,15 +1016,11 @@ const OrdersTab = () => {
   const handleAccept = async (orderId) => {
     try {
       await adminAPI.acceptOrder(orderId, 'processing');
-      Toast.show({
-        type: 'success',
-        text1: 'Order Accepted',
-        text2: `Order #${orderId} is now being processed.`
-      });
+      await adminAPI.updateOrderPaymentStatus(orderId, 'paid');
+      Toast.show({ type: 'success', text1: 'Order Accepted and Payment Marked as Paid' });
       await loadOrders();
     } catch (error) {
-      console.error('Accept order error:', error);
-      Alert.alert('Error', error.response?.data?.message || 'Failed to accept order');
+      Alert.alert('Error', 'Failed to accept order or mark payment as paid');
     }
   };
 
@@ -914,18 +1033,9 @@ const OrdersTab = () => {
     if (!orderToDecline) return;
     try {
       await adminAPI.declineOrder(orderToDecline.id, 'cancelled');
-      Toast.show({
-        type: 'success',
-        text1: 'Order Declined',
-        text2: `Order #${orderToDecline.order_number} has been cancelled.`
-      });
+      Toast.show({ type: 'success', text1: 'Order Declined' });
     } catch (error) {
-      console.error('Decline order error:', error);
-      Toast.show({
-        type: 'error',
-        text1: 'Decline Failed',
-        text2: error.response?.data?.message || 'Failed to decline order'
-      });
+      Toast.show({ type: 'error', text1: 'Decline Failed' });
     } finally {
       setDeclineModalVisible(false);
       setOrderToDecline(null);
@@ -942,174 +1052,237 @@ const OrdersTab = () => {
   const confirmStatusChange = async () => {
     if (!orderToUpdate || !selectedStatus) return;
     const orderId = orderToUpdate.id;
-    setStatusModalVisible(false);
+    
     try {
       await adminAPI.updateOrderStatus(orderId, selectedStatus);
-      Toast.show({
-        type: 'success',
-        text1: 'Status Updated',
-        text2: `Order #${orderToUpdate.order_number} is now ${selectedStatus}.`
-      });
+      Toast.show({ type: 'success', text1: 'Status Updated' });
       await loadOrders();
     } catch (error) {
-      console.error('Update status error:', error);
-      Toast.show({
-        type: 'error',
-        text1: 'Update Failed',
-        text2: error.response?.data?.message || 'Failed to update order status'
-      });
+      Toast.show({ type: 'error', text1: 'Update Failed' });
     } finally {
+      setStatusModalVisible(false);
       setOrderToUpdate(null);
       setSelectedStatus(null);
     }
   };
 
-  const handlePaymentMethodChange = async (orderId, newPaymentMethod) => {
-    try {
-      await adminAPI.updateOrderPaymentMethod(orderId, newPaymentMethod);
-      Alert.alert('Success', 'Payment method updated');
-      await loadOrders();
-    } catch (error) {
-      Alert.alert('Error', 'Failed to update payment method');
+  const getStatusStyle = (status) => {
+    switch (status) {
+      case 'completed': return { backgroundColor: '#22C55E' };
+      case 'claimed': return { backgroundColor: '#22C55E' };
+      case 'ready_for_pick_up': return { backgroundColor: '#6366F1' };
+      case 'out_for_delivery': return { backgroundColor: '#8B5CF6' };
+      case 'processing': return { backgroundColor: '#3B82F6' };
+      case 'cancelled': return { backgroundColor: '#EF4444' };
+      case 'pending': return { backgroundColor: '#F97316' };
+      default: return { backgroundColor: '#6B7280' };
     }
   };
   
-  const getPaymentColor = (status) => {
-    return status === 'paid' ? '#4CAF50' : '#FF9800';
+  const getProgressWidth = (status) => {
+    const progress = {
+      completed: '100%',
+      ready_for_pickup: '75%',
+      out_for_delivery: '75%',
+      processing: '50%',
+      pending: '25%',
+      cancelled: '0%'
+    };
+    return progress[status] || '10%';
   };
 
-  const formatDate = (dateString) => {
-    try {
-      const date = new Date(dateString);
-      return date.toLocaleString('en-US', {
-        month: '2-digit',
-        day: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true
-      });
-    } catch {
-      return dateString;
+  const getCustomerInitials = (name) => {
+    if (!name) return '??';
+    const names = name.trim().split(' ');
+    if (names.length > 1) {
+      return `${names[0][0]}${names[names.length - 1][0]}`.toUpperCase();
     }
+    return name.substring(0, 2).toUpperCase();
   };
 
-  const renderOrder = ({ item }) => (
-    <View style={styles.orderCard}>
-      {/* Order Header */}
-      <View style={styles.orderHeader}>
-        <View style={styles.orderHeaderLeft}>
-          <Text style={styles.orderNumber}>Order #{item.order_number}</Text>
-          {item.created_at ? (
-            <Text style={styles.orderDateBadge}>{formatTimestamp(item.created_at)}</Text>
-          ) : item.order_date ? (
-            <Text style={styles.orderDateBadge}>{item.order_date}</Text>
-          ) : null}
+  const EnhancedOrderCard = ({ item, onMessageCustomer, onPhoneCall }) => (
+    <View style={styles.eoCard}>
+      {/* Header */}
+      <View style={styles.eoCardHeader}>
+        <View style={{ flex: 1, gap: 4 }}>
+          <Text style={styles.eoLabel}>Order ID</Text>
+          <Text style={styles.eoOrderId}>#{item.order_number}</Text>
+          <View style={[styles.eoDeliveryTypeBadge, {backgroundColor: item.delivery_method === 'delivery' ? '#3B82F6' : '#10B981'}]}>
+              <Ionicons name={item.delivery_method === 'delivery' ? 'rocket-outline' : 'storefront-outline'} size={12} color="#fff" />
+              <Text style={styles.eoDeliveryTypeBadgeText}>
+                  {item.delivery_method === 'delivery' ? 'Delivery' : 'Pick-up'}
+              </Text>
+          </View>
+        </View>
+        <View style={{ alignItems: 'flex-end' }}>
+          <View style={styles.eoDateBadge}>
+            <Text style={styles.eoDateText}>{formatTimestamp(item.created_at)}</Text>
+          </View>
+          <View style={[styles.eoStatusBadge, getStatusStyle(item.status)]}>
+            <Ionicons name="time-outline" size={12} color="#fff" />
+            <Text style={styles.eoStatusText}>{getStatusLabel(item.status)}</Text>
+          </View>
         </View>
       </View>
 
-      {/* Customer Info */}
-      <View style={styles.orderSection}>
-        <View style={styles.sectionHeader}>
-          <Ionicons name="person-outline" size={16} color="#666" />
-          <Text style={styles.sectionTitle}>Customer</Text>
+      {/* Progress Bar */}
+      <View style={styles.eoProgressSection}>
+        <View style={styles.eoProgressMeta}>
+            <Text style={styles.eoProgressLabel}>Order Progress</Text>
+            <Text style={styles.eoProgressLabel}>{getProgressWidth(item.status)}</Text>
         </View>
-        <Text style={styles.orderCustomer}>{item.customer_name || 'Customer'}</Text>
-        {item.customer_email && (
-          <Text style={styles.orderEmail}>{item.customer_email}</Text>
-        )}
-        {item.customer_phone && !item.customer_email && (
-          <Text style={styles.orderPhone}>📞 {item.customer_phone}</Text>
-        )}
+        <View style={styles.eoProgressBarBg}>
+          <View style={[styles.eoProgressBarFill, getStatusStyle(item.status), { width: getProgressWidth(item.status) }]} />
+        </View>
+      </View>
+      
+      {/* Customer Info */}
+      <View style={styles.eoSection}>
+        <View style={styles.eoCustomerHeader}>
+            <View style={styles.eoAvatarContainer}>
+                <View style={styles.eoAvatar}>
+                    <Text style={styles.eoAvatarText}>{getCustomerInitials(item.customer_name)}</Text>
+                </View>
+                <View>
+                    <Text style={styles.eoLabel}>Customer</Text>
+                    <Text style={styles.eoCustomerName}>{item.customer_name}</Text>
+                </View>
+            </View>
+            <View style={styles.eoActionButtons}>
+                <TouchableOpacity style={styles.eoIconBtnGreen} onPress={() => onPhoneCall(item.customer_phone)}>
+                    <Ionicons name="call" size={16} color="#fff" />
+                </TouchableOpacity>
+                <TouchableOpacity
+                    style={styles.eoIconBtnBlue}
+                    onPress={() => onMessageCustomer(item.users.id, item.users.name, item.users.email)}
+                >
+                    <Ionicons name="chatbubble" size={16} color="#fff" />
+                </TouchableOpacity>
+            </View>
+        </View>
+        <View style={styles.eoContactInfo}>
+            {item.customer_email && (<View style={styles.eoInfoRow}>
+                <Ionicons name="mail" size={14} color="#9CA3AF" />
+                <Text style={styles.eoInfoText}>{item.customer_email}</Text>
+            </View>)}
+            {item.shipping_address?.description && (
+              <View style={styles.eoInfoRow}>
+                  <Ionicons name="location" size={14} color="#9CA3AF" />
+                  <Text style={styles.eoInfoText} numberOfLines={1}>{item.shipping_address.description}</Text>
+              </View>
+            )}
+        </View>
       </View>
 
       {/* Items */}
-      {item.items && item.items.length > 0 && (
-        <View style={styles.orderSection}>
-          <Text style={styles.sectionTitle}>Items ({item.items.length}):</Text>
-          {item.items.map((orderItem, index) => (
-            <Text key={index} style={styles.itemText}>
-              • {orderItem.name} x{orderItem.quantity} - ₱{orderItem.price.toFixed(2)}
-            </Text>
-          ))}
+      {item.items?.length > 0 && (
+        <View style={styles.eoSection}>
+            <View style={styles.eoSectionHeader}>
+              <Ionicons name="archive" size={16} color="#6B7280"/>
+              <Text style={styles.eoSectionTitle}>Items ({item.items.length})</Text>
+            </View>
+            {item.items.map((orderItem, index) => (
+              <View key={index} style={[styles.eoItemCard, index > 0 && {marginTop: 8}]}>
+                <View style={styles.eoItemImage}>
+                  {orderItem.image_url ? (
+                    <Image
+                      source={{ uri: orderItem.image_url }}
+                      style={{ width: '100%', height: '100%', resizeMode: 'contain' }}
+                    />
+                  ) : (
+                    <Ionicons name="image-outline" size={24} color="#666" /> // Placeholder icon
+                  )}
+                </View>
+                <View style={{flex: 1}}>
+                  <Text style={styles.eoItemName}>{orderItem.name}</Text>
+                  <Text style={styles.eoItemQuantity}>Quantity: {orderItem.quantity}</Text>
+                  <Text style={styles.eoItemPrice}>₱{orderItem.price.toFixed(2)}</Text>
+                </View>
+              </View>
+            ))}
+            {item.special_instructions && (
+                <View style={styles.eoInstructions}>
+                    <Text style={styles.eoInstructionsTitle}>Special Instructions:</Text>
+                    <Text style={styles.eoInstructionsText}>{item.special_instructions}</Text>
+                </View>
+            )}
         </View>
       )}
-
-      {/* Payment Method */}
-      <View style={styles.orderSection}>
-        <View style={styles.sectionHeader}>
-          <Ionicons name="card-outline" size={16} color="#666" />
-          <Text style={styles.sectionTitle}>Payment Method</Text>
+      
+      {/* Payment */}
+      <View style={styles.eoSection}>
+        <View style={styles.eoSectionHeader}>
+            <Ionicons name="card" size={16} color="#6B7280"/>
+            <Text style={styles.eoSectionTitle}>Payment Details</Text>
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Text style={styles.paymentMethodText}>
-            {item.payment_method?.toLowerCase() === 'gcash' ? 'GCash' : item.payment_method?.toLowerCase() === 'cod' ? 'Cash On Delivery' : getStatusLabel(item.payment_method) || 'Not specified'}
-          </Text>
-          {item.payment_method?.toLowerCase() === 'gcash' && item.receipt_url && (
-            <TouchableOpacity onPress={() => openReceiptModal(item.receipt_url)}>
-              <Text style={styles.viewReceiptButton}>View Receipt</Text>
+        <View style={{gap: 8}}>
+            <View style={styles.eoFlexBetween}>
+                <Text style={styles.eoDetailText}>Method</Text>
+                <Text style={styles.eoInfoTextBold}>
+                  {item.payment_method?.toLowerCase() === 'cod' ? 'Cash On Delivery' : getStatusLabel(item.payment_method) || 'Not specified'}
+                </Text>
+            </View>
+            <View style={{flexDirection: 'row', gap: 8, alignItems: 'center'}}>
+                <View style={[styles.eoPaymentStatus, {backgroundColor: item.payment_status === 'paid' ? '#22C55E' : '#FFA726'}]}>
+                    <Text style={styles.eoPaymentStatusText}>{getStatusLabel(item.payment_status)}</Text>
+                </View>
+                {item.payment_method?.toLowerCase() === 'gcash' && item.receipt_url && (
+                    <TouchableOpacity onPress={() => openReceiptModal(item.receipt_url)}>
+                        <Text style={styles.eoViewReceipt}>View Receipt</Text>
+                    </TouchableOpacity>
+                )}
+            </View>
+            <View style={styles.eoDivider}>
+              <View style={styles.eoPriceRow}>
+                <Text style={styles.eoDetailText}>Subtotal:</Text>
+                <Text style={styles.eoDetailText}>₱{item.subtotal?.toFixed(2) || '0.00'}</Text>
+              </View>
+              {item.shipping_fee > 0 && (
+                <View style={styles.eoPriceRow}>
+                  <Text style={styles.eoDetailText}>Delivery Fee:</Text>
+                  <Text style={styles.eoDetailText}>₱{item.shipping_fee.toFixed(2)}</Text>
+                </View>
+              )}
+              <View style={[styles.eoPriceRow, {marginTop: 8}]}>
+                <Text style={styles.eoTotalLabel}>Total:</Text>
+                <Text style={styles.eoTotalValue}>₱{item.total}</Text>
+              </View>
+            </View>
+        </View>
+      </View>
+
+      {/* Actions */}
+      <View style={styles.eoFooter}>
+        {item.status === 'pending' ? (
+            <View style={{flexDirection: 'row', gap: 12}}>
+                <TouchableOpacity style={[styles.eoMainBtn, {backgroundColor: '#22C55E', flex: 1}]} onPress={() => handleAccept(item.id)}>
+                    <Text style={styles.eoMainBtnText}>Accept</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.eoMainBtn, {backgroundColor: '#EF4444', flex: 1}]} onPress={() => handleDecline(item)}>
+                    <Text style={styles.eoMainBtnText}>Decline</Text>
+                </TouchableOpacity>
+            </View>
+        ) : (!['completed', 'cancelled'].includes(item.status) &&
+            <TouchableOpacity style={[styles.eoMainBtn, {backgroundColor: '#3B82F6'}]} onPress={() => openStatusModal(item)}>
+                <Ionicons name="time" size={18} color="#fff" />
+                <Text style={styles.eoMainBtnText}>Change Status</Text>
             </TouchableOpacity>
-          )}
-        </View>
-      </View>
-
-      {/* Status Badges */}
-      <View style={styles.orderBadges}>
-        <View style={[styles.badge, { backgroundColor: getStatusColor(item.status) }]}>
-          <Text style={styles.badgeText}>{getStatusLabel(item.status)}</Text>
-        </View>
-        <View style={[styles.badge, { backgroundColor: getPaymentColor(item.payment_status) }]}>
-          <Text style={styles.badgeText}>
-            {item.payment_status?.toLowerCase() === 'cod' ? 'Cash On Delivery' : getStatusLabel(item.payment_status)}
-          </Text>
-        </View>
-      </View>
-
-      {/* Pricing */}
-      <View style={styles.pricingSection}>
-        <View style={styles.priceRow}>
-          <Text style={styles.priceLabel}>Subtotal:</Text>
-          <Text style={styles.priceValue}>₱{item.subtotal?.toFixed(2) || item.total}</Text>
-        </View>
-        {item.shipping_fee > 0 && (
-          <View style={styles.priceRow}>
-            <Text style={styles.priceLabel}>Delivery Fee:</Text>
-            <Text style={styles.priceValue}>₱{item.shipping_fee.toFixed(2)}</Text>
-          </View>
         )}
-        <View style={[styles.priceRow, styles.totalRow]}>
-          <Text style={styles.totalLabel}>Total:</Text>
-          <Text style={styles.totalValue}>₱{item.total}</Text>
-        </View>
       </View>
-
-      {/* Action Buttons */}
-      {item.status === 'pending' ? (
-        <View style={styles.actionButtons}>
-          <TouchableOpacity
-            style={[styles.actionButton, styles.acceptButton]}
-            onPress={() => handleAccept(item.id)}
-          >
-            <Text style={styles.buttonText}>Accept</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.actionButton, styles.rejectButton]}
-            onPress={() => handleDecline(item)}
-          >
-            <Text style={styles.buttonText}>Decline</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (!['pending', 'cancelled', 'completed'].includes(item.status) && (
-        <TouchableOpacity
-          style={styles.changeStatusButton}
-          onPress={() => openStatusModal(item)}
-        >
-          <Ionicons name="create-outline" size={16} color="#2196F3" />
-          <Text style={styles.changeStatusText}>Change Status</Text>
-        </TouchableOpacity>
-      ))}
     </View>
   );
+
+  const handlePhoneCall = (phoneNumber) => {
+    if (phoneNumber && phoneNumber !== 'N/A') {
+      Linking.openURL(`tel:${phoneNumber}`);
+    } else {
+      Alert.alert('No Phone Number', 'This customer does not have a phone number on file.');
+    }
+  };
+
+  const handleMessageCustomer = (customerId, customerName, customerEmail) => {
+    handleSelectCustomerForMessage({ id: customerId, name: customerName, email: customerEmail });
+  };
 
   if (loading && !refreshing) {
     return (
@@ -1120,17 +1293,20 @@ const OrdersTab = () => {
   }
 
   return (
-    <View style={styles.tabContent}>
-      <Text style={styles.tabTitle}>Orders Management</Text>
+    <View style={styles.eoContainer}>
+      <Text style={styles.eoTitle}>Orders Management</Text>
       <FlatList
         data={orders}
-        renderItem={renderOrder}
+        renderItem={({item}) => <EnhancedOrderCard item={item} onMessageCustomer={handleMessageCustomer} onPhoneCall={handlePhoneCall} />}
         keyExtractor={(item) => item.id.toString()}
+        contentContainerStyle={{ paddingBottom: 20, paddingHorizontal: 16 }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#ec4899']} />
         }
         ListEmptyComponent={
-          <Text style={styles.emptyText}>No orders found</Text>
+          <View style={{marginTop: 50, alignItems: 'center'}}>
+            <Text style={styles.emptyText}>No orders found</Text>
+          </View>
         }
       />
       
@@ -1138,26 +1314,15 @@ const OrdersTab = () => {
       <Modal visible={declineModalVisible} animationType="fade" transparent>
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Confirm Decline</Text>
-              <TouchableOpacity onPress={() => setDeclineModalVisible(false)}>
-                <Ionicons name="close" size={24} color="#333" />
-              </TouchableOpacity>
-            </View>
+            <Text style={styles.modalTitle}>Confirm Decline</Text>
             <Text style={styles.modalText}>
               Are you sure you want to decline Order #{orderToDecline?.order_number}?
             </Text>
             <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton]}
-                onPress={() => setDeclineModalVisible(false)}
-              >
+              <TouchableOpacity style={[styles.modalButton, styles.cancelButton]} onPress={() => setDeclineModalVisible(false)}>
                 <Text style={styles.buttonText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.deleteButton]}
-                onPress={confirmDecline}
-              >
+              <TouchableOpacity style={[styles.modalButton, styles.deleteButton]} onPress={confirmDecline}>
                 <Text style={styles.buttonText}>Confirm Decline</Text>
               </TouchableOpacity>
             </View>
@@ -1165,45 +1330,106 @@ const OrdersTab = () => {
         </View>
       </Modal>
 
-      {/* Change Status Modal */}
-      <Modal visible={statusModalVisible} animationType="fade" transparent>
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Change Status</Text>
-              <TouchableOpacity onPress={() => setStatusModalVisible(false)}>
-                <Ionicons name="close" size={24} color="#333" />
-              </TouchableOpacity>
-            </View>
-            <Text style={styles.modalSubtitle}>Order #{orderToUpdate?.order_number}</Text>
-            
-            <View style={styles.radioGroup}>
-              {statusOptions.map(status => (
-                <TouchableOpacity key={status} style={styles.radioButtonContainer} onPress={() => setSelectedStatus(status)}>
-                  <View style={[styles.radioButton, selectedStatus === status && styles.radioButtonSelected]}>
-                    {selectedStatus === status && <View style={styles.radioButtonInner} />}
+      {/* Change Status Modal (Timeline UI) */}
+      <Modal visible={statusModalVisible} transparent animationType="fade" onRequestClose={() => setStatusModalVisible(false)}>
+          <View style={styles.statusModalBackdrop}>
+              <View style={styles.timelineModalContainer}>
+                  <View style={styles.statusModalHeader}>
+                      <Text style={styles.statusModalTitle}>Change Order Status</Text>
                   </View>
-                  <Text style={styles.radioLabel}>{getStatusLabel(status)}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
 
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton]}
-                onPress={() => setStatusModalVisible(false)}
-              >
-                <Text style={styles.buttonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.saveButton]}
-                onPress={confirmStatusChange}
-              >
-                <Text style={styles.buttonText}>Confirm</Text>
-              </TouchableOpacity>
-            </View>
+                  <ScrollView contentContainerStyle={styles.timelineScrollView}>
+                      {orderToUpdate && <Text style={styles.timelineOrderNumber}>Order #{orderToUpdate.order_number}</Text>}
+                      {(() => {
+                          if (!orderToUpdate) return null;
+                          const isDelivery = orderToUpdate.delivery_method === 'delivery';
+                          const stepperStatuses = isDelivery ? deliveryStepperStatuses : pickupStepperStatuses;
+                          const getStepperIndex = (status) => stepperStatuses.findIndex(s => s.id === status);
+                          const selectedIndex = getStepperIndex(selectedStatus);
+
+                          return (
+                              <>
+                                  {stepperStatuses.map((status, index) => {
+                                      const isSelected = selectedIndex === index;
+                                      const isPast = selectedIndex > index;
+                                      const isLast = index === stepperStatuses.length - 1;
+
+                                      return (
+                                          <View key={status.id} style={styles.timelineStepContainer}>
+                                              {/* Line */}
+                                              {!isLast && (
+                                                  <View style={[
+                                                      styles.timelineLine,
+                                                      (isPast || isSelected) && styles.timelineLineActive
+                                                  ]}/>
+                                              )}
+                                              {/* Content */}
+                                              <TouchableOpacity onPress={() => setSelectedStatus(status.id)} style={styles.timelineStep}>
+                                                  <View style={styles.timelineIconContainer}>
+                                                      <View style={[
+                                                          styles.timelineCircle,
+                                                          isPast && styles.timelineCirclePast,
+                                                          isSelected && styles.timelineCircleSelected
+                                                      ]}>
+                                                          {isPast ? (
+                                                              <Ionicons name="checkmark" size={18} color="#fff" />
+                                                          ) : (
+                                                              <Text style={[styles.timelineCircleText, isSelected && {color: '#fff'}]}>{index + 1}</Text>
+                                                          )}
+                                                      </View>
+                                                  </View>
+                                                  <View style={styles.timelineTextContainer}>
+                                                      <Text style={[
+                                                          styles.timelineLabel,
+                                                          isPast && styles.timelineLabelPast,
+                                                          isSelected && styles.timelineLabelSelected
+                                                      ]}>
+                                                          {status.label}
+                                                      </Text>
+                                                      <Text style={[
+                                                          styles.timelineDescription,
+                                                          isSelected && styles.timelineDescriptionSelected
+                                                      ]}>
+                                                          {status.description}
+                                                      </Text>
+                                                  </View>
+                                              </TouchableOpacity>
+                                          </View>
+                                      );
+                                  })}
+                                  {/* Special Status Buttons */}
+                                  <View style={styles.timelineActions}>
+                                      <TouchableOpacity
+                                          onPress={() => setSelectedStatus('cancelled')}
+                                          style={[
+                                              styles.timelineCancelButton,
+                                              selectedStatus === 'cancelled' && styles.timelineCancelButtonSelected
+                                          ]}
+                                      >
+                                          <Ionicons name="close-circle-outline" size={16} color={selectedStatus === 'cancelled' ? '#fff' : '#EF4444'} />
+                                          <Text style={[
+                                              styles.timelineCancelButtonText,
+                                              selectedStatus === 'cancelled' && { color: '#fff' }
+                                          ]}>
+                                              Cancel Order
+                                          </Text>
+                                      </TouchableOpacity>
+                                  </View>
+                              </>
+                          );
+                      })()}
+                  </ScrollView>
+
+                  <View style={styles.statusModalFooter}>
+                      <TouchableOpacity onPress={confirmStatusChange} style={styles.statusConfirmButton}>
+                          <Text style={styles.statusConfirmButtonText}>Confirm</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => setStatusModalVisible(false)} style={styles.statusCloseButton}>
+                          <Text style={styles.statusCloseButtonText}>Cancel</Text>
+                      </TouchableOpacity>
+                  </View>
+              </View>
           </View>
-        </View>
       </Modal>
 
       {/* Receipt View Modal */}
@@ -1220,10 +1446,6 @@ const OrdersTab = () => {
               source={{ uri: selectedReceiptUrl }}
               style={styles.receiptImage}
               resizeMode="contain"
-              onError={(e) => {
-                console.log('Image loading error:', e.nativeEvent.error);
-                Alert.alert('Image Load Error', 'Failed to load receipt image. The URL might be invalid or the image is not accessible.');
-              }}
             />
           </View>
         </View>
@@ -1231,6 +1453,7 @@ const OrdersTab = () => {
     </View>
   );
 };
+
 
 // ==================== STOCK TAB ====================
 const StockTab = () => {
@@ -1244,332 +1467,713 @@ const StockTab = () => {
   const [editingStock, setEditingStock] = useState(null);
   const [stockFormData, setStockFormData] = useState({
     name: '',
-    category: 'Ribbons',
     price: '',
     quantity: '',
     unit: '',
     reorder_level: '10',
-    is_available: true
+    is_available: true, // Boolean status field
+    image: null,
   });
 
-  useEffect(() => {
-    loadStock();
-  }, []);
-
-  const loadStock = async () => {
-    setLoading(true);
-    try {
-      const response = await adminAPI.getAllStock();
-      setStockItems(response.data.stock || []);
-    } catch (error) {
-      console.error('Error loading stock:', error);
-      Alert.alert('Error', 'Failed to load stock');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await loadStock();
-    setRefreshing(false);
-  };
-
-  const resetForm = () => {
-    setStockFormData({
-      name: '',
-      category: activeStockTab,
-      price: '',
-      quantity: '',
-      unit: '',
-      reorder_level: '10',
-      is_available: true
-    });
-    setEditingStock(null);
-  };
-
-  const handleEditStock = (item) => {
-    setEditingStock(item);
-    setStockFormData({
-      name: item.name,
-      category: item.category,
-      price: item.price ? item.price.toString() : '',
-      quantity: item.quantity ? item.quantity.toString() : '',
-      unit: item.unit || '',
-      reorder_level: item.reorder_level ? item.reorder_level.toString() : '10',
-      is_available: Boolean(item.is_available)
-    });
-    setModalVisible(true);
-  };
-
-  const handleDeleteStock = (id) => {
-    Alert.alert(
-      'Delete Item',
-      'Are you sure you want to delete this item?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await adminAPI.deleteStock(id);
-              Alert.alert('Success', 'Item deleted');
-              loadStock();
-            } catch (error) {
-              Alert.alert('Error', 'Failed to delete item');
-            }
+    useEffect(() => {
+      loadStock();
+    }, []);
+  
+        const loadStock = async () => {
+  
+          setLoading(true);
+  
+          try {
+  
+            const response = await adminAPI.getAllStock();
+  
+            setStockItems(response.data || []);
+  
+          } catch (error) {
+  
+            console.error('Error loading stock:', error);
+  
+            Alert.alert('Error', 'Failed to load stock');
+  
+          } finally {
+  
+            setLoading(false);
+  
           }
-        }
-      ]
-    );
-  };
-
-  const handleSaveStock = async () => {
-    if (!stockFormData.name || !stockFormData.quantity) {
-      Alert.alert('Error', 'Please fill in Name and Quantity');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const data = {
-        ...stockFormData,
-        price: parseFloat(stockFormData.price) || 0,
-        quantity: parseInt(stockFormData.quantity) || 0,
-        reorder_level: parseInt(stockFormData.reorder_level) || 10,
-      };
-
-      if (editingStock) {
-        await adminAPI.updateStock(editingStock.id, data);
-        Alert.alert('Success', 'Item updated successfully');
-      } else {
-        await adminAPI.createStock(data);
-        Alert.alert('Success', 'Item added successfully');
-      }
-
-      setModalVisible(false);
-      resetForm();
-      await loadStock();
-    } catch (error) {
-      console.error('Error saving stock:', error);
-      Alert.alert('Error', 'Failed to save item');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const filteredStock = stockItems.filter(item =>
-    item.category === activeStockTab
-  );
-
-  const renderStockItem = ({ item }) => (
-    <View style={styles.stockCard}>
-      <View style={styles.stockInfo}>
-        <Text style={styles.stockName}>{item.name}</Text>
-        <Text style={styles.stockPrice}>₱{item.price || '0'} / {item.unit || 'unit'}</Text>
-        <Text style={styles.stockQuantity}>Qty: {item.quantity}</Text>
-        <View style={styles.stockAvailability}>
-          <View style={[styles.availabilityDot, { backgroundColor: item.is_available ? '#4CAF50' : '#f44336' }]} />
-          <Text style={styles.stockAvailabilityText}>
-            {item.is_available ? 'Available' : 'Unavailable'}
-          </Text>
-        </View>
-      </View>
-      <View style={styles.stockActions}>
-        <TouchableOpacity
-          style={styles.editButtonSmall}
-          onPress={() => handleEditStock(item)}
-        >
-          <Ionicons name="create-outline" size={20} color="#2196F3" />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.deleteButtonSmall}
-          onPress={() => handleDeleteStock(item.id)}
-        >
-          <Ionicons name="trash-outline" size={20} color="#f44336" />
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-
-  if (loading && !refreshing && !modalVisible) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#ec4899" />
-      </View>
-    );
-  }
-
-  return (
-    <View style={styles.tabContent}>
-      <TouchableOpacity
-        style={styles.addButton}
-        onPress={() => {
-          resetForm();
+  
+        };
+  
+      
+  
+        const onRefresh = async () => {
+  
+          setRefreshing(true);
+  
+          await loadStock();
+  
+          setRefreshing(false);
+  
+        };
+  
+      
+  
+        const resetForm = () => {
+  
+          setStockFormData({
+  
+            name: '',
+  
+            price: '',
+  
+            quantity: '',
+  
+            unit: '',
+  
+            reorder_level: '10',
+  
+            is_available: true, // Boolean status field
+  
+            image: null,
+  
+          });
+  
+          setEditingStock(null);
+  
+        };
+  
+      
+  
+        const pickImage = async () => {
+  
+          try {
+  
+            const result = await ImagePicker.launchImageLibraryAsync({
+  
+              mediaTypes: ImagePicker.MediaTypeOptions.Images,
+  
+              allowsEditing: true,
+  
+              aspect: [4, 3],
+  
+              quality: 1,
+  
+              base64: true,
+  
+            });
+  
+      
+  
+            if (!result.canceled) {
+  
+              setStockFormData({ ...stockFormData, image: result.assets[0] });
+  
+            }
+  
+          } catch (error) {
+  
+            console.error('Error launching image library:', error);
+  
+            Alert.alert('Error', 'Failed to open image library. Please try again.');
+  
+          }
+  
+        };
+  
+      
+  
+        const takePhoto = async () => {
+  
+          try {
+  
+            const { status } = await ImagePicker.requestCameraPermissionsAsync();
+  
+            if (status !== 'granted') {
+  
+              Alert.alert('Permission needed', 'Camera permission is required to take photos');
+  
+              return;
+  
+            }
+  
+      
+  
+            const result = await ImagePicker.launchCameraAsync({
+  
+              allowsEditing: true,
+  
+              aspect: [4, 3],
+  
+              quality: 1,
+  
+              base64: true,
+  
+            });
+  
+      
+  
+            if (!result.canceled) {
+  
+              setStockFormData({ ...stockFormData, image: result.assets[0] });
+  
+            }
+  
+          } catch (error) {
+  
+            console.error('Error launching camera:', error);
+  
+            Alert.alert('Error', 'Failed to open camera. Please try again.');
+  
+          }
+  
+        };
+  
+      
+  
+        const handleEditStock = (item) => {
+  
+          setEditingStock(item);
+  
+          setStockFormData({
+  
+            name: item.name,
+  
+            price: item.price ? item.price.toString() : '',
+  
+            quantity: item.quantity ? item.quantity.toString() : '',
+  
+            unit: item.unit || '',
+  
+            reorder_level: item.reorder_level ? item.reorder_level.toString() : '10',
+  
+            is_available: item.is_available, // Corrected: use item.is_available from API
+  
+            image: item.image_url ? { uri: item.image_url.startsWith('http') ? item.image_url : `${BASE_URL}${item.image_url}` } : null,
+  
+          });
+  
           setModalVisible(true);
-        }}
-      >
-        <Ionicons name="add" size={20} color="#fff" />
-        <Text style={styles.addButtonText}>Add {activeStockTab.slice(0, -1)}</Text>
-      </TouchableOpacity>
-
-      {/* Stock Category Tabs */}
-      <View style={styles.stockTabs}>
-        {['Wrappers', 'Ribbons', 'Flowers'].map((tab) => (
-          <TouchableOpacity
-            key={tab}
-            style={[styles.stockTab, activeStockTab === tab && styles.stockTabActive]}
-            onPress={() => setActiveStockTab(tab)}
-          >
-            <Ionicons
-              name={tab === 'Wrappers' ? 'gift' : tab === 'Ribbons' ? 'ribbon' : 'flower'}
-              size={20}
-              color={activeStockTab === tab ? '#ec4899' : '#666'}
-            />
-            <Text style={[styles.stockTabText, activeStockTab === tab && styles.stockTabTextActive]}>
-              {tab}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      <FlatList
-        data={filteredStock}
-        renderItem={renderStockItem}
-        keyExtractor={(item) => item.id.toString()}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#ec4899']} />
+  
+        };
+  
+      
+  
+        const handleDeleteStock = (id) => {
+  
+          Alert.alert(
+  
+            'Delete Item',
+  
+            'Are you sure you want to delete this item?',
+  
+            [
+  
+              { text: 'Cancel', style: 'cancel' },
+  
+              {
+  
+                text: 'Delete',
+  
+                style: 'destructive',
+  
+                onPress: async () => {
+  
+                  try {
+  
+                    await adminAPI.deleteStock(id);
+  
+                    Alert.alert('Success', 'Item deleted');
+  
+                    loadStock();
+  
+                  } catch (error) {
+  
+                    Alert.alert('Error', 'Failed to delete item');
+  
+                  }
+  
+                }
+  
+              }
+  
+            ]
+  
+          );
+  
+        };
+  
+      
+  
+        const handleSaveStock = async () => {
+  
+          if (!stockFormData.name || !stockFormData.quantity) {
+  
+            Alert.alert('Error', 'Please fill in Name and Quantity');
+  
+            return;
+  
+          }
+  
+      
+  
+          setLoading(true);
+  
+          try {
+  
+            const data = {
+  
+              ...stockFormData,
+  
+              category: activeStockTab, // Add this line to include the category from activeStockTab
+  
+              price: parseFloat(stockFormData.price) || 0,
+  
+              quantity: parseInt(stockFormData.quantity) || 0,
+  
+              reorder_level: parseInt(stockFormData.reorder_level) || 10,
+  
+              is_available: stockFormData.is_available, // Corrected: send is_available
+  
+              image: stockFormData.image,
+  
+            };
+  
+      
+  
+            if (editingStock) {
+  
+              await adminAPI.updateStock(editingStock.id, { ...data, old_image_url: editingStock.image_url });
+  
+              Alert.alert('Success', 'Item updated successfully');
+  
+            } else {
+  
+              await adminAPI.createStock(data);
+  
+              Alert.alert('Success', 'Item added successfully');
+  
+            }          setModalVisible(false);
+          resetForm();
+          await loadStock();
+        } catch (error) {
+          console.error('Error saving stock:', error);
+          Alert.alert('Error', error.message || 'Failed to save item');
+        } finally {
+          setLoading(false);
         }
-        ListEmptyComponent={
-          <Text style={styles.emptyText}>No {activeStockTab.toLowerCase()} found</Text>
-        }
-      />
-
-      {/* Add/Edit Stock Modal */}
-      <Modal visible={modalVisible} animationType="slide" transparent>
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                {editingStock ? 'Edit Stock Item' : 'Add Stock Item'}
-              </Text>
-              <TouchableOpacity onPress={() => setModalVisible(false)}>
-                <Ionicons name="close" size={24} color="#333" />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView showsVerticalScrollIndicator={false}>
-              <Text style={styles.inputLabel}>Item Name *</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter item name"
-                value={stockFormData.name}
-                onChangeText={(text) => setStockFormData({ ...stockFormData, name: text })}
-              />
-
-              <Text style={styles.inputLabel}>Category</Text>
-              <View style={styles.categoryGrid}>
-                {['Wrappers', 'Ribbons', 'Flowers'].map((cat) => (
-                  <TouchableOpacity
-                    key={cat}
-                    style={[
-                      styles.modalCategoryChip,
-                      stockFormData.category === cat && styles.modalCategoryChipActive
-                    ]}
-                    onPress={() => setStockFormData({ ...stockFormData, category: cat })}
-                  >
-                    <Text style={[
-                      styles.modalCategoryChipText,
-                      stockFormData.category === cat && styles.modalCategoryChipTextActive
-                    ]}>
-                      {cat}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+      };
+    
+      const filteredStock = stockItems.filter(item =>
+        item.category === activeStockTab
+      );
+    
+          const renderStockItem = ({ item }) => {
+    
+            return (
+    
+            <View style={styles.productCard}>
+    
+              <View style={styles.imageContainer}>
+    
+                {item.image_url ? (
+    
+                  <Image
+    
+                    source={{ uri: item.image_url.startsWith('http') ? item.image_url : `${BASE_URL}${item.image_url}` }}
+    
+                    style={styles.productImage}
+    
+                  />
+    
+                ) : (
+    
+                  <View style={styles.productImagePlaceholder}>
+    
+                    <Ionicons name="image-outline" size={40} color="#ccc" />
+    
+                    <Text style={styles.placeholderText}>No Image</Text>
+    
+                  </View>
+    
+                )}
+    
               </View>
-
-              <View style={styles.rowInputs}>
-                <View style={styles.halfInput}>
-                  <Text style={styles.inputLabel}>Price</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="0.00"
-                    keyboardType="numeric"
-                    value={stockFormData.price}
-                    onChangeText={(text) => setStockFormData({ ...stockFormData, price: text })}
-                  />
+    
+              <View style={styles.productInfo}>
+    
+                                                <Text style={styles.productName}>{item.name}</Text>
+    
+                                                <Text style={styles.productCategory}>{item.category || 'Uncategorized'}</Text>
+    
+                                                <View style={styles.priceRow}>
+    
+                                                  <Text style={styles.productPrice}>₱{item.price || '0'} / {item.unit || 'unit'}</Text>
+    
+                  <Text style={styles.productStock}>Qty: {item.quantity}</Text>
+    
                 </View>
-                <View style={styles.halfInput}>
-                  <Text style={styles.inputLabel}>Quantity *</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="0"
-                    keyboardType="numeric"
-                    value={stockFormData.quantity}
-                    onChangeText={(text) => setStockFormData({ ...stockFormData, quantity: text })}
-                  />
+    
+                <View style={styles.stockAvailability}>
+    
+                  <View style={[styles.availabilityDot, { backgroundColor: item.is_available ? '#4CAF50' : '#f44336' }]} />
+    
+                  <Text style={styles.stockAvailabilityText}>
+    
+                    {item.is_available ? 'Available' : 'Unavailable'}
+    
+                  </Text>
+    
                 </View>
+    
               </View>
-
-              <View style={styles.rowInputs}>
-                <View style={styles.halfInput}>
-                  <Text style={styles.inputLabel}>Unit</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="e.g. meters"
-                    value={stockFormData.unit}
-                    onChangeText={(text) => setStockFormData({ ...stockFormData, unit: text })}
-                  />
-                </View>
-                <View style={styles.halfInput}>
-                  <Text style={styles.inputLabel}>Reorder Level</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="10"
-                    keyboardType="numeric"
-                    value={stockFormData.reorder_level}
-                    onChangeText={(text) => setStockFormData({ ...stockFormData, reorder_level: text })}
-                  />
-                </View>
-              </View>
-
-              <View style={styles.switchContainer}>
-                <Text style={styles.inputLabel}>Available</Text>
-                <TouchableOpacity
-                  style={[styles.switch, stockFormData.is_available && styles.switchActive]}
-                  onPress={() => setStockFormData({ ...stockFormData, is_available: !stockFormData.is_available })}
-                >
-                  <View style={[styles.switchKnob, stockFormData.is_available && styles.switchKnobActive]} />
+    
+              <View style={styles.productActions}>
+    
+                <TouchableOpacity style={styles.editButton} onPress={() => handleEditStock(item)}>
+    
+                  <Ionicons name="create-outline" size={18} color="#fff" />
+    
+                  <Text style={styles.buttonText}>Edit</Text>
+    
                 </TouchableOpacity>
+    
+                <TouchableOpacity style={styles.deleteButton} onPress={() => handleDeleteStock(item.id)}>
+    
+                  <Ionicons name="trash-outline" size={18} color="#fff" />
+    
+                  <Text style={styles.buttonText}>Delete</Text>
+    
+                </TouchableOpacity>
+    
               </View>
-
-            </ScrollView>
-
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton]}
-                onPress={() => setModalVisible(false)}
-              >
-                <Text style={styles.buttonText}>Cancel</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.modalButton, styles.saveButton]}
-                onPress={handleSaveStock}
-                disabled={loading}
-              >
-                <Text style={styles.buttonText}>
-                  {loading ? 'Saving...' : 'Save Item'}
-                </Text>
-              </TouchableOpacity>
+    
             </View>
-          </View>
-        </View>
-      </Modal>
-    </View>
-  );
-};
+    
+          );
+    
+          };        if (loading && !refreshing && !modalVisible) {
+          return (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#ec4899" />
+            </View>
+          );
+        }
+      
+                return (
+      
+                  <View style={styles.tabContent}>
+      
+                    <TouchableOpacity style={styles.addButton} onPress={() => { resetForm(); setModalVisible(true); }}>
+      
+                      <Ionicons name="add" size={20} color="#fff" />
+      
+                      <Text style={styles.addButtonText}>Add {activeStockTab.slice(0, -1)}</Text>
+      
+                    </TouchableOpacity>
+      
+                    {/* Stock Category Tabs */}
+      
+                    <View style={styles.stockTabs}>
+      
+                      {['Wrappers', 'Ribbons', 'Flowers'].map((tab) => (
+      
+                        <TouchableOpacity
+      
+                          key={tab}
+      
+                          style={[styles.stockTab, activeStockTab === tab && styles.stockTabActive]}
+      
+                          onPress={() => setActiveStockTab(tab)}
+      
+                        >
+      
+                          <Ionicons
+      
+                            name={tab === 'Wrappers' ? 'gift' : tab === 'Ribbons' ? 'ribbon' : 'flower'}
+      
+                            size={20}
+      
+                            color={activeStockTab === tab ? '#ec4899' : '#666'}
+      
+                          />
+      
+                          <Text style={[styles.stockTabText, activeStockTab === tab && styles.stockTabTextActive]}>
+      
+                            {tab}
+      
+                          </Text>
+      
+                        </TouchableOpacity>
+      
+                      ))}
+      
+                    </View>
+      
+                    <FlatList
+      
+                      data={filteredStock}
+      
+                      renderItem={renderStockItem}
+      
+                      keyExtractor={(item) => item.id.toString()}
+      
+                      refreshControl={
+      
+                        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#ec4899']} />
+      
+                      }
+      
+                      ListEmptyComponent={
+      
+                        <Text style={styles.emptyText}>No {activeStockTab.toLowerCase()} found</Text>
+      
+                      }
+      
+                    />
+      
+                    {/* Add/Edit Stock Modal */}
+      
+                    <Modal visible={modalVisible} animationType="slide" transparent>
+      
+                      <View style={styles.modalContainer}>
+      
+                        <View style={styles.modalContent}>
+      
+                          <View style={styles.modalHeader}>
+      
+                            <Text style={styles.modalTitle}>
+      
+                              {editingStock ? 'Edit Stock Item' : 'Add Stock Item'}
+      
+                            </Text>
+      
+                            <TouchableOpacity onPress={() => setModalVisible(false)}>
+      
+                              <Ionicons name="close" size={24} color="#333" />
+      
+                            </TouchableOpacity>
+      
+                          </View>
+      
+                          <ScrollView showsVerticalScrollIndicator={false}>
+      
+                            <Text style={styles.inputLabel}>Item Name *</Text>
+      
+                            <TextInput
+      
+                              style={styles.input}
+      
+                              placeholder="Enter item name"
+      
+                              value={stockFormData.name}
+      
+                              onChangeText={(text) => setStockFormData({ ...stockFormData, name: text })}
+      
+                            />
+      
+                            <View style={styles.rowInputs}>
+      
+                              <View style={styles.halfInput}>
+      
+                                <Text style={styles.inputLabel}>Price</Text>
+      
+                                <TextInput
+      
+                                  style={styles.input}
+      
+                                  placeholder="0.00"
+      
+                                  keyboardType="numeric"
+      
+                                  value={stockFormData.price}
+      
+                                  onChangeText={(text) => setStockFormData({ ...stockFormData, price: text })}
+      
+                                />
+      
+                              </View>
+      
+                              <View style={styles.halfInput}>
+      
+                                <Text style={styles.inputLabel}>Quantity *</Text>
+      
+                                <TextInput
+      
+                                  style={styles.input}
+      
+                                  placeholder="0"
+      
+                                  keyboardType="numeric"
+      
+                                  value={stockFormData.quantity}
+      
+                                  onChangeText={(text) => setStockFormData({ ...stockFormData, quantity: text })}
+      
+                                />
+      
+                              </View>
+      
+                            </View>
+      
+                            <View style={styles.rowInputs}>
+      
+                              <View style={styles.halfInput}>
+      
+                                <Text style={styles.inputLabel}>Unit</Text>
+      
+                                <TextInput
+      
+                                  style={styles.input}
+      
+                                  placeholder="e.g. meters"
+      
+                                  value={stockFormData.unit}
+      
+                                  onChangeText={(text) => setStockFormData({ ...stockFormData, unit: text })}
+      
+                                />
+      
+                              </View>
+      
+                              <View style={styles.halfInput}>
+      
+                                <Text style={styles.inputLabel}>Reorder Level</Text>
+      
+                                <TextInput
+      
+                                  style={styles.input}
+      
+                                  placeholder="10"
+      
+                                  keyboardType="numeric"
+      
+                                  value={stockFormData.reorder_level}
+      
+                                  onChangeText={(text) => setStockFormData({ ...stockFormData, reorder_level: text })}
+      
+                                />
+      
+                              </View>
+      
+                            </View>
+      
+                            <Text style={styles.inputLabel}>Status</Text>
+      
+                            <View style={styles.categoryGrid}>
+      
+                              {[{ label: 'Available', value: true }, { label: 'Unavailable', value: false }].map((option) => (
+      
+                                <TouchableOpacity
+      
+                                  key={option.label}
+      
+                                  style={[
+      
+                                    styles.modalCategoryChip,
+      
+                                    stockFormData.is_available === option.value && styles.modalCategoryChipActive
+      
+                                  ]}
+      
+                                  onPress={() => setStockFormData({ ...stockFormData, is_available: option.value })}
+      
+                                >
+      
+                                  <Text style={[
+      
+                                    styles.modalCategoryChipText,
+      
+                                    stockFormData.is_available === option.value && styles.modalCategoryChipTextActive
+      
+                                  ]}>
+      
+                                    {option.label}
+      
+                                  </Text>
+      
+                                </TouchableOpacity>
+      
+                              ))}
+      
+                            </View>
+      
+                            <Text style={styles.inputLabel}>Stock Image</Text>
+      
+                            <TouchableOpacity style={styles.imageUploadBox} onPress={pickImage}>
+      
+                              {stockFormData.image ? (
+      
+                                <Image source={{ uri: stockFormData.image.uri }} style={styles.uploadedImage} />
+      
+                              ) : (
+      
+                                <View style={styles.imageUploadPlaceholder}>
+      
+                                  <Ionicons name="camera" size={40} color="#ec4899" />
+      
+                                  <Text style={styles.imageUploadText}>Tap to Upload Photo</Text>
+      
+                                  <Text style={styles.imageUploadSubtext}>or take a picture</Text>
+      
+                                </View>
+      
+                              )}
+      
+                            </TouchableOpacity>
+      
+                            <TouchableOpacity style={styles.takePhotoButton} onPress={takePhoto}>
+      
+                              <Ionicons name="camera-outline" size={20} color="#ec4899" />
+      
+                              <Text style={styles.takePhotoText}>Take Photo</Text>
+      
+                            </TouchableOpacity>
+      
+                          </ScrollView>
+      
+                          <View style={styles.modalButtons}>
+      
+                            <TouchableOpacity
+      
+                              style={[styles.modalButton, styles.cancelButton]}
+      
+                              onPress={() => setModalVisible(false)}
+      
+                            >
+      
+                              <Text style={styles.buttonText}>Cancel</Text>
+      
+                            </TouchableOpacity>
+      
+                            <TouchableOpacity
+      
+                              style={[styles.modalButton, styles.saveButton]}
+      
+                              onPress={handleSaveStock}
+      
+                              disabled={loading}
+      
+                            >
+      
+                              <Text style={styles.buttonText}>
+      
+                                {loading ? 'Saving...' : 'Save Item'}
+      
+                              </Text>
+      
+                            </TouchableOpacity>
+      
+                          </View>
+      
+                        </View>
+      
+                      </View>
+      
+                    </Modal>
+      
+                  </View>
+      
+                );
+      };
 
 // ==================== REQUESTS TAB ====================
 // Helper component for consistent detail display
@@ -1619,6 +2223,19 @@ const RequestsTab = () => {
       <DetailSection label="Occasion:" value={request.occasion} />
       <DetailSection label="Preferences:" value={request.notes} />
       <DetailSection label="Add-on:" value={request.addon} />
+    </>
+  );
+
+  const renderCustomizedDetails = (request) => (
+    <>
+      <DetailSection label="Quantity (Stems):" value={request.data?.bundleSize?.toString()} />
+      <DetailSection label="Flower Type:" value={request.data?.flower?.name} />
+      <DetailSection label="Wrapper:" value={request.data?.wrapper?.name} />
+      <DetailSection label="Ribbon:" value={request.data?.ribbon?.name} />
+      {/* Optionally, you might want to show individual prices or total price for customized items */}
+      {request.final_price && (
+        <DetailSection label="Final Price:" value={`₱${request.final_price.toFixed(2)}`} />
+      )}
     </>
   );
 
@@ -1751,6 +2368,7 @@ const RequestsTab = () => {
                 {/* Use helper functions to render details based on type */}
                 {selectedRequest.type === 'booking' && renderBookingDetails(selectedRequest)}
                 {selectedRequest.type === 'special_order' && renderSpecialOrderDetails(selectedRequest)}
+                {selectedRequest.type === 'customized' && renderCustomizedDetails(selectedRequest)}
 
 
                 {selectedRequest.image_url && (
@@ -2046,81 +2664,216 @@ const NotificationsTab = () => {
 };
 
 // ==================== MESSAGING TAB ====================
-const MessagingTab = () => {
-  const [conversations, setConversations] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
+const MessagingTab = ({ customerToMessage, setCustomerToMessage }) => {
+    const [conversations, setConversations] = useState([]);
+    const [selectedConversation, setSelectedConversation] = useState(null);
+    const [messages, setMessages] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const [newMessage, setNewMessage] = useState('');
+    const [currentUser, setCurrentUser] = useState(null);
+    const flatListRef = React.useRef(null);
+    const navigation = useNavigation();
 
-  useEffect(() => {
-    loadMessages();
-  }, []);
+    // Memoized fetchConversations
+    const fetchConversations = React.useCallback(async (user) => {
+        if (!user || !(user.role === 'admin' || user.role === 'employee')) {
+            setConversations([]);
+            return;
+        }
+        setLoading(true);
+        try {
+            const { data, error } = await supabase.rpc('get_shared_conversations');
+            if (error) throw error;
+            const conversationsData = data || [];
+            setConversations(conversationsData);
+        } catch (error) {
+            console.error("Error fetching shared conversations:", error);
+            Alert.alert('Error', 'Could not fetch conversations. Please ensure database functions are installed correctly.');
+        } finally {
+            setLoading(false);
+        }
+    }, []);
 
-  const loadMessages = async () => {
-    setLoading(true);
-    try {
-      const response = await adminAPI.getAllMessages();
-      setConversations(response.data.conversations || []);
-    } catch (error) {
-      console.error('Error loading messages:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+    // Memoized fetchMessages
+    const fetchMessages = React.useCallback(async (conversation, user) => {
+        if (!user || !conversation) return;
+        const customerId = conversation.user.id;
+        setSelectedConversation(conversation);
+        setLoading(true);
+        try {
+            if (conversation.unreadCount > 0) {
+                await supabase.from('messages').update({ is_read: true }).eq('sender_id', customerId).eq('is_read', false);
+                fetchConversations(user);
+            }
+            const { data, error } = await supabase.rpc('get_conversation_messages', { p_customer_id: customerId });
+            if (error) throw error;
+            const messagesWithDetails = await Promise.all((data || []).map(async (msg) => {
+                const { data: sender } = await supabase.from('users').select('id, name, role').eq('id', msg.sender_id).single();
+                return { ...msg, sender };
+            }));
+            setMessages(messagesWithDetails);
+        } catch (error) {
+            console.error("Error fetching messages:", error);
+            Alert.alert('Error', 'Could not fetch message history.');
+        } finally {
+            setLoading(false);
+        }
+    }, [fetchConversations]);
 
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await loadMessages();
-    setRefreshing(false);
-  };
+    // Get current user from AsyncStorage
+    useEffect(() => {
+        const loadInitialData = async () => {
+            const userJson = await AsyncStorage.getItem('currentUser');
+            if (userJson) setCurrentUser(JSON.parse(userJson));
+            else navigation.navigate('Login');
+        };
+        loadInitialData();
+    }, [navigation]);
 
-  if (loading && !refreshing) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#ec4899" />
-      </View>
+    // Fetch conversations when user is loaded
+    useFocusEffect(
+        React.useCallback(() => {
+            if (currentUser) {
+                fetchConversations(currentUser);
+            }
+        }, [currentUser, fetchConversations])
     );
-  }
 
-  return (
-    <View style={styles.tabContent}>
-      <Text style={styles.tabTitle}>Messages</Text>
+    // Real-time subscription for when the user is actively in a chat
+    useEffect(() => {
+        if (!currentUser || !selectedConversation) return;
 
-      <FlatList
-        data={conversations}
-        renderItem={({ item }) => (
-          <TouchableOpacity style={styles.conversationCard}>
-            <View style={styles.avatarCircle}>
-              <Ionicons name="person" size={24} color="#ec4899" />
-            </View>
-            <View style={styles.conversationContent}>
-              <Text style={styles.conversationName}>{item.sender_name || 'Unknown User'}</Text>
-              <Text style={styles.conversationMessage} numberOfLines={1}>
-                {item.content}
-              </Text>
-            </View>
-            <View style={styles.conversationMeta}>
-              <Text style={styles.conversationDate}>
-                {new Date(item.created_at).toLocaleDateString()}
-              </Text>
-              {item.unread_count > 0 && (
-                <View style={styles.unreadBadge}>
-                  <Text style={styles.unreadText}>{item.unread_count}</Text>
+        const channel = supabase.channel(`messaging-tab-realtime-${currentUser.id}`)
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+                const customerInChatId = selectedConversation.user.id;
+                const newMessage = payload.new;
+                // If the new message belongs to the currently open conversation, refetch messages
+                if (newMessage.sender_id === customerInChatId || newMessage.receiver_id === customerInChatId) {
+                    fetchMessages(selectedConversation, currentUser);
+                }
+            }).subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [currentUser, selectedConversation, fetchMessages]);
+
+    // Effect to handle customer selected from another tab
+    useEffect(() => {
+        if (customerToMessage && currentUser) {
+            const customerConversation = {
+                user: {
+                    id: customerToMessage.id,
+                    name: customerToMessage.name,
+                    email: customerToMessage.email,
+                },
+            };
+            fetchMessages(customerConversation, currentUser);
+            setCustomerToMessage(null); // Reset after processing
+        }
+    }, [customerToMessage, currentUser, fetchMessages, setCustomerToMessage]);
+
+    const handleSendMessage = async () => {
+        if (!newMessage.trim() || !selectedConversation || !currentUser) return;
+        const receiverId = selectedConversation.user.id;
+        const messageText = newMessage.trim();
+        setNewMessage('');
+
+        try {
+            const { error } = await supabase.rpc('send_message_as_staff', {
+                p_receiver_id: receiverId,
+                p_message_text: messageText
+            });
+            if (error) throw error;
+            // Optimistically update UI - for simplicity, we just refetch
+            fetchMessages(selectedConversation, currentUser);
+        } catch (error) {
+            console.error("Error sending message:", error);
+            Alert.alert('Error', error.message || 'Could not send message.');
+            setNewMessage(messageText); 
+        }
+    };
+
+    const renderConversationItem = ({ item }) => {
+        const isUnread = item.unreadCount > 0;
+        return (
+            <TouchableOpacity style={styles.chatItem} onPress={() => fetchMessages(item, currentUser)}>
+                <View style={styles.chatAvatar}>
+                     <Text style={styles.chatAvatarText}>{item.user.name ? item.user.name.charAt(0).toUpperCase() : 'U'}</Text>
                 </View>
-              )}
+                <View style={styles.chatPreview}>
+                    <Text style={[styles.chatName, isUnread && styles.chatNameUnread]}>{item.user.name || 'Unknown User'}</Text>
+                    <Text style={[styles.chatMessage, isUnread && styles.chatMessageUnread]} numberOfLines={1}>{item.lastMessage}</Text>
+                </View>
+                <View style={styles.chatMeta}>
+                    <Text style={styles.chatUserTime}>{formatMessageTimestamp(item.timestamp)}</Text>
+                    {isUnread && (
+                        <View style={styles.unreadBadge}>
+                            <Text style={styles.unreadText}>{item.unreadCount}</Text>
+                        </View>
+                    )}
+                </View>
+            </TouchableOpacity>
+        );
+    };
+
+    const renderMessageItem = ({ item }) => {
+        const isSentByMe = item.sender_id === currentUser.id;
+        return (
+            <View style={[styles.messageWrapper, isSentByMe ? styles.messageSentWrapper : styles.messageReceivedWrapper]}>
+                {!isSentByMe && (
+                    <View style={styles.messageAvatar}>
+                        <Text style={styles.chatAvatarText}>{item.sender && item.sender.name ? item.sender.name.charAt(0).toUpperCase() : 'U'}</Text>
+                    </View>
+                )}
+                <View style={[styles.messageBubble, isSentByMe ? styles.messageSentBubble : styles.messageReceivedBubble]}>
+                    <Text style={isSentByMe ? styles.messageTextSent : styles.messageTextReceived}>{item.message}</Text>
+                    <Text style={[styles.messageTime, isSentByMe ? styles.messageTimeSent : styles.messageTimeReceived]}>{formatMessageTimestamp(item.created_at)}</Text>
+                </View>
             </View>
-          </TouchableOpacity>
-        )}
-        keyExtractor={(item) => item.id.toString()}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#ec4899']} />
-        }
-        ListEmptyComponent={
-          <Text style={styles.emptyText}>No messages yet</Text>
-        }
-      />
-    </View>
-  );
+        );
+    };
+
+    if (selectedConversation) {
+        return (
+            <View style={styles.tabContent}>
+                <View style={styles.chatHeader}>
+                    <TouchableOpacity onPress={() => setSelectedConversation(null)}>
+                        <Ionicons name="arrow-back" size={24} color="#333" />
+                    </TouchableOpacity>
+                    <Text style={styles.chatHeaderTitle}>{selectedConversation.user.name}</Text>
+                    <View style={{width: 24}}/>
+                </View>
+                {loading && messages.length === 0 ? ( <ActivityIndicator style={{ marginTop: 20 }} size="large" color="#ec4899" /> ) : (
+                    <FlatList
+                        ref={flatListRef} data={messages} renderItem={renderMessageItem} keyExtractor={(item) => item.id.toString()}
+                        style={styles.chatMessagesContainer} contentContainerStyle={{ padding: 10 }}
+                        onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+                        onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
+                    />
+                )}
+                <View style={styles.chatInputContainer}>
+                    <TextInput style={styles.chatInput} placeholder="Type a message..." value={newMessage} onChangeText={setNewMessage} onSubmitEditing={handleSendMessage} placeholderTextColor="#999" />
+                    <TouchableOpacity style={styles.chatSendButton} onPress={handleSendMessage}><Ionicons name="send" size={20} color="#fff" /></TouchableOpacity>
+                </View>
+            </View>
+        )
+    }
+
+    return (
+        <View style={styles.tabContent}>
+            <Text style={styles.tabTitle}>Conversations</Text>
+            {loading && !conversations.length ? ( <ActivityIndicator style={{ marginTop: 20 }} size="large" color="#ec4899" /> ) : (
+                <FlatList
+                    data={conversations} renderItem={renderConversationItem} keyExtractor={(item) => item.user?.id?.toString()}
+                    onRefresh={() => fetchConversations(currentUser)} refreshing={loading}
+                    ListEmptyComponent={<Text style={styles.emptyText}>No conversations found.</Text>}
+                />
+            )}
+        </View>
+    );
 };
+
 
 // ==================== SALES TAB ====================
 const SalesTab = () => {
@@ -2388,188 +3141,502 @@ const SalesTab = () => {
 
 // ==================== ABOUT TAB ====================
 const AboutTab = () => {
-  const [formData, setFormData] = useState({
-    description: '',
-    mission: '',
-    vision: ''
-  });
-  const [loading, setLoading] = useState(false);
+    const [aboutData, setAboutData] = useState({
+        story: '',
+        about_description: '',
+        promise: '',
+        ownerQuote: '',
+        ownerImage: null,
+        ourShopImage: null,
+        customBouquetsDescription: '',
+        customBouquetsImage: null,
+        eventDecorationsDescription: '',
+        eventDecorationsImage: null,
+        specialOrdersDescription: '',
+        specialOrdersImage: null,
+        promises_responsibly_sourced_description: '',
+        promises_responsibly_sourced_image: null,
+        promises_crafted_by_experts_description: '',
+        promises_crafted_by_experts_image: null,
+        promises_caring_for_moments_description: '',
+        promises_caring_for_moments_image: null,
+    });
+    const [loading, setLoading] = useState(true);
+    const [isSaving, setIsSaving] = useState(false);
 
-  useEffect(() => {
-    loadData();
-  }, []);
+    const fetchAboutData = async () => {
+        setLoading(true);
+        try {
+            const { data, error } = await supabase
+                .from('app_content')
+                .select('key, value')
+                .in('key', [
+                    'about_story', 'about_description', 'about_promise', 'about_owner_quote', 'about_owner_image', 'about_our_shop_img',
+                    'about_custom_bouquets_desc', 'about_custom_bouquets_img',
+                    'about_event_decorations_desc', 'about_event_decorations_img',
+                    'about_special_orders_desc', 'about_special_orders_img',
+                    'promises_responsibly_sourced_description', 'promises_responsibly_sourced_image',
+                    'promises_crafted_by_experts_description', 'promises_crafted_by_experts_image',
+                    'promises_caring_for_moments_description', 'promises_caring_for_moments_image'
+                ]);
 
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      const response = await adminAPI.getAbout();
-      if (response.data.content) {
-        setFormData(response.data.content);
-      }
-    } catch (error) {
-      console.error('Error loading about:', error);
-    } finally {
-      setLoading(false);
+            if (error) throw error;
+
+            const info = data.reduce((acc, { key, value }) => {
+                if (key === 'about_story') acc.story = value;
+                if (key === 'about_description') acc.about_description = value;
+                if (key === 'about_promise') acc.promise = value;
+                if (key === 'about_owner_quote') acc.ownerQuote = value;
+                if (key === 'about_owner_image') acc.ownerImage = value;
+                if (key === 'about_our_shop_img') acc.ourShopImage = value;
+                if (key === 'about_custom_bouquets_desc') acc.customBouquetsDescription = value;
+                if (key === 'about_custom_bouquets_img') acc.customBouquetsImage = value;
+                if (key === 'about_event_decorations_desc') acc.eventDecorationsDescription = value;
+                if (key === 'about_event_decorations_img') acc.eventDecorationsImage = value;
+                if (key === 'about_special_orders_desc') acc.specialOrdersDescription = value;
+                if (key === 'about_special_orders_img') acc.specialOrdersImage = value;
+                if (key === 'promises_responsibly_sourced_description') acc.promises_responsibly_sourced_description = value;
+                if (key === 'promises_responsibly_sourced_image') acc.promises_responsibly_sourced_image = value;
+                if (key === 'promises_crafted_by_experts_description') acc.promises_crafted_by_experts_description = value;
+                if (key === 'promises_crafted_by_experts_image') acc.promises_crafted_by_experts_image = value;
+                if (key === 'promises_caring_for_moments_description') acc.promises_caring_for_moments_description = value;
+                if (key === 'promises_caring_for_moments_image') acc.promises_caring_for_moments_image = value;
+                return acc;
+            }, { 
+                story: '', about_description: '', promise: '', ownerQuote: '', ownerImage: null, ourShopImage: null,
+                customBouquetsDescription: '', customBouquetsImage: null,
+                eventDecorationsDescription: '', eventDecorationsImage: null,
+                specialOrdersDescription: '', specialOrdersImage: null,
+                promises_responsibly_sourced_description: '', promises_responsibly_sourced_image: null,
+                promises_crafted_by_experts_description: '', promises_crafted_by_experts_image: null,
+                promises_caring_for_moments_description: '', promises_caring_for_moments_image: null,
+            });
+            setAboutData(info);
+        } catch (error) {
+            Alert.alert('Error fetching about data', error.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchAboutData();
+    }, []);
+
+    const pickImage = async (field) => {
+        try {
+          const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: true,
+            aspect: [1, 1],
+            quality: 0.8,
+            base64: true,
+          });
+    
+          if (!result.canceled) {
+            setAboutData(prev => ({ ...prev, [field]: result.assets[0] }));
+          }
+        } catch (error) {
+          console.error(`Error launching image library for ${field}:`, error);
+          Alert.alert('Error', 'Failed to open image library. Please try again.');
+        }
+    };
+
+    const handleSave = async () => {
+        setIsSaving(true);
+        try {
+            let updates = [];
+            const textFields = {
+                about_story: aboutData.story,
+                about_description: aboutData.about_description,
+                about_promise: aboutData.promise,
+                about_owner_quote: aboutData.ownerQuote,
+                about_custom_bouquets_desc: aboutData.customBouquetsDescription,
+                about_event_decorations_desc: aboutData.eventDecorationsDescription,
+                about_special_orders_desc: aboutData.specialOrdersDescription,
+                promises_responsibly_sourced_description: aboutData.promises_responsibly_sourced_description,
+                promises_crafted_by_experts_description: aboutData.promises_crafted_by_experts_description,
+                promises_caring_for_moments_description: aboutData.promises_caring_for_moments_description,
+            };
+    
+            for (const [key, value] of Object.entries(textFields)) {
+                updates.push({ key, value });
+            }
+    
+            const handleImageUpload = async (imageAsset, fileName, keyName) => {
+                if (imageAsset && typeof imageAsset === 'object' && imageAsset.base64) {
+                    const arrayBuffer = decode(imageAsset.base64);
+                    const filePath = `${fileName}.jpg`;
+                    const contentType = imageAsset.mimeType || 'image/jpeg';
+    
+                    const { error: uploadError } = await supabase.storage
+                        .from('about-images')
+                        .upload(filePath, arrayBuffer, { contentType, upsert: true });
+    
+                    if (uploadError) throw uploadError;
+    
+                    const { data: urlData } = supabase.storage.from('about-images').getPublicUrl(filePath);
+                    if (!urlData) throw new Error(`Could not get public URL for ${fileName}.`);
+                    
+                    const imageUrl = `${urlData.publicUrl}?t=${new Date().getTime()}`;
+                    updates.push({ key: keyName, value: imageUrl });
+                }
+            };
+    
+            await handleImageUpload(aboutData.ownerImage, 'owner', 'about_owner_image');
+            await handleImageUpload(aboutData.ourShopImage, 'our_shop', 'about_our_shop_img');
+            await handleImageUpload(aboutData.customBouquetsImage, 'custom_bouquets', 'about_custom_bouquets_img');
+            await handleImageUpload(aboutData.eventDecorationsImage, 'event_decorations', 'about_event_decorations_img');
+            await handleImageUpload(aboutData.specialOrdersImage, 'special_orders', 'about_special_orders_img');
+            await handleImageUpload(aboutData.promises_responsibly_sourced_image, 'responsibly_sourced', 'promises_responsibly_sourced_image');
+            await handleImageUpload(aboutData.promises_crafted_by_experts_image, 'crafted_by_experts', 'promises_crafted_by_experts_image');
+            await handleImageUpload(aboutData.promises_caring_for_moments_image, 'caring_for_moments', 'promises_caring_for_moments_image');
+
+            const { error: upsertError } = await supabase
+                .from('app_content')
+                .upsert(updates, { onConflict: 'key' });
+
+            if (upsertError) throw upsertError;
+
+            Alert.alert('Success', 'About page content has been updated.');
+        } catch (error) {
+            console.error('Error saving about content:', error);
+            Alert.alert('Error saving about content', error.message);
+        } finally {
+            setIsSaving(false);
+            fetchAboutData();
+        }
+    };
+
+    if (loading) {
+        return <ActivityIndicator style={{ marginTop: 20 }} size="large" color="#ec4899" />;
     }
-  };
 
-  const handleSave = async () => {
-    setLoading(true);
-    try {
-      await adminAPI.updateAbout(formData);
-      Alert.alert('Success', 'About content updated');
-    } catch (error) {
-      Alert.alert('Error', 'Failed to update content');
-    } finally {
-      setLoading(false);
-    }
-  };
+    const getImageUri = (image) => image ? (typeof image === 'string' ? image : image.uri) : null;
 
-  if (loading && !formData.description) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#ec4899" />
-      </View>
+        <ScrollView style={styles.tabContent} keyboardShouldPersistTaps="handled">
+            <Text style={styles.tabTitle}>About Page Content</Text>
+            
+            <Text style={styles.inputLabel}>Our Story</Text>
+            <TextInput
+                style={[styles.input, { height: 150, textAlignVertical: 'top' }]}
+                value={aboutData.story}
+                onChangeText={text => setAboutData(prev => ({ ...prev, story: text }))}
+                placeholder="The story of the shop..."
+                multiline
+            />
+
+            <Text style={styles.inputLabel}>About Description</Text>
+            <TextInput
+                style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
+                value={aboutData.about_description}
+                onChangeText={text => setAboutData(prev => ({ ...prev, about_description: text }))}
+                placeholder="A short description for the about page..."
+                multiline
+            />
+
+            <Text style={styles.inputLabel}>Our Shop Image</Text>
+            <TouchableOpacity style={styles.imageUploadBox} onPress={() => pickImage('ourShopImage')}>
+                {getImageUri(aboutData.ourShopImage) ? (
+                  <Image source={{ uri: getImageUri(aboutData.ourShopImage) }} style={styles.uploadedImage} />
+                ) : (
+                  <View style={styles.imageUploadPlaceholder}>
+                    <Ionicons name="camera" size={40} color="#ec4899" />
+                    <Text style={styles.imageUploadText}>Tap to Upload Photo</Text>
+                  </View>
+                )}
+            </TouchableOpacity>
+            
+            <Text style={styles.inputLabel}>Our Promise</Text>
+            <TextInput
+                style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
+                value={aboutData.promise}
+                onChangeText={text => setAboutData(prev => ({ ...prev, promise: text }))}
+                placeholder="The shop's promise to customers..."
+                multiline
+            />
+
+            <Text style={styles.inputLabel}>Owner's Quote</Text>
+            <TextInput
+                style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
+                value={aboutData.ownerQuote}
+                onChangeText={text => setAboutData(prev => ({ ...prev, ownerQuote: text }))}
+                placeholder="A quote from the owner..."
+                multiline
+            />
+
+            <Text style={styles.inputLabel}>Owner's Picture</Text>
+            <TouchableOpacity style={styles.imageUploadBox} onPress={() => pickImage('ownerImage')}>
+                {getImageUri(aboutData.ownerImage) ? (
+                  <Image source={{ uri: getImageUri(aboutData.ownerImage) }} style={styles.uploadedImage} />
+                ) : (
+                  <View style={styles.imageUploadPlaceholder}>
+                    <Ionicons name="camera" size={40} color="#ec4899" />
+                    <Text style={styles.imageUploadText}>Tap to Upload Photo</Text>
+                  </View>
+                )}
+            </TouchableOpacity>
+
+            <View style={styles.menuDivider} />
+            <Text style={styles.sectionTitle}>Services</Text>
+
+            <Text style={styles.inputLabel}>Custom Bouquets Description</Text>
+            <TextInput
+                style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
+                value={aboutData.customBouquetsDescription}
+                onChangeText={text => setAboutData(prev => ({ ...prev, customBouquetsDescription: text }))}
+                placeholder="Description for custom bouquets service..."
+                multiline
+            />
+            <Text style={styles.inputLabel}>Custom Bouquets Image</Text>
+            <TouchableOpacity style={styles.imageUploadBox} onPress={() => pickImage('customBouquetsImage')}>
+                {getImageUri(aboutData.customBouquetsImage) ? (
+                  <Image source={{ uri: getImageUri(aboutData.customBouquetsImage) }} style={styles.uploadedImage} />
+                ) : (
+                  <View style={styles.imageUploadPlaceholder}>
+                    <Ionicons name="camera" size={40} color="#ec4899" />
+                    <Text style={styles.imageUploadText}>Tap to Upload Photo</Text>
+                  </View>
+                )}
+            </TouchableOpacity>
+
+            <View style={styles.menuDivider} />
+
+            <Text style={styles.inputLabel}>Event Decorations Description</Text>
+            <TextInput
+                style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
+                value={aboutData.eventDecorationsDescription}
+                onChangeText={text => setAboutData(prev => ({ ...prev, eventDecorationsDescription: text }))}
+                placeholder="Description for event decorations service..."
+                multiline
+            />
+            <Text style={styles.inputLabel}>Event Decorations Image</Text>
+            <TouchableOpacity style={styles.imageUploadBox} onPress={() => pickImage('eventDecorationsImage')}>
+                {getImageUri(aboutData.eventDecorationsImage) ? (
+                  <Image source={{ uri: getImageUri(aboutData.eventDecorationsImage) }} style={styles.uploadedImage} />
+                ) : (
+                  <View style={styles.imageUploadPlaceholder}>
+                    <Ionicons name="camera" size={40} color="#ec4899" />
+                    <Text style={styles.imageUploadText}>Tap to Upload Photo</Text>
+                  </View>
+                )}
+            </TouchableOpacity>
+
+            <View style={styles.menuDivider} />
+
+            <Text style={styles.inputLabel}>Special Orders Description</Text>
+            <TextInput
+                style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
+                value={aboutData.specialOrdersDescription}
+                onChangeText={text => setAboutData(prev => ({ ...prev, specialOrdersDescription: text }))}
+                placeholder="Description for special orders service..."
+                multiline
+            />
+
+            <View style={styles.menuDivider} />
+            <Text style={styles.sectionTitle}>Promises</Text>
+
+            <Text style={styles.inputLabel}>Responsibly Sourced Description</Text>
+            <TextInput
+                style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
+                value={aboutData.promises_responsibly_sourced_description}
+                onChangeText={text => setAboutData(prev => ({ ...prev, promises_responsibly_sourced_description: text }))}
+                placeholder="Description for responsibly sourced..."
+                multiline
+            />
+            <Text style={styles.inputLabel}>Responsibly Sourced Image</Text>
+            <TouchableOpacity style={styles.imageUploadBox} onPress={() => pickImage('promises_responsibly_sourced_image')}>
+                {getImageUri(aboutData.promises_responsibly_sourced_image) ? (
+                  <Image source={{ uri: getImageUri(aboutData.promises_responsibly_sourced_image) }} style={styles.uploadedImage} />
+                ) : (
+                  <View style={styles.imageUploadPlaceholder}>
+                    <Ionicons name="camera" size={40} color="#ec4899" />
+                    <Text style={styles.imageUploadText}>Tap to Upload Photo</Text>
+                  </View>
+                )}
+            </TouchableOpacity>
+
+            <Text style={styles.inputLabel}>Crafted by Experts Description</Text>
+            <TextInput
+                style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
+                value={aboutData.promises_crafted_by_experts_description}
+                onChangeText={text => setAboutData(prev => ({ ...prev, promises_crafted_by_experts_description: text }))}
+                placeholder="Description for crafted by experts..."
+                multiline
+            />
+            <Text style={styles.inputLabel}>Crafted by Experts Image</Text>
+            <TouchableOpacity style={styles.imageUploadBox} onPress={() => pickImage('promises_crafted_by_experts_image')}>
+                {getImageUri(aboutData.promises_crafted_by_experts_image) ? (
+                  <Image source={{ uri: getImageUri(aboutData.promises_crafted_by_experts_image) }} style={styles.uploadedImage} />
+                ) : (
+                  <View style={styles.imageUploadPlaceholder}>
+                    <Ionicons name="camera" size={40} color="#ec4899" />
+                    <Text style={styles.imageUploadText}>Tap to Upload Photo</Text>
+                  </View>
+                )}
+            </TouchableOpacity>
+
+            <Text style={styles.inputLabel}>Caring for Moments Description</Text>
+            <TextInput
+                style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
+                value={aboutData.promises_caring_for_moments_description}
+                onChangeText={text => setAboutData(prev => ({ ...prev, promises_caring_for_moments_description: text }))}
+                placeholder="Description for caring for moments..."
+                multiline
+            />
+            <Text style={styles.inputLabel}>Caring for Moments Image</Text>
+            <TouchableOpacity style={styles.imageUploadBox} onPress={() => pickImage('promises_caring_for_moments_image')}>
+                {getImageUri(aboutData.promises_caring_for_moments_image) ? (
+                  <Image source={{ uri: getImageUri(aboutData.promises_caring_for_moments_image) }} style={styles.uploadedImage} />
+                ) : (
+                  <View style={styles.imageUploadPlaceholder}>
+                    <Ionicons name="camera" size={40} color="#ec4899" />
+                    <Text style={styles.imageUploadText}>Tap to Upload Photo</Text>
+                  </View>
+                )}
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[styles.addButton, {alignSelf: 'center', marginTop: 20}]} onPress={handleSave} disabled={isSaving}>
+                <Text style={styles.addButtonText}>{isSaving ? 'Saving...' : 'Save Changes'}</Text>
+            </TouchableOpacity>
+        </ScrollView>
     );
-  }
-
-  return (
-    <ScrollView style={styles.tabContent}>
-      <Text style={styles.tabTitle}>About Page Management</Text>
-
-      <Text style={styles.inputLabel}>Our Story</Text>
-      <TextInput
-        style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
-        multiline
-        value={formData.description}
-        onChangeText={(text) => setFormData({ ...formData, description: text })}
-        placeholder="Enter your shop's story..."
-      />
-
-      <Text style={styles.inputLabel}>Our Promise</Text>
-      <TextInput
-        style={[styles.input, { height: 80, textAlignVertical: 'top' }]}
-        multiline
-        value={formData.mission}
-        onChangeText={(text) => setFormData({ ...formData, mission: text })}
-        placeholder="Enter your mission/promise..."
-      />
-
-      <Text style={styles.inputLabel}>Owner Quote (Vision)</Text>
-      <TextInput
-        style={[styles.input, { height: 60, textAlignVertical: 'top' }]}
-        multiline
-        value={formData.vision}
-        onChangeText={(text) => setFormData({ ...formData, vision: text })}
-        placeholder="Enter a quote..."
-      />
-
-      <TouchableOpacity
-        style={[styles.addButton, { marginTop: 20 }]}
-        onPress={handleSave}
-        disabled={loading}
-      >
-        <Text style={styles.addButtonText}>{loading ? 'Saving...' : 'Save Changes'}</Text>
-      </TouchableOpacity>
-      <View style={{ height: 50 }} />
-    </ScrollView>
-  );
 };
 
 // ==================== CONTACT TAB ====================
 const ContactTab = () => {
-  const [formData, setFormData] = useState({
-    address: '',
-    phone: '',
-    email: '',
-    map_url: ''
-  });
-  const [loading, setLoading] = useState(false);
+    const [contactInfo, setContactInfo] = useState({
+        address: '',
+        phone: '',
+        email: '',
+        mapUrl: ''
+    });
+    const [loading, setLoading] = useState(true);
+    const [isSaving, setIsSaving] = useState(false);
 
-  useEffect(() => {
-    loadData();
-  }, []);
+    const fetchContactInfo = async () => {
+        setLoading(true);
+        try {
+            const { data, error } = await supabase
+                .from('app_content')
+                .select('key, value')
+                .in('key', ['contact_address', 'contact_phone', 'contact_email', 'contact_map_url']);
 
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      const response = await adminAPI.getContact();
-      if (response.data.info) {
-        setFormData(response.data.info);
-      }
-    } catch (error) {
-      console.error('Error loading contact:', error);
-    } finally {
-      setLoading(false);
+            if (error) throw error;
+
+            const info = data.reduce((acc, { key, value }) => {
+                if (key === 'contact_address') acc.address = value;
+                if (key === 'contact_phone') acc.phone = value;
+                if (key === 'contact_email') acc.email = value;
+                if (key === 'contact_map_url') acc.mapUrl = value;
+                return acc;
+            }, { address: '', phone: '', email: '', mapUrl: '' });
+            setContactInfo(info);
+        } catch (error) {
+            Alert.alert('Error fetching contact info', error.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchContactInfo();
+    }, []);
+
+    const handleSave = async () => {
+        setIsSaving(true);
+        try {
+            const updates = [
+                { key: 'contact_address', value: contactInfo.address },
+                { key: 'contact_phone', value: contactInfo.phone },
+                { key: 'contact_email', value: contactInfo.email },
+                { key: 'contact_map_url', value: contactInfo.mapUrl },
+            ];
+
+            const { data: existingKeysData, error: fetchError } = await supabase
+              .from('app_content')
+              .select('key')
+              .in('key', updates.map(u => u.key));
+            
+            if(fetchError) throw fetchError;
+
+            const existingKeys = existingKeysData.map(item => item.key);
+            const toUpdate = updates.filter(u => existingKeys.includes(u.key));
+            const toInsert = updates.filter(u => !existingKeys.includes(u.key) && u.value);
+
+            if (toUpdate.length > 0) {
+              for (const item of toUpdate) {
+                const { error } = await supabase
+                  .from('app_content')
+                  .update({ value: item.value, updated_at: new Date().toISOString() })
+                  .eq('key', item.key);
+                if (error) throw new Error(`Failed to update ${item.key}: ${error.message}`);
+              }
+            }
+
+            if (toInsert.length > 0) {
+              const { error } = await supabase.from('app_content').insert(toInsert);
+              if (error) throw new Error(`Failed to insert new keys: ${error.message}`);
+            }
+
+            Alert.alert('Success', 'Contact information has been updated.');
+        } catch (error) {
+            Alert.alert('Error saving contact info', error.message);
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    if (loading) {
+        return <ActivityIndicator style={{ marginTop: 20 }} size="large" color="#ec4899" />;
     }
-  };
 
-  const handleSave = async () => {
-    setLoading(true);
-    try {
-      await adminAPI.updateContact(formData);
-      Alert.alert('Success', 'Contact info updated');
-    } catch (error) {
-      Alert.alert('Error', 'Failed to update info');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (loading && !formData.address) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#ec4899" />
-      </View>
+        <ScrollView style={styles.tabContent} keyboardShouldPersistTaps="handled">
+            <Text style={styles.tabTitle}>Contact Page Settings</Text>
+            
+            <Text style={styles.inputLabel}>Address</Text>
+            <TextInput
+                style={styles.input}
+                value={contactInfo.address}
+                onChangeText={text => setContactInfo(prev => ({ ...prev, address: text }))}
+                placeholder="Shop Address"
+            />
+            
+            <Text style={styles.inputLabel}>Phone Number</Text>
+            <TextInput
+                style={styles.input}
+                value={contactInfo.phone}
+                onChangeText={text => setContactInfo(prev => ({ ...prev, phone: text }))}
+                placeholder="Contact Phone"
+                keyboardType="phone-pad"
+            />
+
+            <Text style={styles.inputLabel}>Email</Text>
+            <TextInput
+                style={styles.input}
+                value={contactInfo.email}
+                onChangeText={text => setContactInfo(prev => ({ ...prev, email: text }))}
+                placeholder="Contact Email"
+                keyboardType="email-address"
+                autoCapitalize="none"
+            />
+
+            <Text style={styles.inputLabel}>Google Maps URL (Embed)</Text>
+            <TextInput
+                style={[styles.input, { height: 120, textAlignVertical: 'top' }]}
+                value={contactInfo.mapUrl}
+                onChangeText={text => setContactInfo(prev => ({ ...prev, mapUrl: text }))}
+                placeholder="Google Maps Embed URL"
+                multiline
+            />
+
+            <TouchableOpacity style={[styles.addButton, {alignSelf: 'center', marginTop: 20}]} onPress={handleSave} disabled={isSaving}>
+                <Text style={styles.addButtonText}>{isSaving ? 'Saving...' : 'Save Changes'}</Text>
+            </TouchableOpacity>
+        </ScrollView>
     );
-  }
-
-  return (
-    <ScrollView style={styles.tabContent}>
-      <Text style={styles.tabTitle}>Contact Page Management</Text>
-
-      <Text style={styles.inputLabel}>Address</Text>
-      <TextInput
-        style={styles.input}
-        value={formData.address}
-        onChangeText={(text) => setFormData({ ...formData, address: text })}
-        placeholder="Full Address"
-      />
-
-      <Text style={styles.inputLabel}>Phone</Text>
-      <TextInput
-        style={styles.input}
-        value={formData.phone}
-        onChangeText={(text) => setFormData({ ...formData, phone: text })}
-        placeholder="Phone Number"
-      />
-
-      <Text style={styles.inputLabel}>Email</Text>
-      <TextInput
-        style={styles.input}
-        value={formData.email}
-        onChangeText={(text) => setFormData({ ...formData, email: text })}
-        placeholder="Email Address"
-      />
-
-      <Text style={styles.inputLabel}>Map URL</Text>
-      <TextInput
-        style={styles.input}
-        value={formData.map_url}
-        onChangeText={(text) => setFormData({ ...formData, map_url: text })}
-        placeholder="Google Maps Embed URL"
-      />
-
-      <TouchableOpacity
-        style={[styles.addButton, { marginTop: 20 }]}
-        onPress={handleSave}
-        disabled={loading}
-      >
-        <Text style={styles.addButtonText}>{loading ? 'Saving...' : 'Save Changes'}</Text>
-      </TouchableOpacity>
-      <View style={{ height: 50 }} />
-    </ScrollView>
-  );
 };
 
 // ==================== EMPLOYEES TAB ====================
@@ -2577,6 +3644,8 @@ const EmployeesTab = () => {
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [employeeToDelete, setEmployeeToDelete] = useState(null);
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -2590,10 +3659,18 @@ const EmployeesTab = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const response = await adminAPI.getEmployees();
-      setEmployees(response.data.employees || []);
+        const { data, error } = await supabase
+            .from('users')
+            .select('*')
+            .eq('role', 'employee');
+
+        if (error) {
+            throw error;
+        }
+      setEmployees(data || []);
     } catch (error) {
       console.error('Error loading employees:', error);
+      Alert.alert('Error', 'Failed to load employees.');
     } finally {
       setLoading(false);
     }
@@ -2604,37 +3681,90 @@ const EmployeesTab = () => {
       Alert.alert('Error', 'All fields are required');
       return;
     }
+    if (formData.password.length < 6) {
+        Alert.alert('Error', 'Password must be at least 6 characters long.');
+        return;
+    }
 
     setLoading(true);
     try {
-      await adminAPI.addEmployee(formData);
-      Alert.alert('Success', 'Employee added');
+      // 1. Create the user in Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: formData.email,
+        password: formData.password,
+        options: {
+          data: {
+            name: formData.name,
+            role: 'employee', // Assign role in metadata
+          },
+        },
+      });
+
+      if (authError) {
+        throw authError;
+      }
+
+      if (!authData.user) {
+          throw new Error("User was not created in authentication system.");
+      }
+
+      // 2. Insert the user into the public.users table
+      const { error: insertError } = await supabase
+        .from('users')
+        .insert({
+          id: authData.user.id,
+          name: formData.name,
+          email: formData.email,
+          role: 'employee', // Explicitly set role in the table
+        });
+
+      if (insertError) {
+          // If insert fails, we should ideally delete the auth user to avoid orphans
+          await supabase.auth.admin.deleteUser(authData.user.id);
+          throw insertError;
+      }
+
+      let successMessage = 'Employee added successfully.';
+      if (authData.user && !authData.session) {
+        successMessage = 'Employee added successfully! Please check the employee\'s email to confirm their account.';
+      }
+      Alert.alert('Success', successMessage);
       setModalVisible(false);
       setFormData({ name: '', email: '', password: '' });
       loadData();
     } catch (error) {
-      Alert.alert('Error', error.response?.data?.message || 'Failed to add employee');
+      Alert.alert('Error', error.message || 'Failed to add employee');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDelete = (id) => {
-    Alert.alert('Delete', 'Are you sure?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await adminAPI.deleteEmployee(id);
-            loadData();
-          } catch (error) {
-            Alert.alert('Error', 'Failed to delete employee');
-          }
+  const handleDelete = (employee) => {
+    setEmployeeToDelete(employee);
+    setDeleteModalVisible(true);
+  };
+  
+  const confirmDelete = async () => {
+    if (!employeeToDelete) return;
+    
+    setLoading(true);
+    setDeleteModalVisible(false);
+
+    try {
+        const { error } = await supabase.rpc('delete_user', { user_id: employeeToDelete.id });
+
+        if (error) {
+            throw error;
         }
-      }
-    ]);
+
+        Alert.alert('Success', 'Employee deleted successfully.');
+        loadData();
+    } catch (error) {
+        Alert.alert('Error', error.message || 'Failed to delete employee.');
+    } finally {
+        setLoading(false);
+        setEmployeeToDelete(null);
+    }
   };
 
   return (
@@ -2662,7 +3792,7 @@ const EmployeesTab = () => {
             </View>
             <TouchableOpacity
               style={styles.deleteButtonSmall}
-              onPress={() => handleDelete(item.id)}
+              onPress={() => handleDelete(item)}
             >
               <Ionicons name="trash-outline" size={20} color="#f44336" />
             </TouchableOpacity>
@@ -2725,6 +3855,38 @@ const EmployeesTab = () => {
                 disabled={loading}
               >
                 <Text style={styles.buttonText}>{loading ? 'Adding...' : 'Add Employee'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+      
+      {/* Delete Confirmation Modal */}
+      <Modal visible={deleteModalVisible} animationType="fade" transparent>
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Confirm Deletion</Text>
+              <TouchableOpacity onPress={() => setDeleteModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#333" />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.modalText}>Are you sure you want to delete the employee '{employeeToDelete?.name}'? This action is irreversible.</Text>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => setDeleteModalVisible(false)}
+              >
+                <Text style={styles.buttonText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalButton, styles.deleteButton]}
+                onPress={confirmDelete}
+                disabled={loading}
+              >
+                <Text style={styles.buttonText}>{loading ? 'Deleting...' : 'Delete'}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -2797,6 +3959,23 @@ const styles = StyleSheet.create({
   navTextActive: {
     color: '#ec4899',
     fontWeight: '600',
+  },
+  navBadge: {
+    position: 'absolute',
+    top: -5,
+    right: 20,
+    backgroundColor: 'red',
+    borderRadius: 10,
+    width: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 4,
+  },
+  navBadgeText: {
+      color: 'white',
+      fontSize: 12,
+      fontWeight: 'bold',
   },
   tabContent: {
     flex: 1,
@@ -2912,10 +4091,22 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#ec4899',
   },
-  productStock: {
-    fontSize: 14,
-    color: '#666',
-  },
+    productStock: {
+      fontSize: 14,
+      color: '#666',
+      fontWeight: '500',
+    },
+    inputHelperText: {
+      fontSize: 12,
+      color: '#666',
+      marginBottom: 5,
+    },
+    productDescription: {
+      fontSize: 12,
+      color: '#777',
+      marginTop: 4,
+      marginBottom: 5,
+    },
   productActions: {
     flexDirection: 'row',
     gap: 10,
@@ -3705,6 +4896,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
   },
+  switchStatusText: {
+    fontSize: 14,
+    color: '#666',
+    marginLeft: 10,
+    fontWeight: '600',
+  },
   // Sales Tab Styles
   salesSummaryContainer: {
     flexDirection: 'row',
@@ -3746,13 +4943,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 15,
-  },
-  statRow: {
+      sectionTitle: {
+      fontSize: 18,
+      fontWeight: 'bold',
+      color: '#333',
+      marginBottom: 20,
+    },  statRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingVertical: 8,
@@ -3888,6 +5084,177 @@ const styles = StyleSheet.create({
     color: '#2196F3',
     fontWeight: '500',
   },
+  // Messaging Tab Styles
+  chatItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 15,
+    marginBottom: 10,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+  },
+  chatAvatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#ffe0f0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 15,
+  },
+  chatAvatarText: {
+    color: '#ec4899',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  chatPreview: {
+    flex: 1,
+  },
+  chatName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  chatMessage: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 2,
+  },
+  chatTime: {
+    fontSize: 12,
+    color: '#999',
+    textAlign: 'right',
+  },
+  chatNameUnread: {
+    fontWeight: 'bold',
+  },
+  chatMessageUnread: {
+    color: '#333',
+    fontWeight: 'bold',
+  },
+  chatMeta: {
+    alignItems: 'flex-end',
+  },
+  unreadBadge: {
+    backgroundColor: '#ec4899',
+    borderRadius: 10,
+    height: 20,
+    minWidth: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 4,
+  },
+  unreadText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  chatHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  chatHeaderTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  chatMessagesContainer: {
+    flex: 1,
+    backgroundColor: '#f8f9fa',
+  },
+  chatInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+    backgroundColor: '#fff',
+  },
+  chatInput: {
+    flex: 1,
+    height: 40,
+    backgroundColor: '#f0f2f5',
+    borderRadius: 20,
+    paddingHorizontal: 15,
+    marginRight: 10,
+    fontSize: 16,
+    color: '#333',
+  },
+  chatSendButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#ec4899',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  messageWrapper: {
+    flexDirection: 'row',
+    marginBottom: 10,
+    alignItems: 'flex-end',
+  },
+  messageSentWrapper: {
+    justifyContent: 'flex-end',
+  },
+  messageReceivedWrapper: {
+    justifyContent: 'flex-start',
+  },
+  messageBubble: {
+    maxWidth: '75%',
+    padding: 12,
+    borderRadius: 18,
+  },
+  messageSentBubble: {
+    backgroundColor: '#ec4899',
+    borderBottomRightRadius: 4,
+  },
+  messageReceivedBubble: {
+    backgroundColor: '#fff',
+    borderBottomLeftRadius: 4,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 1,
+  },
+  messageTextSent: {
+    color: '#fff',
+    fontSize: 15,
+  },
+  messageTextReceived: {
+    color: '#333',
+    fontSize: 15,
+  },
+  messageTime: {
+    fontSize: 11,
+    marginTop: 4,
+    alignSelf: 'flex-end',
+  },
+  messageTimeSent: {
+    color: '#fff',
+    opacity: 0.7,
+  },
+  messageTimeReceived: {
+    color: '#999',
+  },
+  messageAvatar: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#e0e0e0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
   detailSection: {
     marginBottom: 15,
     borderBottomWidth: 1,
@@ -3997,6 +5364,519 @@ const styles = StyleSheet.create({
     color: '#fff', // White text for the blue background
     fontSize: 14,
     fontWeight: '600',
+  },
+  // Styles for Enhanced Orders Tab
+  eoContainer: {
+    flex: 1,
+    backgroundColor: '#F9FAFB', // gray-50
+  },
+  eoTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#1F2937', // gray-800
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 8,
+  },
+  eoCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    marginVertical: 8,
+    overflow: 'hidden',
+    borderLeftWidth: 4,
+    borderLeftColor: '#ec4899', // pink-500
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { "width": 0, "height": 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+  },
+  eoCardHeader: {
+    backgroundColor: '#FEF2F7', // Lighter pink/purple mix
+    padding: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    borderBottomWidth: 1,
+    borderColor: '#F3F4F6',
+  },
+  eoLabel: {
+    fontSize: 12,
+    color: '#6B7280', // gray-500
+    marginBottom: 2,
+  },
+  eoOrderId: {
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1F2937',
+  },
+  eoDateBadge: {
+    backgroundColor: '#ec4899',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 999,
+    marginBottom: 8,
+  },
+  eoDateText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  eoStatusBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 999,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  eoStatusText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  eoProgressSection: {
+    padding: 16,
+    paddingTop: 8,
+    backgroundColor: '#FEF2F7',
+  },
+  eoProgressMeta: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  eoProgressLabel: {
+    fontSize: 12,
+    color: '#4B5567',
+  },
+  eoProgressBarBg: {
+    height: 8,
+    backgroundColor: '#E5E7EB',
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  eoProgressBarFill: {
+    height: '100%',
+    borderRadius: 4,
+  },
+  eoSection: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderColor: '#F3F4F6',
+  },
+  eoCustomerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  eoAvatarContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  eoAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#A78BFA', // purple-400
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  eoAvatarText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 18,
+  },
+  eoCustomerName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1F2937',
+  },
+  eoActionButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  eoIconBtnGreen: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#22C55E',
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 2,
+  },
+  eoIconBtnBlue: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#3B82F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 2,
+  },
+  eoContactInfo: {
+    gap: 8,
+    marginTop: 4,
+  },
+  eoInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  eoInfoText: {
+    fontSize: 14,
+    color: '#4B5567',
+    flex: 1,
+  },
+  eoDetailText: {
+    fontSize: 14,
+    color: '#4B5567',
+  },
+  eoInfoTextBold: {
+    fontSize: 14,
+    color: '#1F2937',
+    fontWeight: '600',
+  },
+  eoSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  eoSectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1F2937',
+  },
+  eoItemCard: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  eoItemImage: {
+    width: 64,
+    height: 64,
+    borderRadius: 8,
+    backgroundColor: '#FBCFE8', // pink-200
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  eoItemName: {
+    fontWeight: '500',
+    color: '#1F2937',
+  },
+  eoItemQuantity: {
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  eoItemPrice: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#DB2777', // pink-600
+    marginTop: 4,
+  },
+  eoInstructions: {
+      marginTop: 12,
+      backgroundColor: '#EFF6FF', // blue-50
+      borderColor: '#BFDBFE', // blue-200
+      borderWidth: 1,
+      borderRadius: 8,
+      padding: 12,
+  },
+  eoInstructionsTitle: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: '#1E40AF', // blue-800
+      marginBottom: 4,
+  },
+  eoInstructionsText: {
+      fontSize: 12,
+      color: '#1D4ED8', // blue-700
+  },
+  eoFlexBetween: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  eoPaymentStatus: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  eoPaymentStatusText: {
+    color: '#fff', // Changed to white as requested
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  eoViewReceipt: {
+    color: '#3B82F6', // Matched with delivery badge color
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  eoDivider: {
+    borderTopWidth: 1,
+    borderColor: '#E5E7EB',
+    paddingTop: 12,
+    marginTop: 12,
+  },
+  eoPriceRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  eoTotalLabel: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1F2937',
+  },
+  eoTotalValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#DB2777', // pink-600
+  },
+  eoFooter: {
+    backgroundColor: '#F9FAFB',
+    padding: 16,
+  },
+  eoMainBtn: {
+    paddingVertical: 14,
+    borderRadius: 12,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { "width": 0, "height": 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  eoMainBtnText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 16,
+  },
+  
+  // New Status Modal Styles
+  statusModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  statusModalContainer: {
+    backgroundColor: 'white',
+    borderRadius: 24,
+    shadowColor: '#000',
+    shadowOffset: { "width": 0, "height": 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 20,
+    width: '100%',
+    maxWidth: 400,
+    overflow: 'hidden',
+  },
+  statusModalHeader: {
+    backgroundColor: '#8B5CF6', // purple-500
+    padding: 16,
+  },
+  statusModalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: 'white',
+  },
+  timelineOrderNumber: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginBottom: 24,
+  },
+  statusModalScrollView: {
+    maxHeight: 400,
+    padding: 16,
+  },
+  statusOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 12,
+    backgroundColor: '#F3F4F6',
+  },
+  statusOptionSelected: {
+    backgroundColor: '#ec4899', // pink-500
+    elevation: 4,
+  },
+  statusOptionIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  statusOptionText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1F2937',
+  },
+  statusModalFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderTopWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#F9FAFB',
+    gap: 8,
+  },
+  statusConfirmButton: {
+    backgroundColor: '#ec4899',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    flex: 1,
+  },
+  statusConfirmButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  statusCloseButton: {
+    backgroundColor: '#E5E7EB',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    flex: 1,
+  },
+  statusCloseButtonText: {
+    color: '#374151',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+
+  // Timeline Modal Styles
+  timelineModalContainer: {
+    backgroundColor: '#F9FAFB', // gray-50
+    borderRadius: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 20,
+    width: '100%',
+    maxWidth: 400,
+    overflow: 'hidden',
+  },
+  timelineScrollView: {
+    maxHeight: 500,
+    padding: 24,
+  },
+  timelineStepContainer: {
+    position: 'relative',
+  },
+  timelineStep: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 16,
+    paddingBottom: 24,
+  },
+  timelineIconContainer: {
+    position: 'relative',
+    zIndex: 10,
+    flexShrink: 0,
+  },
+  timelineCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#E5E7EB', // gray-200
+  },
+  timelineCirclePast: {
+    backgroundColor: '#10B981', // emerald-500
+  },
+  timelineCircleSelected: {
+    backgroundColor: '#ec4899', // pink-500
+    transform: [{ scale: 1.1 }],
+    elevation: 5,
+  },
+  timelineCircleText: {
+    color: '#6B7280',
+    fontWeight: '600',
+  },
+  timelineLine: {
+    position: 'absolute',
+    left: 19.5,
+    top: 40,
+    bottom: -16, // Adjust to connect properly
+    width: 2,
+    backgroundColor: '#E5E7EB', // gray-200
+  },
+  timelineLineActive: {
+    backgroundColor: '#F472B6', // pink-300
+  },
+  timelineTextContainer: {
+    flex: 1,
+    paddingTop: 4,
+  },
+  timelineLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 2,
+  },
+  timelineLabelPast: {
+    color: '#059669', // emerald-600
+  },
+  timelineLabelSelected: {
+    color: '#DB2777', // pink-600
+  },
+  timelineDescription: {
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  timelineDescriptionSelected: {
+    color: '#ec4899', // pink-500
+  },
+  timelineActions: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  timelineCancelButton: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: '#FEE2E2', // red-50
+  },
+  timelineCancelButtonSelected: {
+    backgroundColor: '#EF4444', // red-500
+  },
+  timelineCancelButtonText: {
+    color: '#EF4444',
+    fontWeight: '600',
+  },
+  eoDeliveryTypeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+  },
+  eoDeliveryTypeBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold',
   },
 });
 

@@ -3,14 +3,14 @@ import { useParams, Link } from 'react-router-dom';
 import '../styles/Shop.css';
 
 const OrderSuccess = () => {
-    const { orderId } = useParams();
+    const { orderNumber } = useParams();
     const [order, setOrder] = useState(null);
 
     useEffect(() => {
         const orders = JSON.parse(localStorage.getItem('orders') || '[]');
-        const foundOrder = orders.find(o => o.id === orderId);
+        const foundOrder = orders.find(o => o.order_number === orderNumber);
         setOrder(foundOrder);
-    }, [orderId]);
+    }, [orderNumber]);
 
     return (
         <div className="checkout-container">
@@ -47,7 +47,7 @@ const OrderSuccess = () => {
                                 <div className="mb-2">
                                     <small className="text-muted">Order Number</small>
                                     <h4 className="fw-bold mb-0" style={{ color: 'var(--shop-pink)' }}>
-                                        {orderId}
+                                        {orderNumber}
                                     </h4>
                                 </div>
                                 {order && (
@@ -133,7 +133,7 @@ const OrderSuccess = () => {
                             </div>
 
                             <div className="d-flex gap-3 justify-content-center flex-wrap">
-                                <Link to={`/order-tracking/${orderId}`} className="btn-buy-now px-4">
+                                <Link to={`/order-tracking/${orderNumber}`} className="btn-buy-now px-4">
                                     <i className="fas fa-shipping-fast me-2"></i>Track Order
                                 </Link>
                                 <Link to="/" className="btn-add-to-cart px-4">
