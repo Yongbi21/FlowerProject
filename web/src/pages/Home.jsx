@@ -247,6 +247,7 @@ const Home = ({ addToCart, products, categories }) => {
                                         <div className="product-body">
                                             <h5 className="product-title">{product.name}</h5>
                                             <p className="product-price">₱{product.price.toLocaleString()}</p>
+                                            {product.description && <p className="product-description">{product.description}</p>}
                                         </div>
                                     </Link>
                                     <div className="product-body pt-0">

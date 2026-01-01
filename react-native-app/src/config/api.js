@@ -362,6 +362,7 @@ export const adminAPI = {
 
 
                 users (
+                    id,
                     name,
                     email,
                     phone
@@ -408,7 +409,6 @@ export const adminAPI = {
                 customer_email: customerEmail,
                 customer_phone: customerPhone,
                 items: items,
-                users: undefined, // Remove the raw users object
                 order_items: undefined, // Remove the raw order_items object
             };
         });
@@ -441,6 +441,21 @@ export const adminAPI = {
 
         if (error) {
             console.error('Error updating order payment method:', error);
+            throw error;
+        }
+        return { data: { success: true, order: data } };
+    },
+
+    updateOrderPaymentStatus: async (id, status) => {
+        const { data, error } = await supabase
+            .from('orders')
+            .update({ payment_status: status })
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (error) {
+            console.error('Error updating order payment status:', error);
             throw error;
         }
         return { data: { success: true, order: data } };

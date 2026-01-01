@@ -84,16 +84,6 @@ const OrderTracking = () => {
                         stepIndex = 0;
                     }
 
-                    const paymentStepIndex = steps.findIndex(step => step.status === 'payment');
-                    if (
-                        transformedOrder.payment_method !== 'cod' &&
-                        transformedOrder.payment_status !== 'paid' &&
-                        stepIndex > paymentStepIndex &&
-                        paymentStepIndex !== -1
-                    ) {
-                        stepIndex = paymentStepIndex;
-                    }
-
                     setCurrentStep(stepIndex + 1);
                 }
             }
@@ -262,8 +252,15 @@ const OrderTracking = () => {
                                     Order Received
                                 </button>
                             )}
-                            <div className="current-status-badge">
-                                {trackingSteps[Math.min(currentStep, trackingSteps.length) - 1]?.title}
+
+                            <div 
+                                className="current-status-badge"
+                                style={order.status === 'cancelled' ? { backgroundColor: '#f44336', color: '#fff' } : {}}
+                            >
+                                {order.status === 'cancelled'
+                                    ? 'Order Cancelled'
+                                    : trackingSteps[Math.min(currentStep, trackingSteps.length) - 1]?.title
+                                }
                             </div>
                             <div className="expected-delivery">
                                 {!isFinalStep && (

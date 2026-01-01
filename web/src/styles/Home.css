@@ -222,6 +222,14 @@
     margin-bottom: 15px;
 }
 
+.product-description {
+    font-size: 0.9rem;
+    color: #666;
+    margin-bottom: 10px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .btn-add-cart {
     width: 100%;
     border: 2px solid var(--main-pink);

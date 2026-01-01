@@ -1,3 +1,11 @@
-Profile.jsx:360 Loaded 5 orders and 3 requests for current user
-client:810 [vite] hot updated: /src/pages/Customized.jsx
-Customized.jsx:199 Captured photo Base64: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAlgAAAJYCAYAAAC+ZpjcAAAAAXNSR0IArs4c6QAAHbFJREFUeF7t1j...
+C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\src\screens\AdminDashboard.js:1153 Uncaught TypeError: Cannot read properties of undefined (reading 'id')
+    at onPress (C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\src\screens\AdminDashboard.js:1153:65)
+    at onClick (C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-native-web\dist\modules\usePressEvents\PressResponder.js:314:13)
+    at executeDispatch (C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:16368:9)
+    at runWithFiberInDEV (C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:1519:30)
+    at processDispatchQueue (C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:16418:19)
+    at C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:17016:9
+    at batchedUpdates$1 (C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:3262:40)
+    at dispatchEventForPluginEventSystem (C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:16572:7)
+    at dispatchEvent (C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:20658:11)
+    at dispatchDiscreteEvent (C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:20626:11)
