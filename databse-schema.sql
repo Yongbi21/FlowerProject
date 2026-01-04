@@ -113,6 +113,7 @@ CREATE TABLE requests (
   type request_type NOT NULL,
   status request_status NOT NULL DEFAULT 'pending',
   data JSONB NOT NULL, -- Stores all form fields specific to the request type
+  contact_number VARCHAR(20),
   photo_url VARCHAR(255),
   notes TEXT,
   final_price DECIMAL(10, 2),

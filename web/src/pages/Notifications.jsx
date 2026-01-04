@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { supabase } from '../config/supabase';
 import { Link, useNavigate } from 'react-router-dom';
 import '../styles/Shop.css';
 
@@ -8,26 +9,22 @@ const Notifications = () => {
     const [filter, setFilter] = useState('all'); // all, unread, read
 
     useEffect(() => {
-        const loadNotifications = () => {
+        const loadFromLocalStorage = () => {
             const savedNotifications = JSON.parse(localStorage.getItem('notifications') || '[]');
-            // Sort by timestamp (newest first)
             savedNotifications.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
             setNotifications(savedNotifications);
         };
 
-        loadNotifications();
+        // Load initial data from local storage
+        loadFromLocalStorage();
 
-        // Listen for storage changes
-        const handleStorageChange = () => {
-            loadNotifications();
-        };
+        // The global listener in App.jsx will update localStorage and dispatch a 'storage' event.
+        // This listener reacts to that event to update the view.
+        window.addEventListener('storage', loadFromLocalStorage);
 
-        window.addEventListener('storage', handleStorageChange);
-        const interval = setInterval(loadNotifications, 1000);
-
+        // Cleanup the event listener when the component unmounts
         return () => {
-            window.removeEventListener('storage', handleStorageChange);
-            clearInterval(interval);
+            window.removeEventListener('storage', loadFromLocalStorage);
         };
     }, []);
 
@@ -39,13 +36,24 @@ const Notifications = () => {
 
     const unreadCount = notifications.filter(n => !n.read).length;
 
-    const handleNotificationClick = (notification) => {
-        // Mark as read
-        const updatedNotifications = notifications.map(n => 
+    const handleNotificationClick = async (notification) => {
+        // Optimistically update the UI to feel responsive
+        const updatedNotifications = notifications.map(n =>
             n.id === notification.id ? { ...n, read: true } : n
         );
         localStorage.setItem('notifications', JSON.stringify(updatedNotifications));
         setNotifications(updatedNotifications);
+
+        // Update the database in the background
+        try {
+            await supabase
+                .from('notifications')
+                .update({ is_read: true })
+                .eq('id', notification.id);
+        } catch (error) {
+            console.error("Error marking notification as read in DB:", error);
+            // Optional: Here you could revert the optimistic UI update on failure
+        }
 
         // Navigate if there's a link
         if (notification.link) {
@@ -53,23 +61,63 @@ const Notifications = () => {
         }
     };
 
-    const markAllAsRead = () => {
+    const markAllAsRead = async () => {
+        // Optimistic UI update
         const updatedNotifications = notifications.map(n => ({ ...n, read: true }));
         localStorage.setItem('notifications', JSON.stringify(updatedNotifications));
         setNotifications(updatedNotifications);
-    };
 
-    const clearAllNotifications = () => {
-        if (window.confirm('Are you sure you want to clear all notifications?')) {
-            localStorage.setItem('notifications', JSON.stringify([]));
-            setNotifications([]);
+        // Update database
+        const unreadIds = notifications.filter(n => !n.read).map(n => n.id);
+        if (unreadIds.length > 0) {
+            try {
+                await supabase
+                    .from('notifications')
+                    .update({ is_read: true })
+                    .in('id', unreadIds);
+            } catch (error) {
+                console.error("Error marking all as read in DB:", error);
+            }
         }
     };
 
-    const deleteNotification = (notificationId) => {
+    const clearAllNotifications = async () => {
+        if (window.confirm('Are you sure you want to clear all notifications?')) {
+            const allIds = notifications.map(n => n.id);
+            
+            // Optimistic UI update
+            localStorage.setItem('notifications', JSON.stringify([]));
+            setNotifications([]);
+
+            // Update database
+            if (allIds.length > 0) {
+                try {
+                    await supabase
+                        .from('notifications')
+                        .delete()
+                        .in('id', allIds);
+                } catch (error) {
+                    console.error("Error clearing all notifications from DB:", error);
+                }
+            }
+        }
+    };
+
+    const deleteNotification = async (notificationId) => {
+        // Optimistic UI update
         const updatedNotifications = notifications.filter(n => n.id !== notificationId);
         localStorage.setItem('notifications', JSON.stringify(updatedNotifications));
         setNotifications(updatedNotifications);
+
+        // Update database
+        try {
+            await supabase
+                .from('notifications')
+                .delete()
+                .eq('id', notificationId);
+        } catch (error) {
+            console.error("Error deleting notification from DB:", error);
+        }
     };
 
     const getNotificationIcon = (type) => {
@@ -252,4 +300,3 @@ const Notifications = () => {
 };
 
 export default Notifications;
-

@@ -9,6 +9,8 @@ import Login from './pages/Login'
 import Signup from './pages/Signup'
 import Wishlist from './pages/Wishlist'
 import Cart from './pages/Cart'
+import BookingCart from './pages/BookingCart'
+import BookingCheckout from './pages/BookingCheckout'
 import Customized from './pages/Customized'
 import BookEvent from './pages/BookEvent'
 import SpecialOrder from './pages/SpecialOrder'
@@ -19,6 +21,7 @@ import OrderTracking from './pages/OrderTracking'
 import Profile from './pages/Profile'
 import MyOrders from './pages/MyOrders'
 import Notifications from './pages/Notifications'
+import OrderBookingTracking from './pages/OrderBookingTracking';
 
 import { supabase } from './config/supabase';
 
@@ -82,6 +85,45 @@ function AppContent() {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // Global listener for real-time notifications
+  useEffect(() => {
+    if (user) {
+      const channel = supabase.channel(`public:notifications:user_id=eq.${user.id}`)
+        .on('postgres_changes', {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${user.id}`
+        }, (payload) => {
+          
+          const newNotification = {
+            id: payload.new.id,
+            title: payload.new.title,
+            message: payload.new.message,
+            link: payload.new.link,
+            read: payload.new.is_read,
+            timestamp: payload.new.created_at,
+            type: payload.new.type || 'default',
+            icon: payload.new.icon || null,
+          };
+
+          const existingNotifications = JSON.parse(localStorage.getItem('notifications') || '[]');
+          const updatedNotifications = [newNotification, ...existingNotifications];
+          const uniqueNotifications = Array.from(new Map(updatedNotifications.map(item => [item.id, item])).values());
+          localStorage.setItem('notifications', JSON.stringify(uniqueNotifications));
+          
+          // Dispatch storage event to trigger updates on the Notifications page
+          window.dispatchEvent(new Event('storage'));
+        })
+        .subscribe();
+
+      // Cleanup subscription on user change or logout
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }
+  }, [user]);
 
   const login = () => {
     // Old localStorage items for user will be cleared by logout or implicitly by new flow
@@ -164,6 +206,8 @@ function AppContent() {
         <Route path="/contact" element={<Contact />} />
         <Route path="/wishlist" element={<Wishlist cart={cart} addToCart={addToCart} />} />
         <Route path="/cart" element={<Cart cart={cart} updateCartItem={updateCartItem} removeFromCart={removeFromCart} />} />
+        <Route path="/booking-cart" element={<BookingCart user={user} />} />
+        <Route path="/booking-checkout" element={<BookingCheckout user={user} />} />
         <Route path="/login" element={<Login onLogin={login} />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/book-event" element={<BookEvent user={user} />} />
@@ -173,6 +217,7 @@ function AppContent() {
         <Route path="/checkout" element={<Checkout setCart={setCart} user={user} />} />
         <Route path="/order-success/:orderNumber" element={<OrderSuccess />} />
         <Route path="/order-tracking/:orderNumber" element={<OrderTracking />} />
+        <Route path="/request-tracking/:requestNumber" element={<OrderBookingTracking />} />
         <Route path="/profile" element={<Profile user={user} logout={logout} />} />
         <Route path="/my-orders" element={<MyOrders />} />
         <Route path="/notifications" element={<Notifications />} />

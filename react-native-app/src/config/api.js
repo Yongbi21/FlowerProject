@@ -511,11 +511,17 @@ export const adminAPI = {
                 request_number,
                 type,
                 status,
+                contact_number,
                 image_url,
                 notes,
                 data,
                 created_at,
+                delivery_method,
+                pickup_time,
+                final_price,
+                shipping_fee,
                 users (
+                    id,
                     name,
                     email,
                     phone
@@ -532,19 +538,24 @@ export const adminAPI = {
 
         const formattedRequests = requests.map(req => {
             const userData = req.users || {};
-            // requestData is no longer fetched
 
             return {
                 id: req.id,
                 request_number: req.request_number,
                 type: req.type,
-                status: req.status,
+                status: req.status === 'accepted' ? 'processing' : req.status,
+                contact_number: req.contact_number,
                 image_url: req.image_url,
                 notes: req.notes,
                 created_at: req.created_at,
+                delivery_method: req.delivery_method,
+                pickup_time: req.pickup_time,
+                final_price: req.final_price,
+                shipping_fee: req.shipping_fee,
                 user_name: userData.name,
                 user_email: userData.email,
                 user_phone: userData.phone,
+                users: userData,
                 data: req.data,
             };
         });
@@ -552,14 +563,43 @@ export const adminAPI = {
         return { data: { requests: formattedRequests } };
     },
 
-    provideQuote: async (id, data) => {
-        const requests = JSON.parse(await AsyncStorage.getItem('requests') || '[]');
-        const index = requests.findIndex(r => r.id === id);
-        if (index !== -1) {
-            requests[index] = { ...requests[index], ...data, status: 'quoted' };
-            await AsyncStorage.setItem('requests', JSON.stringify(requests));
+    provideQuote: async (id, price) => {
+        const { data: request, error } = await supabase
+            .from('requests')
+            .update({ 
+                final_price: price,
+                status: 'quoted' 
+            })
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (error) {
+            console.error('Error providing quote:', error);
+            throw error;
         }
-        return { data: { success: true } };
+        
+        // Send notification to the user who made the request
+        if (request && request.user_id) {
+            const notification = {
+                user_id: request.user_id,
+                title: `You have a new quote!`,
+                message: `A quote of ₱${parseFloat(price).toFixed(2)} has been provided for your request #${request.request_number}. Please review and accept it.`,
+                type: 'request_update',
+                link: '/profile' // Changed to '/profile' as requested
+            };
+
+            const { error: notificationError } = await supabase
+                .from('notifications')
+                .insert([notification]);
+            
+            if (notificationError) {
+                // Log the error but don't fail the whole operation
+                console.error("Failed to send quote notification:", notificationError);
+            }
+        }
+
+        return { data: { success: true, request: request } };
     },
 
     acceptRequest: async (id) => {
@@ -789,8 +829,56 @@ export const adminAPI = {
         return { data: [] };
     },
 
-    sendNotification: async (data) => {
-        return { data: { id: Date.now(), ...data } };
+    sendNotification: async (notificationData) => {
+        // If a specific user_id is provided, send to that user.
+        if (notificationData.user_id) {
+            const { data, error } = await supabase
+                .from('notifications')
+                .insert([notificationData])
+                .select()
+                .single();
+
+            if (error) {
+                console.error('Error sending single notification:', error);
+                throw error;
+            }
+            return { data };
+        }
+        
+        // If no user_id, it's a broadcast to all customers.
+        const { data: users, error: usersError } = await supabase
+            .from('users')
+            .select('id')
+            .eq('role', 'customer');
+
+        if (usersError) {
+            console.error('Error fetching users for broadcast:', usersError);
+            throw usersError;
+        }
+
+        if (!users || users.length === 0) {
+            return { data: { success: true, message: "No customers to notify." } };
+        }
+
+        const notifications = users.map(user => ({
+            user_id: user.id,
+            title: notificationData.title,
+            message: notificationData.message,
+            link: notificationData.link || null,
+            type: 'broadcast',
+        }));
+
+        const { data, error } = await supabase
+            .from('notifications')
+            .insert(notifications)
+            .select();
+
+        if (error) {
+            console.error('Error sending broadcast notifications:', error);
+            throw error;
+        }
+
+        return { data: { success: true, count: data ? data.length : 0 } };
     },
 
     deleteNotification: async (id) => {

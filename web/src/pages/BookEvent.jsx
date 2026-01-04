@@ -1,10 +1,14 @@
-import React, { useMemo, useState, useRef } from 'react';
-import RequestSuccessModal from '../components/RequestSuccessModal';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import Select from 'react-select';
 import { supabase } from '../config/supabase';
 import '../styles/BookEvent.css';
+import '../styles/Shop.css';
+
 
 const initialFormState = {
     recipientName: '',
+    contactNumber: '',
     eventType: '',
     eventDate: '',
     venue: '',
@@ -13,11 +17,131 @@ const initialFormState = {
 };
 
 const BookEvent = ({ user }) => {
+    const navigate = useNavigate();
     const [formData, setFormData] = useState(initialFormState);
     const [status, setStatus] = useState(null);
-    const [showModal, setShowModal] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
     const [imagePreview, setImagePreview] = useState(null);
     const fileInputRef = useRef(null);
+
+    const [showAddressModal, setShowAddressModal] = useState(false);
+    const [addressForm, setAddressForm] = useState({
+        street: '',
+        barangay: '',
+        city: '',
+        province: ''
+    });
+
+    // NEW STATE for address dropdowns
+    const [provinces, setProvinces] = useState([]);
+    const [cities, setCities] = useState([]);
+    const [barangays, setBarangays] = useState([]);
+    const [addressLoading, setAddressLoading] = useState(null); // Can be 'provinces', 'cities', 'barangays'
+    
+    const [selectedProvince, setSelectedProvince] = useState(null);
+    const [selectedCity, setSelectedCity] = useState(null);
+    const [selectedBarangay, setSelectedBarangay] = useState(null);
+
+    useEffect(() => {
+        if (user) {
+            setFormData(prev => ({
+                ...prev,
+                contactNumber: user.user_metadata?.phone || ''
+            }));
+        }
+    }, [user]);
+
+    // NEW: Fetch provinces when modal opens
+    useEffect(() => {
+        if (showAddressModal) {
+            setAddressLoading('provinces');
+            fetch('https://psgc.gitlab.io/api/provinces/')
+                .then(response => response.json())
+                .then(data => {
+                    const provinceOptions = data.map(p => ({ value: p.code, label: p.name }));
+                    setProvinces(provinceOptions);
+                })
+                .catch(error => console.error('Error fetching provinces:', error))
+                .finally(() => setAddressLoading(null));
+        }
+    }, [showAddressModal]);
+
+    // NEW: Fetch cities when province changes
+    useEffect(() => {
+        if (selectedProvince?.value) {
+            setAddressLoading('cities');
+            setCities([]);
+            setBarangays([]);
+            setSelectedCity(null);
+            setSelectedBarangay(null);
+            setAddressForm(prev => ({ ...prev, city: '', barangay: '' }));
+            
+            fetch(`https://psgc.gitlab.io/api/provinces/${selectedProvince.value}/cities-municipalities/`)
+                .then(response => response.json())
+                .then(data => {
+                    const cityOptions = data.map(c => ({ value: c.code, label: c.name }));
+                    setCities(cityOptions);
+                })
+                .catch(error => console.error('Error fetching cities:', error))
+                .finally(() => setAddressLoading(null));
+        } else {
+            setCities([]);
+            setBarangays([]);
+        }
+    }, [selectedProvince]);
+
+    // NEW: Fetch barangays when city changes
+    useEffect(() => {
+        if (selectedCity?.value) {
+            setAddressLoading('barangays');
+            setBarangays([]);
+            setSelectedBarangay(null);
+            setAddressForm(prev => ({ ...prev, barangay: '' }));
+
+            fetch(`https://psgc.gitlab.io/api/cities-municipalities/${selectedCity.value}/barangays/`)
+                .then(response => response.json())
+                .then(data => {
+                    const barangayOptions = data.map(b => ({ value: b.code, label: b.name }));
+                    setBarangays(barangayOptions);
+                })
+                .catch(error => console.error('Error fetching barangays:', error))
+                .finally(() => setAddressLoading(null));
+        } else {
+            setBarangays([]);
+        }
+    }, [selectedCity]);
+
+    useEffect(() => {
+        const savedInquiry = localStorage.getItem('bookingInquiry');
+        if (savedInquiry) {
+            const parsedInquiry = JSON.parse(savedInquiry);
+            if (parsedInquiry.requestData.type === 'booking') {
+                const {
+                    recipient_name,
+                    occasion,
+                    event_date,
+                    venue,
+                    notes,
+                    contact_number,
+                } = parsedInquiry.requestData;
+                
+                setFormData({
+                    recipientName: recipient_name || '',
+                    contactNumber: contact_number || user?.user_metadata?.phone || '',
+                    eventType: occasion || '',
+                    eventDate: event_date || '',
+                    venue: venue || '',
+                    details: notes || '',
+                    inspirationFile: null, // File object cannot be restored from JSON
+                });
+
+                if (parsedInquiry.image) {
+                    setImagePreview(parsedInquiry.image);
+                }
+            }
+        }
+    }, [user]);
+    
     const minEventDate = useMemo(() => {
         const now = new Date();
         const year = now.getFullYear();
@@ -33,7 +157,6 @@ const BookEvent = ({ user }) => {
             const file = files[0];
             setFormData((prev) => ({ ...prev, [name]: file }));
 
-            // Create preview
             const reader = new FileReader();
             reader.onloadend = () => {
                 setImagePreview(reader.result);
@@ -43,15 +166,21 @@ const BookEvent = ({ user }) => {
         }
 
         let nextValue = value;
-
         if (name === 'eventDate' && value) {
             nextValue = value < minEventDate ? minEventDate : value;
         }
+        setFormData((prev) => ({ ...prev, [name]: nextValue }));
+    };
 
-        setFormData((prev) => ({
-            ...prev,
-            [name]: nextValue,
-        }));
+    const handleSaveAddress = () => {
+        const { street, barangay, city, province } = addressForm;
+        if (!street || !barangay || !city || !province) {
+            alert('Please fill in all address fields.');
+            return;
+        }
+        const fullAddress = `${street}, ${barangay}, ${city}, ${province}`;
+        setFormData(prev => ({ ...prev, venue: fullAddress }));
+        setShowAddressModal(false);
     };
 
     const openFilePicker = () => {
@@ -70,70 +199,73 @@ const BookEvent = ({ user }) => {
     const handleSubmit = async (event) => {
         event.preventDefault();
         setStatus(null);
+        setIsSubmitting(true);
 
         if (!user) {
             setStatus({ type: 'error', message: 'You must be logged in to book an event.' });
+            setIsSubmitting(false);
             return;
         }
 
-        if (!user.user_metadata?.phone) {
-            setStatus({ type: 'error', message: 'Please add a phone number to your profile before booking an event.' });
+        if (!formData.contactNumber) {
+            setStatus({ type: 'error', message: 'Please provide a contact number.' });
+            setIsSubmitting(false);
             return;
         }
 
         try {
             let imageUrl = null;
-
             if (formData.inspirationFile) {
                 const file = formData.inspirationFile;
-                const fileName = `${Date.now()}_${file.name}`;
-                const { data: uploadData, error: uploadError } = await supabase.storage
+                const fileName = `${user.id}-${Date.now()}_${file.name}`;
+                const { error: uploadError } = await supabase.storage
                     .from('request-images')
                     .upload(fileName, file);
 
-                if (uploadError) {
-                    console.error('Error uploading image:', uploadError);
-                    setStatus({ type: 'error', message: 'Failed to upload image. Please try again.' });
-                    return;
-                }
-                
+                if (uploadError) throw uploadError;
+
                 const { data: urlData } = supabase.storage.from('request-images').getPublicUrl(fileName);
                 imageUrl = urlData.publicUrl;
             }
 
-            const requestData = {
-                type: 'booking',
-                recipient_name: formData.recipientName,
-                occasion: formData.eventType,
-                event_date: formData.eventDate,
-                venue: formData.venue,
-                additional_notes: formData.details,
-                image_url: imageUrl,
-                notes: formData.details,
-                status: 'pending',
-                user_id: user.id,
+            const inquiryData = {
+                name: `Event Booking: ${formData.eventType || 'Custom'}`,
+                image: imagePreview,
+                requestData: {
+                    type: 'booking',
+                    recipient_name: formData.recipientName,
+                    contact_number: formData.contactNumber,
+                    occasion: formData.eventType,
+                    event_date: formData.eventDate,
+                    venue: formData.venue,
+                    image_url: imageUrl,
+                    notes: formData.details,
+                }
             };
-
-            const { error: insertError } = await supabase.from('requests').insert([requestData]);
-
-            if (insertError) {
-                console.error('Error submitting booking:', insertError);
-                setStatus({ type: 'error', message: 'Failed to submit booking. Please try again.' });
-                return;
-            }
-
-            setShowModal(true);
-            setFormData(initialFormState);
-            setImagePreview(null);
-            if (fileInputRef.current) {
-                fileInputRef.current.value = '';
-            }
-            setStatus(null);
+            
+            localStorage.setItem('bookingInquiry', JSON.stringify(inquiryData));
+            navigate('/booking-cart');
 
         } catch (error) {
-            console.error('Error in handleSubmit:', error);
-            setStatus({ type: 'error', message: 'An unexpected error occurred. Please try again.' });
+            console.error('Error preparing event booking:', error);
+            setStatus({ type: 'error', message: 'Failed to prepare your booking. Please try again.' });
+        } finally {
+            setIsSubmitting(false);
         }
+    };
+
+    const selectStyles = {
+        control: (provided) => ({
+            ...provided,
+            borderColor: '#ddd',
+            borderRadius: '8px',
+            padding: '4px',
+            fontSize: '16px',
+        }),
+        menu: (provided) => ({
+            ...provided,
+            zIndex: 1050, // Ensure dropdown appears above other content
+        }),
     };
 
     return (
@@ -161,27 +293,15 @@ const BookEvent = ({ user }) => {
                                         <div className="row g-4">
                                             <div className="col-md-6">
                                                 <label className="form-label fw-semibold" htmlFor="recipientName">Recipient Name</label>
-                                                <input
-                                                    type="text"
-                                                    id="recipientName"
-                                                    name="recipientName"
-                                                    className="form-control bg-light border-0 py-3"
-                                                    placeholder="Enter recipient's name"
-                                                    value={formData.recipientName}
-                                                    onChange={handleChange}
-                                                    required
-                                                />
+                                                <input type="text" id="recipientName" name="recipientName" className="form-control bg-light border-0 py-3" placeholder="Enter recipient's name" value={formData.recipientName} onChange={handleChange} required />
+                                            </div>
+                                            <div className="col-md-6">
+                                                <label className="form-label fw-semibold" htmlFor="contactNumber">Contact Number</label>
+                                                <input type="tel" id="contactNumber" name="contactNumber" className="form-control bg-light border-0 py-3" placeholder="e.g., 09171234567" value={formData.contactNumber} onChange={handleChange} required />
                                             </div>
                                             <div className="col-md-6">
                                                 <label className="form-label fw-semibold" htmlFor="eventType">Occasion</label>
-                                                <select
-                                                    id="eventType"
-                                                    name="eventType"
-                                                    className="form-select bg-light border-0 py-3"
-                                                    value={formData.eventType}
-                                                    onChange={handleChange}
-                                                    required
-                                                >
+                                                <select id="eventType" name="eventType" className="form-select bg-light border-0 py-3" value={formData.eventType} onChange={handleChange} required>
                                                     <option value="" disabled>Select an occasion</option>
                                                     <option value="Wedding">Wedding</option>
                                                     <option value="Debut">Debut / Birthday</option>
@@ -193,119 +313,44 @@ const BookEvent = ({ user }) => {
                                             </div>
                                             <div className="col-md-6">
                                                 <label className="form-label fw-semibold" htmlFor="eventDate">Event Date</label>
-                                                <input
-                                                    type="date"
-                                                    id="eventDate"
-                                                    name="eventDate"
-                                                    className="form-control bg-light border-0 py-3"
-                                                    value={formData.eventDate}
-                                                    onChange={handleChange}
-                                                    min={minEventDate}
-                                                    required
-                                                />
+                                                <input type="date" id="eventDate" name="eventDate" className="form-control bg-light border-0 py-3" value={formData.eventDate} onChange={handleChange} min={minEventDate} required />
                                             </div>
                                             <div className="col-12">
                                                 <label className="form-label fw-semibold" htmlFor="venue">Venue Address</label>
-                                                <input
-                                                    type="text"
-                                                    id="venue"
-                                                    name="venue"
-                                                    className="form-control bg-light border-0 py-3"
-                                                    placeholder="Where will the event be held?"
-                                                    value={formData.venue}
-                                                    onChange={handleChange}
-                                                    required
+                                                <input 
+                                                    type="text" 
+                                                    id="venue" 
+                                                    name="venue" 
+                                                    className="form-control bg-light border-0 py-3" 
+                                                    placeholder="Click to select address" 
+                                                    value={formData.venue} 
+                                                    onFocus={() => setShowAddressModal(true)}
+                                                    readOnly 
+                                                    required 
                                                 />
                                             </div>
                                             <div className="col-12">
                                                 <label className="form-label fw-semibold" htmlFor="details">Additional Notes</label>
-                                                <textarea
-                                                    id="details"
-                                                    name="details"
-                                                    className="form-control bg-light border-0 py-3"
-                                                    rows="4"
-                                                    placeholder="Tell us more about your event, style preferences, or any special requests."
-                                                    value={formData.details}
-                                                    onChange={handleChange}
-                                                ></textarea>
+                                                <textarea id="details" name="details" className="form-control bg-light border-0 py-3" rows="4" placeholder="Tell us more about your event..." value={formData.details} onChange={handleChange}></textarea>
                                             </div>
                                             <div className="col-12">
                                                 <label className="form-label fw-semibold" htmlFor="inspirationFile">Inspiration Gallery</label>
                                                 {imagePreview ? (
                                                     <div className="position-relative">
-                                                        <img
-                                                            src={imagePreview}
-                                                            alt="Preview"
-                                                            style={{
-                                                                width: '100%',
-                                                                maxHeight: '400px',
-                                                                objectFit: 'contain',
-                                                                borderRadius: '12px',
-                                                                border: '2px solid #e0e0e0',
-                                                                padding: '10px',
-                                                                background: '#f8f9fa'
-                                                            }}
-                                                        />
-                                                        <button
-                                                            type="button"
-                                                            className="btn btn-sm btn-danger position-absolute top-0 end-0 m-2"
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                setImagePreview(null);
-                                                                setFormData((prev) => ({ ...prev, inspirationFile: null }));
-                                                                if (fileInputRef.current) {
-                                                                    fileInputRef.current.value = '';
-                                                                }
-                                                            }}
-                                                            style={{ zIndex: 10 }}
-                                                        >
-                                                            <i className="fas fa-times"></i>
-                                                        </button>
-                                                        <div className="text-center mt-2">
-                                                            <button
-                                                                type="button"
-                                                                className="btn btn-outline-primary btn-sm"
-                                                                onClick={openFilePicker}
-                                                            >
-                                                                <i className="fas fa-edit me-2"></i>Change Image
-                                                            </button>
-                                                        </div>
-                                                        <input
-                                                            type="file"
-                                                            id="inspirationFile"
-                                                            name="inspirationFile"
-                                                            className="form-control visually-hidden"
-                                                            ref={fileInputRef}
-                                                            onChange={handleChange}
-                                                            accept="image/*"
-                                                        />
+                                                        <img src={imagePreview} alt="Preview" style={{ width: '100%', maxHeight: '400px', objectFit: 'contain', borderRadius: '12px', border: '2px solid #e0e0e0', padding: '10px', background: '#f8f9fa' }} />
+                                                        <button type="button" className="btn btn-sm btn-danger position-absolute top-0 end-0 m-2" onClick={(e) => { e.stopPropagation(); setImagePreview(null); setFormData((prev) => ({ ...prev, inspirationFile: null })); if (fileInputRef.current) { fileInputRef.current.value = ''; } }} style={{ zIndex: 10 }}><i className="fas fa-times"></i></button>
                                                     </div>
                                                 ) : (
-                                                    <div
-                                                        className="upload-box p-5 text-center bg-light rounded-4 border-dashed"
-                                                        role="button"
-                                                        tabIndex={0}
-                                                        onClick={openFilePicker}
-                                                        onKeyDown={handleUploadKeyDown}
-                                                    >
+                                                    <div className="upload-box p-5 text-center bg-light rounded-4 border-dashed" role="button" tabIndex={0} onClick={openFilePicker} onKeyDown={handleUploadKeyDown}>
                                                         <i className="fas fa-cloud-upload-alt fa-2x text-primary mb-3"></i>
                                                         <p className="mb-2">Upload an image or drag and drop</p>
-                                                        <input
-                                                            type="file"
-                                                            id="inspirationFile"
-                                                            name="inspirationFile"
-                                                            className="form-control visually-hidden"
-                                                            ref={fileInputRef}
-                                                            onChange={handleChange}
-                                                            accept="image/*"
-                                                        />
-                                                        <label htmlFor="inspirationFile" className="btn btn-outline-primary rounded-pill px-4">Choose File</label>
+                                                        <input type="file" id="inspirationFile" name="inspirationFile" className="form-control visually-hidden" ref={fileInputRef} onChange={handleChange} accept="image/*" />
                                                     </div>
                                                 )}
                                             </div>
                                             <div className="col-12 mt-4">
-                                                <button type="submit" className="btn btn-pink w-100 py-3 rounded-pill fw-bold shadow-sm">
-                                                    Submit Inquiry
+                                                <button type="submit" className="btn btn-pink w-100 py-3 rounded-pill fw-bold shadow-sm" disabled={isSubmitting}>
+                                                    {isSubmitting ? 'Processing...' : 'Review Inquiry'}
                                                 </button>
                                             </div>
                                         </div>
@@ -316,11 +361,86 @@ const BookEvent = ({ user }) => {
                     </div>
                 </div>
             </section>
-            <RequestSuccessModal
-                show={showModal}
-                onClose={() => setShowModal(false)}
-                message="Your event inquiry has been submitted successfully! You can view it in My Orders under the Pending tab. The admin will review and respond soon."
-            />
+
+            {showAddressModal && (
+                <div className="modal-overlay" onClick={() => setShowAddressModal(false)}>
+                    <div className="modal-content-custom" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header-custom">
+                            <h4>Set Venue Address</h4>
+                            <button className="modal-close" onClick={() => setShowAddressModal(false)}>
+                                <i className="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <div className="modal-body-custom">
+                             <div className="form-group">
+                                <label className="form-label">Province</label>
+                                <Select
+                                    styles={selectStyles}
+                                    options={provinces}
+                                    isLoading={addressLoading === 'provinces'}
+                                    placeholder="Select Province"
+                                    onChange={option => {
+                                        setSelectedProvince(option);
+                                        setAddressForm({ ...addressForm, province: option ? option.label : '' });
+                                    }}
+                                    value={selectedProvince}
+                                    isClearable
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">City / Municipality</label>
+                                <Select
+                                    styles={selectStyles}
+                                    options={cities}
+                                    isLoading={addressLoading === 'cities'}
+                                    placeholder="Select City/Municipality"
+                                    onChange={option => {
+                                        setSelectedCity(option);
+                                        setAddressForm({ ...addressForm, city: option ? option.label : '' });
+                                    }}
+                                    value={selectedCity}
+                                    isDisabled={!selectedProvince}
+                                    isClearable
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Barangay</label>
+                                <Select
+                                    styles={selectStyles}
+                                    options={barangays}
+                                    isLoading={addressLoading === 'barangays'}
+                                    placeholder="Select Barangay"
+                                    onChange={option => {
+                                        setSelectedBarangay(option);
+                                        setAddressForm({ ...addressForm, barangay: option ? option.label : '' });
+                                    }}
+                                    value={selectedBarangay}
+                                    isDisabled={!selectedCity}
+                                    isClearable
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Street Address</label>
+                                <input
+                                    type="text"
+                                    className="form-control-custom"
+                                    value={addressForm.street}
+                                    onChange={e => setAddressForm({ ...addressForm, street: e.target.value })}
+                                    placeholder="e.g., House No., Street Name, Subdivision"
+                                />
+                            </div>
+                            
+                            <button
+                                className="btn"
+                                style={{ background: 'var(--shop-pink)', color: 'white' }}
+                                onClick={handleSaveAddress}
+                            >
+                                Save Address
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

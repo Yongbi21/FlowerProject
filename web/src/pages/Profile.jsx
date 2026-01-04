@@ -291,6 +291,7 @@ const Profile = ({ user, logout }) => {
     const [showCancelModal, setShowCancelModal] = useState(false);
     const [orderToCancel, setOrderToCancel] = useState(null);
     const [showWaitingModal, setShowWaitingModal] = useState(false);
+    const [modalContent, setModalContent] = useState(null);
     const [profileForm, setProfileForm] = useState({
         fullName: '',
         phone: '',
@@ -357,7 +358,23 @@ const Profile = ({ user, logout }) => {
                 throw requestsError;
             }
             
-            console.log(`Loaded ${apiOrders.length} orders and ${apiRequests.length} requests for current user`);
+            // Fetch all addresses needed for the requests
+            const addressIds = (apiRequests || [])
+                .map(req => req.data?.address_id)
+                .filter(id => id); // Filter out null/undefined IDs
+
+            let addressesData = [];
+            if (addressIds.length > 0) {
+                const { data: fetchedAddresses, error: addressesError } = await supabase
+                    .from('addresses')
+                    .select('*')
+                    .in('id', addressIds);
+                if (addressesError) {
+                    console.error('Error fetching request addresses:', addressesError);
+                } else {
+                    addressesData = fetchedAddresses;
+                }
+            }
 
             // Transform API orders to match the expected format
             const transformedOrders = (apiOrders || []).map(order => ({
@@ -407,7 +424,9 @@ const Profile = ({ user, logout }) => {
             
             // Transform API requests to match the expected format
             const transformedRequests = (apiRequests || []).map(request => {
-                const requestData = typeof request.data === 'string' ? JSON.parse(request.data) : request.data;
+                const requestData = typeof request.data === 'string' ? JSON.parse(request.data) : (request.data || {});
+                const address = addressesData.find(addr => addr.id === requestData?.address_id) || null;
+                
                 return {
                     id: `request-${request.id}`, // Prefix to avoid conflicts
                     request_id: request.id,
@@ -417,26 +436,28 @@ const Profile = ({ user, logout }) => {
                     type: request.type, // booking, customized, special_order
                     payment_status: 'to_pay', // Assuming requests start with 'to_pay'
                     total: parseFloat(request.final_price || request.estimated_price || 0),
-                    notes: request.notes,
+                    notes: request.notes || requestData.notes,
                     data: requestData,
                     image_url: request.image_url,
                     isRequest: true,
+                    address: address, // Attach the fetched address
                     // Extract specific fields for easier access
-                    eventType: requestData?.eventType || requestData?.event_type,
+                    eventType: requestData?.eventType || requestData?.event_type || requestData?.occasion,
                     eventDate: requestData?.eventDate || requestData?.event_date,
                     venue: requestData?.venue,
-                    recipientName: requestData?.recipientName,
+                    recipientName: requestData?.recipientName || requestData?.recipient_name,
                     occasion: requestData?.occasion,
-                    preferences: requestData?.preferences,
+                    preferences: requestData?.preferences || requestData?.notes,
                     flower: requestData?.flower,
                     bundleSize: requestData?.bundleSize,
                     wrapper: requestData?.wrapper,
                     ribbon: requestData?.ribbon,
+                    addon: requestData?.addon,
                     // Inquiry fields
                     subject: requestData?.subject,
                     message: requestData?.message,
                     email: requestData?.email,
-                    phone: requestData?.phone
+                    phone: requestData?.phone || requestData?.contact_number
                 };
             });
             
@@ -727,6 +748,55 @@ const Profile = ({ user, logout }) => {
         }
     };
 
+    const handleAcceptQuote = (order) => {
+        setModalContent({
+            type: 'confirm',
+            title: 'Accept Quote',
+            message: `Are you sure you want to accept the quote of ₱${(order.total || 0).toLocaleString()}?`,
+            confirmText: 'Accept',
+            onConfirm: async () => {
+                const { error } = await supabase
+                    .from('requests')
+                    .update({ status: 'accepted' })
+                    .eq('id', order.request_id);
+
+                if (error) {
+                    setModalContent({
+                        type: 'info',
+                        title: 'Error',
+                        message: 'Failed to accept quote. Please try again.',
+                        confirmText: 'OK',
+                        onConfirm: () => setModalContent(null)
+                    });
+                } else {
+                    setModalContent({
+                        type: 'info',
+                        title: 'Quote Accepted',
+                        message: 'Your request is now being processed.',
+                        confirmText: 'Great!',
+                        onConfirm: () => {
+                            loadOrders(user.id);
+                            setModalContent(null);
+                        }
+                    });
+                }
+            }
+        });
+    };
+
+    const handleRequestAdjustment = (order) => {
+        setModalContent({
+            type: 'info',
+            title: 'Request Price Adjustment',
+            message: `To request an adjustment for request #${order.request_number}, please proceed to the "Messages" tab to chat with our staff.`,
+            confirmText: 'Go to Messages',
+            onConfirm: () => {
+                setActiveMenu('messages');
+                setModalContent(null);
+            }
+        });
+    };
+
     const handleReorder = (order) => {
         const cart = JSON.parse(localStorage.getItem('cart') || '[]');
         order.items.forEach(item => {
@@ -887,49 +957,42 @@ const Profile = ({ user, logout }) => {
                                                 onError={(e) => e.target.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'}
                                             />
                                         )}
-                                        <div className="flex-grow-1">
-                                            <div className="order-item-name">
-                                                {order.type === 'booking' && order.eventType && (
-                                                    <>{order.eventType} Event</>
-                                                )}
-                                                {order.type === 'special_order' && (
-                                                    <>Special Order Request</>
-                                                )}
-                                                {order.type === 'customized' && (
-                                                    <>Customized Bouquet Request</>
-                                                )}
-                                                {!order.type && 'Order Item'}
-                                            </div>
-                                            {order.type === 'booking' && order.venue && (
-                                                <div className="order-item-variant">
-                                                    <i className="fas fa-map-marker-alt me-1"></i>
-                                                    {order.venue}
-                                                </div>
+                                        <div className="flex-grow-1 order-request-details">
+                                            {order.type === 'booking' && (
+                                                <>
+                                                    <div className="order-item-name">{order.eventType} Event</div>
+                                                    {order.recipientName && <div className="order-item-variant"><strong>Recipient:</strong> {order.recipientName}</div>}
+                                                    {order.eventDate && <div className="order-item-variant"><strong>Event Date:</strong> {new Date(order.eventDate).toLocaleDateString()}</div>}
+                                                    {order.venue && <div className="order-item-variant"><strong>Venue:</strong> {order.venue}</div>}
+                                                    {order.notes && <div className="order-item-variant"><strong>Notes:</strong> {order.notes}</div>}
+                                                </>
                                             )}
-                                            {order.type === 'special_order' && order.recipientName && (
-                                                <div className="order-item-variant">
-                                                    <i className="fas fa-user me-1"></i>
-                                                    For: {order.recipientName}
-                                                </div>
+                                            {order.type === 'special_order' && (
+                                                <>
+                                                    <div className="order-item-name">Special Order</div>
+                                                    {order.recipientName && <div className="order-item-variant"><strong>Recipient:</strong> {order.recipientName}</div>}
+                                                    {order.occasion && <div className="order-item-variant"><strong>Occasion:</strong> {order.occasion}</div>}
+                                                    {order.preferences && <div className="order-item-variant"><strong>Preferences:</strong> {order.preferences}</div>}
+                                                    {order.addon && order.addon !== 'None' && <div className="order-item-variant"><strong>Add-on:</strong> {order.addon}</div>}
+                                                    {order.message && <div className="order-item-variant"><strong>Message:</strong> {order.message}</div>}
+                                                </>
                                             )}
-                                            {order.type && order.userPhone && (
-                                                <div className="order-item-variant">
-                                                    <i className="fas fa-phone me-1"></i>
-                                                    {order.userPhone}
-                                                </div>
+                                            {order.type === 'customized' && (
+                                                <>
+                                                    <div className="order-item-name">Customized Bouquet</div>
+                                                    {order.flower && <div className="order-item-variant"><strong>Flower:</strong> {typeof order.flower === 'object' ? order.flower.name : order.flower}</div>}
+                                                    {order.bundleSize && <div className="order-item-variant"><strong>Bundle Size:</strong> {order.bundleSize}</div>}
+                                                    {order.wrapper && <div className="order-item-variant"><strong>Wrapper:</strong> {order.wrapper}</div>}
+                                                    {order.ribbon && <div className="order-item-variant"><strong>Ribbon:</strong> {order.ribbon}</div>}
+                                                    {order.notes && <div className="order-item-variant"><strong>Notes:</strong> {order.notes}</div>}
+                                                </>
                                             )}
-                                            {order.type === 'customized' && order.flower && (
+                                             {order.phone && (
                                                 <div className="order-item-variant">
-                                                    <i className="fas fa-seedling me-1"></i>
-                                                    {order.flower.name} - {order.bundleSize} stems
+                                                    <strong>Contact:</strong> {order.phone}
                                                 </div>
                                             )}
                                         </div>
-                                        {order.type === 'customized' && (
-                                            <div className="order-item-price">
-                                                ₱{(order.total || 0).toLocaleString()}
-                                            </div>
-                                        )}
                                     </div>
                                 )}
 
@@ -989,63 +1052,64 @@ const Profile = ({ user, logout }) => {
                             </div>
                             <div className="order-card-footer">
                                 <div className="order-total">
-                                    {order.type === 'customized' ? (
-                                        <>Request Total: <span>₱{(order.total || 0).toLocaleString()}</span></>
-                                    ) : order.type ? (
-                                        <>Request Total: <span style={{ color: 'var(--shop-pink)' }}>To be discuss further</span></>
-                                    ) : (
+                                    {order.type ? ( // It's a request (booking, customized, special_order)
+                                        (order.status === 'pending' || order.total === 0) ? (
+                                            <>Request Total: <span style={{ color: 'var(--shop-pink)' }}>To be discuss further</span></>
+                                        ) : (
+                                            <>{order.status === 'quoted' ? 'Quoted Price' : 'Request Total'}: <span>₱{(order.total || 0).toLocaleString()}</span></>
+                                        )
+                                    ) : ( // It's a regular order
                                         <>Order Total: <span>₱{(order.total || order.price || 0).toLocaleString()}</span></>
                                     )}
                                 </div>
                                 <div className="order-actions">
-                                    {order.status === 'completed' && order.items && (
-                                        <button
-                                            className="btn-order-action secondary"
-                                            onClick={() => {
-                                                const cart = JSON.parse(localStorage.getItem('cart') || '[]');
-                                                order.items.forEach(item => {
-                                                    const existingItem = cart.find(i => i.name === item.name);
-                                                    if (existingItem) {
-                                                        existingItem.qty += item.qty || 1;
-                                                    } else {
-                                                        cart.push({ ...item });
-                                                    }
-                                                });
-                                                localStorage.setItem('cart', JSON.stringify(cart));
-                                                navigate('/cart');
-                                            }}
-                                        >
-                                            Buy Again
-                                        </button>
-                                    )}
-                                    {order.status === 'pending' && order.type && (
-                                        <button
-                                            className="btn-order-action primary"
-                                            onClick={() => handleTrackStatus(order)}
-                                        >
-                                            Track Status
-                                        </button>
-                                    )}
-                                    {['processing', 'out_for_delivery', 'ready_for_pickup'].includes(order.status) && order.type !== 'booking' && order.type !== 'special_order' && (
-                                        <button
-                                            className="btn-order-action primary"
-                                            onClick={() => handleTrackOrder(order.order_number || order.id)}
-                                        >
-                                            Track Order
-                                        </button>
-                                    )}
-                                    {order.status === 'pending' && (
-                                        <button
-                                            className="btn-order-action danger"
-                                            onClick={() => handleCancelClick(order)}
-                                            style={{
-                                                background: '#dc3545',
-                                                color: 'white',
-                                                border: 'none'
-                                            }}
-                                        >
-                                            Cancel
-                                        </button>
+                                    {order.status === 'quoted' ? (
+                                        <div className="d-flex gap-2">
+                                            <button className="btn-order-action" style={{backgroundColor: 'var(--shop-pink)', color: 'white', border: 'none'}} onClick={() => handleAcceptQuote(order)}>Accept</button>
+                                            <button className="btn-order-action" style={{backgroundColor: 'transparent', color: 'var(--shop-pink)', border: '1px solid var(--shop-pink)'}} onClick={() => handleRequestAdjustment(order)}>Adjust</button>
+                                            <button className="btn-order-action" style={{backgroundColor: '#dc3545', color: 'white', border: '1px solid #dc3545'}} onClick={() => handleCancelClick(order)}>Cancel</button>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            {order.status === 'completed' && order.items && (
+                                                <button
+                                                    className="btn-order-action secondary"
+                                                    onClick={() => handleReorder(order)}
+                                                >
+                                                    Buy Again
+                                                </button>
+                                            )}
+                                            
+                                            {/* TRACK BUTTONS */}
+                                            {['pending', 'processing', 'out_for_delivery', 'ready_for_pickup'].includes(order.status) && (
+                                                order.type ? ( // It's a Request
+                                                    <button
+                                                        className="btn-order-action primary"
+                                                        onClick={() => navigate(`/request-tracking/${order.request_number}`)}
+                                                    >
+                                                        Track Request
+                                                    </button>
+                                                ) : ( // It's a regular Order
+                                                    <button
+                                                        className="btn-order-action primary"
+                                                        onClick={() => navigate(`/order-tracking/${order.order_number}`)}
+                                                    >
+                                                        Track Order
+                                                    </button>
+                                                )
+                                            )}
+
+                                            {/* CANCEL BUTTON */}
+                                            {order.status === 'pending' && (
+                                                <button
+                                                    className="btn-order-action danger"
+                                                    onClick={() => handleCancelClick(order)}
+                                                    style={{ background: '#dc3545', color: 'white', border: 'none' }}
+                                                >
+                                                    Cancel
+                                                </button>
+                                            )}
+                                        </>
                                     )}
                                 </div>
                             </div>
@@ -1652,6 +1716,41 @@ const Profile = ({ user, logout }) => {
                         >
                             Close
                         </button>
+                    </div>
+                </div>
+            )}
+
+            {modalContent && (
+                <div className="modal-overlay" onClick={() => setModalContent(null)}>
+                    <div className="modal-content-custom" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header-custom">
+                            <h4>{modalContent.title}</h4>
+                            <button className="modal-close" onClick={() => setModalContent(null)}>
+                                <i className="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <div className="modal-body-custom">
+                            <p style={{whiteSpace: 'pre-wrap'}}>{modalContent.message}</p>
+                        </div>
+                        <div className="modal-footer-custom" style={{justifyContent: 'flex-end'}}>
+                            {modalContent.type === 'confirm' && (
+                                <button className="btn btn-secondary me-2" onClick={() => {
+                                    if (modalContent.onCancel) modalContent.onCancel();
+                                    setModalContent(null);
+                                }}>
+                                    Cancel
+                                </button>
+                            )}
+                            <button className="btn" style={{ background: 'var(--shop-pink)', color: 'white' }} onClick={() => {
+                                if (modalContent.onConfirm) modalContent.onConfirm();
+                                // For info modals, the onConfirm should handle dismissal if needed
+                                if (modalContent.type !== 'info') {
+                                    setModalContent(null);
+                                }
+                            }}>
+                                {modalContent.confirmText || 'OK'}
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
