@@ -113,6 +113,7 @@ CREATE TABLE requests (
   type request_type NOT NULL,
   status request_status NOT NULL DEFAULT 'pending',
   data JSONB NOT NULL, -- Stores all form fields specific to the request type
+  contact_number VARCHAR(20),
   photo_url VARCHAR(255),
   notes TEXT,
   final_price DECIMAL(10, 2),
@@ -203,3 +204,56 @@ begin
     order by rm.created_at desc;
 end;
  language plpgsql;
+ 
+-- Sales Table and Triggers
+CREATE TABLE sales (
+  id SERIAL PRIMARY KEY,
+  order_id INT UNIQUE,
+  request_id INT UNIQUE,
+  user_id INT NOT NULL,
+  sale_date TIMESTAMPTZ NOT NULL,
+  total_amount DECIMAL(10, 2) NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE SET NULL,
+  FOREIGN KEY (request_id) REFERENCES requests(id) ON DELETE SET NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT,
+  CONSTRAINT chk_sale_source CHECK (order_id IS NOT NULL OR request_id IS NOT NULL)
+);
+
+CREATE INDEX idx_sales_sale_date ON sales(sale_date);
+
+CREATE OR REPLACE FUNCTION record_order_sale()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF (NEW.status IN ('completed', 'claimed') AND (OLD.status IS NULL OR OLD.status NOT IN ('completed', 'claimed'))) THEN
+        INSERT INTO sales (order_id, user_id, sale_date, total_amount)
+        VALUES (NEW.id, NEW.user_id, NOW(), NEW.total)
+        ON CONFLICT (order_id) DO UPDATE 
+        SET total_amount = EXCLUDED.total_amount, sale_date = EXCLUDED.sale_date;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER on_order_complete
+AFTER UPDATE ON orders
+FOR EACH ROW
+EXECUTE PROCEDURE record_order_sale();
+
+CREATE OR REPLACE FUNCTION record_request_sale()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF (NEW.status = 'completed' AND (OLD.status IS NULL OR OLD.status <> 'completed') AND NEW.final_price > 0) THEN
+        INSERT INTO sales (request_id, user_id, sale_date, total_amount)
+        VALUES (NEW.id, NEW.user_id, NOW(), NEW.final_price)
+        ON CONFLICT (request_id) DO UPDATE 
+        SET total_amount = EXCLUDED.total_amount, sale_date = EXCLUDED.sale_date;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER on_request_complete
+AFTER UPDATE ON requests
+FOR EACH ROW
+EXECUTE PROCEDURE record_request_sale();

@@ -4,6 +4,7 @@ import Draggable from 'react-draggable';
 import { FaChevronLeft, FaArrowRotateLeft, FaScroll, FaRibbon, FaSeedling } from 'react-icons/fa6';
 import html2canvas from 'html2canvas';
 import RequestSuccessModal from '../components/RequestSuccessModal';
+import InfoModal from '../components/InfoModal'; // Import InfoModal
 import { supabase } from '../config/supabase';
 import { stockAPI } from '../config/api'; // Import stockAPI
 import '../styles/Customized.css';
@@ -11,6 +12,7 @@ import '../styles/Customized.css';
 const placeholderStemImg = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
 const placeholderImg = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMDAiIGhlaWdodGg9IjEwMCIgdmlld0JveD0iMCAwIDEwMCAxMDAiPjxyZWN0IHdpZHRoPSIxMDAiIGhlaWdodGg9IjEwMCIgZmlsbD0iI2UwZTBlMCIvPjx0ZXh0IHg9IjUwIiB5PSI1MCIgZm9udC1mYW1pbHk9ImFyaWFsIiBmb250LXNpemU9IjEyIiBmaWxsPSIjMzMzIiBhbmNob3ItcGVudD0ibWlkZGxlIiB0ZXh0LWFuY2hvcnM9Im1pZGRsZSI+Tm8gSW1hZ2U8L3RleHQ+PC9zdmc+'; // SVG "No Image" placeholder
 
+const MAX_STEM_COUNT = 500; // Maximum number of stems allowed for performance reasons.
 const bundleOptions = [3, 6, 12];
 const steps = [
   { id: 1, icon: <FaScroll />, label: 'Wrapper' },
@@ -32,8 +34,8 @@ const getInitialPositions = (count) => {
     positions.push({ x: 50, y: 50, rotate: -10, zIndex: 3 });
     positions.push({ x: 90, y: 50, rotate: 10, zIndex: 3 });
     positions.push({ x: 70, y: 70, rotate: 0, zIndex: 4 });
-  } else if (count === 12) {
-    for (let i = 0; i < 12; i += 1) {
+  } else if (count > 0) {
+    for (let i = 0; i < count; i += 1) {
       positions.push({
         x: Math.random() * 150,
         y: Math.random() * 100,
@@ -56,6 +58,7 @@ const Customized = ({ addToCart }) => {
   const [customBundleSizeInput, setCustomBundleSizeInput] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [capturedPhoto, setCapturedPhoto] = useState(null);
+  const [infoModal, setInfoModal] = useState({ show: false, title: '', message: '', linkTo: null, linkText: '', linkState: null }); // State for InfoModal
   const previewRef = useRef(null);
 
   // New state for dynamic customization data
@@ -123,10 +126,30 @@ const Customized = ({ addToCart }) => {
 
   const handleCustomBundleChange = (e) => {
     const value = e.target.value;
-    // Allow empty string for initial input, but then validate as number >= 2
-    if (value === '' || (/^\d+$/.test(value) && parseInt(value, 10) >= 2)) {
-      setCustomBundleSizeInput(value);
-      setSelection((prev) => ({ ...prev, bundleSize: value === '' ? 0 : parseInt(value, 10) }));
+    if (!/^\d*$/.test(value)) return; // Only allow digits
+
+    let numValue = value === '' ? 0 : parseInt(value, 10);
+    
+    let capped = false;
+    if (numValue > MAX_STEM_COUNT) {
+        numValue = MAX_STEM_COUNT;
+        capped = true;
+    }
+
+    setCustomBundleSizeInput(capped ? String(numValue) : value);
+
+    if (numValue >= 2) {
+        setSelection((prev) => ({ ...prev, bundleSize: numValue }));
+    } else {
+        setSelection((prev) => ({ ...prev, bundleSize: 0 }));
+    }
+    
+    if (capped) {
+        setInfoModal({
+            show: true,
+            title: 'Stem Limit Reached',
+            message: `The maximum number of stems is ${MAX_STEM_COUNT}. Your input has been capped.`,
+        });
     }
   };
 
@@ -178,6 +201,68 @@ const Customized = ({ addToCart }) => {
 
       if (!userId) {
         alert('You need to be logged in to submit a customized bouquet request.');
+        return;
+      }
+      
+      // Fetch user's phone number
+      let userPhone = null;
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('phone')
+        .eq('id', userId)
+        .single();
+
+      if (userError) {
+        console.error('Error fetching user phone number:', userError.message);
+        // Decide if you want to block or allow submission without a phone number
+      } else {
+        userPhone = userData?.phone;
+      }
+
+      // Check if user has a shipping address and fetch it
+      const { data: addresses, error: addressError } = await supabase
+        .from('addresses')
+        .select('barangay') // We need the barangay for the fee
+        .eq('user_id', userId)
+        .order('id', { ascending: false }) // Get the latest/primary address by ID
+        .limit(1);
+
+      if (addressError) {
+        console.error('Error checking for address:', addressError);
+        alert("Could not verify your address information. Please try again.");
+        return;
+      }
+
+      let shippingFee = 0;
+      if (addresses && addresses.length > 0) {
+        const userBarangay = addresses[0].barangay;
+        
+        // Fetch fee from barangay_fee table
+        const { data: feeData, error: feeError } = await supabase
+            .from('barangay_fee')
+            .select('delivery_fee')
+            .eq('barangay_name', userBarangay) // Changed from 'barangay'
+            .single();
+            
+        if (feeError) {
+            console.error('Error fetching shipping fee:', feeError);
+            alert('Could not determine shipping fee. Please ensure your address is correct and supported.');
+            // Stop the submission if fee is critical
+            return;
+        }
+        
+        if (feeData) {
+            shippingFee = feeData.delivery_fee;
+        }
+      } else {
+        setInfoModal({
+          show: true,
+          title: 'Address Required',
+          message: 'Please add a shipping address to your profile before submitting a request.',
+          linkTo: '/profile',
+          linkText: 'Go to Profile',
+          linkState: { activeMenu: 'addresses' }
+        });
         return;
       }
 
@@ -238,14 +323,17 @@ const Customized = ({ addToCart }) => {
         request_number: requestNumber,
         type: 'customized',
         status: 'pending', // Initial status
+        contact_number: userPhone,
+        shipping_fee: shippingFee,
+        final_price: totalPrice + shippingFee,
         data: {
           flower: selection.flower,
           bundleSize: selection.bundleSize,
           wrapper: selection.wrapper,
           ribbon: selection.ribbon,
+          subtotal: totalPrice
         },
         image_url: photoUrl,
-        final_price: totalPrice,
       };
 
       const { data: insertedRequest, error: requestError } = await supabase
@@ -361,6 +449,16 @@ const Customized = ({ addToCart }) => {
         }}
         message="Your customized bouquet request has been added to My Orders! You can view it in your Profile page under the Pending tab. The admin will review and respond soon."
         photo={capturedPhoto}
+      />
+
+      <InfoModal
+        show={infoModal.show}
+        onClose={() => setInfoModal({ show: false, title: '', message: '' })}
+        title={infoModal.title}
+        message={infoModal.message}
+        linkTo={infoModal.linkTo}
+        linkText={infoModal.linkText}
+        linkState={infoModal.linkState}
       />
 
       <main className="editor-layout">

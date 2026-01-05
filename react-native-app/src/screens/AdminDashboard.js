@@ -20,6 +20,7 @@ import {
   Platform,
   StatusBar,
   Linking,
+  useWindowDimensions,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -28,6 +29,7 @@ import { supabase } from '../config/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import Toast from 'react-native-toast-message';
+import { LineChart } from 'react-native-chart-kit';
 
 // Helper function to format timestamp with date and time
 const formatTimestamp = (dateString) => {
@@ -202,7 +204,7 @@ const AdminDashboard = () => {
       case 'stock':
         return <StockTab />;
       case 'requests':
-        return <RequestsTab />;
+        return <RequestsTab setActiveTab={setActiveTab} handleSelectCustomerForMessage={handleSelectCustomerForMessage} />;
       case 'notifications':
         return <NotificationsTab />;
       case 'messaging':
@@ -2187,7 +2189,31 @@ const DetailSection = ({ label, value }) => {
   );
 };
 
-const RequestsTab = () => {
+const RequestsTab = ({ setActiveTab, handleSelectCustomerForMessage }) => {
+  const getCustomerInitials = (name) => {
+    if (!name) return '??';
+    const names = name.trim().split(' ');
+    if (names.length > 1) {
+      return `${names[0][0]}${names[names.length - 1][0]}`.toUpperCase();
+    }
+    return name.substring(0, 2).toUpperCase();
+  };
+
+  const handlePhoneCall = (phoneNumber) => {
+    if (phoneNumber && phoneNumber !== 'N/A' && phoneNumber.trim() !== '') {
+      Linking.openURL(`tel:${phoneNumber}`);
+    } else {
+      Alert.alert('No Phone Number', 'This customer does not have a valid phone number on file.');
+    }
+  };
+
+  const handleMessageCustomer = (user, customerName, customerEmail) => {
+    if (!user || !user.id) {
+        Alert.alert('Cannot message user', 'User information is incomplete.');
+        return;
+    }
+    handleSelectCustomerForMessage({ id: user.id, name: customerName, email: customerEmail });
+  };
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -2196,47 +2222,85 @@ const RequestsTab = () => {
   const [requestStatusModalVisible, setRequestStatusModalVisible] = useState(false);
   const [requestToUpdate, setRequestToUpdate] = useState(null);
   const [selectedRequestStatus, setSelectedRequestStatus] = useState(null);
-  const requestStatusOptions = ['pending', 'processing', 'ready_for_pickup', 'out_for_delivery', 'completed', 'cancelled'];
+  const [deliveryOrPickup, setDeliveryOrPickup] = useState('delivery');
+  const [quoteModalVisible, setQuoteModalVisible] = useState(false);
+  const [requestToQuote, setRequestToQuote] = useState(null);
+  const [quoteAmount, setQuoteAmount] = useState('');
 
-  useEffect(() => {
-    loadRequests();
-  }, []);
+  const requestDeliveryStepperStatuses = [
+    { id: 'pending', label: 'Pending', description: 'Request received' },
+    { id: 'processing', label: 'Processing', description: 'Being prepared' },
+    { id: 'out_for_delivery', label: 'Out for Delivery', description: 'On the way' },
+    { id: 'completed', label: 'Completed', description: 'Delivered successfully' }
+  ];
+
+  const requestPickupStepperStatuses = [
+      { id: 'pending', label: 'Pending', description: 'Request received' },
+      { id: 'processing', label: 'Processing', description: 'Being prepared' },
+      { id: 'ready_for_pickup', label: 'Ready for Pick Up', description: 'Ready for customer' },
+      { id: 'completed', label: 'Completed', description: 'Request has been picked up' }
+  ];
+
+  useFocusEffect(
+    React.useCallback(() => {
+      loadRequests();
+
+      const channel = supabase
+        .channel('public:requests')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'requests' },
+          (payload) => {
+            loadRequests();
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }, [])
+  );
 
   const renderBookingDetails = (request) => (
     <>
+      <DetailSection label="Request Number:" value={request.request_number} />
       <DetailSection label="Customer Name:" value={request.user_name} />
       <DetailSection label="Customer Email:" value={request.user_email} />
-      <DetailSection label="Customer Phone:" value={request.user_phone} />
-      <DetailSection label="Occasion:" value={request.occasion} />
-      <DetailSection label="Event Date:" value={request.event_date} />
-      <DetailSection label="Venue:" value={request.venue} />
+      <DetailSection label="Contact Number:" value={request.contact_number} />
+      <DetailSection label="Occasion:" value={request.data?.occasion} />
+      <DetailSection label="Event Date:" value={request.data?.event_date} />
+      <DetailSection label="Venue:" value={request.data?.venue} />
       <DetailSection label="Additional Notes:" value={request.notes} />
     </>
   );
 
   const renderSpecialOrderDetails = (request) => (
     <>
+      <DetailSection label="Request Number:" value={request.request_number} />
       <DetailSection label="Customer Name:" value={request.user_name} />
       <DetailSection label="Customer Email:" value={request.user_email} />
-      <DetailSection label="Customer Phone:" value={request.user_phone} />
-      <DetailSection label="Recipient Name:" value={request.recipient_name} />
-      <DetailSection label="Occasion:" value={request.occasion} />
+      <DetailSection label="Contact Number:" value={request.contact_number} />
+      <DetailSection label="Recipient Name:" value={request.data?.recipient_name} />
+      <DetailSection label="Occasion:" value={request.data?.occasion} />
+      <DetailSection label="Delivery Address:" value={request.data?.deliveryAddress} />
       <DetailSection label="Preferences:" value={request.notes} />
-      <DetailSection label="Add-on:" value={request.addon} />
+      <DetailSection label="Add-on:" value={request.data?.addon} />
     </>
   );
 
   const renderCustomizedDetails = (request) => (
     <>
+      <DetailSection label="Customer Email:" value={request.user_email} />
+      <DetailSection label="Contact Number:" value={request.contact_number || request.user_phone} />
       <DetailSection label="Quantity (Stems):" value={request.data?.bundleSize?.toString()} />
       <DetailSection label="Flower Type:" value={request.data?.flower?.name} />
       <DetailSection label="Wrapper:" value={request.data?.wrapper?.name} />
       <DetailSection label="Ribbon:" value={request.data?.ribbon?.name} />
       {/* Optionally, you might want to show individual prices or total price for customized items */}
-      {request.final_price && (
-        <DetailSection label="Final Price:" value={`₱${request.final_price.toFixed(2)}`} />
-      )}
-    </>
+            {request.final_price && (
+              <DetailSection label="Final Price:" value={`₱${request.final_price.toFixed(2)}`} />
+            )}    </>
   );
 
   const loadRequests = async () => {
@@ -2272,6 +2336,7 @@ const RequestsTab = () => {
   const openRequestStatusModal = (request) => {
     setRequestToUpdate(request);
     setSelectedRequestStatus(request.status); // Pre-select current status
+    setDeliveryOrPickup(request.delivery_method || 'delivery'); // Initialize deliveryOrPickup
     setRequestStatusModalVisible(true);
   };
 
@@ -2302,34 +2367,169 @@ const RequestsTab = () => {
     }
   };
 
-  const renderRequest = ({ item }) => (
-    <TouchableOpacity
-      style={styles.requestCard}
-      onPress={() => {
-        setSelectedRequest(item);
-        setModalVisible(true);
-      }}
-    >
-      <View style={styles.requestHeader}>
-        <Text style={styles.requestType}>{getStatusLabel(item.type)}</Text>
-        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}>
-          <Text style={styles.statusText}>{getStatusLabel(item.status)}</Text>
+  const openQuoteModal = (request) => {
+    setRequestToQuote(request);
+    setQuoteAmount(request.final_price ? String(request.final_price) : '');
+    setQuoteModalVisible(true);
+  };
+
+  const handleProvideQuote = async () => {
+    if (!requestToQuote || !quoteAmount || isNaN(parseFloat(quoteAmount))) {
+      Alert.alert('Invalid Input', 'Please enter a valid price.');
+      return;
+    }
+
+    try {
+      const { data: { request: updatedRequest } } = await adminAPI.provideQuote(requestToQuote.id, parseFloat(quoteAmount));
+
+      // Create notification for the user
+      if (updatedRequest) {
+        const notificationData = {
+          user_id: updatedRequest.user_id,
+          type: 'quote',
+          title: `Price Quote for Your Request`,
+          message: `We've provided a quote of ₱${updatedRequest.final_price.toFixed(2)} for your request #${updatedRequest.request_number}. Please review and take action.`,
+          link: `/profile` // Link to profile where they can see the request
+        };
+        await supabase.from('notifications').insert([notificationData]);
+      }
+
+      Toast.show({
+        type: 'success',
+        text1: 'Quote Provided',
+        text2: `A quote of ₱${quoteAmount} has been sent for request #${requestToQuote.request_number}.`
+      });
+      setQuoteModalVisible(false);
+      setModalVisible(false); // Close the main details modal too
+      loadRequests(); // Refresh the list
+    } catch (error) {
+      console.error('Error providing quote:', error);
+      Alert.alert('Error', 'Failed to provide quote.');
+    }
+  };
+
+  const openDetailsModal = (item) => {
+    setSelectedRequest(item);
+    setModalVisible(true);
+  };
+
+  const EnhancedRequestCard = ({ item, onMessageCustomer, onPhoneCall, openDetailsModal }) => (
+    <View style={styles.eoCard}>
+      {/* Header */}
+      <View style={styles.eoCardHeader}>
+        <View style={{ flex: 1, gap: 4 }}>
+          <Text style={styles.eoLabel}>Request Type</Text>
+          <Text style={styles.eoOrderId}>{getStatusLabel(item.type)}</Text>
+          <View style={[styles.eoDeliveryTypeBadge, {backgroundColor: item.delivery_method === 'delivery' ? '#3B82F6' : '#10B981'}]}>
+              <Ionicons name={item.delivery_method === 'delivery' ? 'rocket-outline' : 'storefront-outline'} size={12} color="#fff" />
+              <Text style={styles.eoDeliveryTypeBadgeText}>
+                  {item.delivery_method === 'delivery' ? 'Delivery' : 'Pick-up'}
+              </Text>
+          </View>
+        </View>
+        <View style={{ alignItems: 'flex-end' }}>
+          <View style={styles.eoDateBadge}>
+            <Text style={styles.eoDateText}>{formatTimestamp(item.created_at)}</Text>
+          </View>
+          <View style={[styles.eoStatusBadge, {backgroundColor: getStatusColor(item.status)}]}>
+            <Ionicons name="time-outline" size={12} color="#fff" />
+            <Text style={styles.eoStatusText}>{getStatusLabel(item.status)}</Text>
+          </View>
         </View>
       </View>
 
-      <Text style={styles.requestCustomer}>{item.user_name || 'Customer'}</Text>
-      <Text style={styles.requestDate}>{formatTimestamp(item.created_at)}</Text>
+      {/* Customer Info */}
+      <View style={styles.eoSection}>
+        <View style={styles.eoCustomerHeader}>
+            <View style={styles.eoAvatarContainer}>
+                <View style={styles.eoAvatar}>
+                    <Text style={styles.eoAvatarText}>{getCustomerInitials(item.user_name)}</Text>
+                </View>
+                <View>
+                    <Text style={styles.eoLabel}>Customer</Text>
+                    <Text style={styles.eoCustomerName}>{item.user_name}</Text>
+                </View>
+            </View>
+            <View style={styles.eoActionButtons}>
+                <TouchableOpacity style={styles.eoIconBtnGreen} onPress={(e) => { e.stopPropagation(); onPhoneCall(item.contact_number || item.user_phone); }}>
+                    <Ionicons name="call" size={16} color="#fff" />
+                </TouchableOpacity>
+                <TouchableOpacity
+                    style={styles.eoIconBtnBlue}
+                    onPress={(e) => { e.stopPropagation(); onMessageCustomer(item.users, item.user_name, item.user_email); }}
+                >
+                    <Ionicons name="chatbubble" size={16} color="#fff" />
+                </TouchableOpacity>
+            </View>
+        </View>
+        <View style={styles.eoContactInfo}>
+            {item.user_email && (<View style={styles.eoInfoRow}>
+                <Ionicons name="mail" size={14} color="#9CA3AF" />
+                <Text style={styles.eoInfoText}>{item.user_email}</Text>
+            </View>)}
+            {item.contact_number && (
+              <View style={styles.eoInfoRow}>
+                  <Ionicons name="call" size={14} color="#9CA3AF" />
+                  <Text style={styles.eoInfoText} numberOfLines={1}>{item.contact_number}</Text>
+              </View>
+            )}
+        </View>
+      </View>
 
+      {/* Request Number / Other details */}
+      <View style={styles.eoSection}>
+        <View style={styles.eoFlexBetween}>
+            <Text style={styles.eoDetailText}>Request Number:</Text>
+            <Text style={styles.eoInfoTextBold}>#{item.request_number}</Text>
+        </View>
+        {item.notes && (
+          <View style={styles.eoInstructions}>
+              <Text style={styles.eoInstructionsTitle}>Notes:</Text>
+              <Text style={styles.eoInstructionsText}>{item.notes}</Text>
+          </View>
+        )}
+      </View>
+
+      {/* Request Image Preview */}
       {item.image_url && (
-        <View style={styles.requestPreviewImageContainer}>
+        <View style={styles.eoSection}>
+          <Text style={styles.eoSectionTitle}>Attachment</Text>
           <Image
             source={{ uri: item.image_url.startsWith('http') ? item.image_url : `${BASE_URL}${item.image_url}` }}
-            style={styles.requestPreviewImage}
+            style={{ width: '100%', height: 200, borderRadius: 8, marginTop: 10 }}
+            resizeMode="contain"
           />
-          <Text style={styles.viewDetailsText}>View Details & Photo</Text>
         </View>
       )}
-    </TouchableOpacity>
+
+      {/* Pricing Summary */}
+      {item.final_price && (
+        <View style={styles.eoSection}>
+          <View style={{gap: 8}}>
+            <View style={styles.eoPriceRow}>
+              <Text style={styles.eoDetailText}>Sub Total:</Text>
+              <Text style={styles.eoDetailText}>₱{(item.data?.subtotal || (item.final_price - (item.shipping_fee || 0))).toFixed(2)}</Text>
+            </View>
+            <View style={styles.eoPriceRow}>
+              <Text style={styles.eoDetailText}>Delivery Fee:</Text>
+              <Text style={styles.eoDetailText}>₱{(item.shipping_fee || 0).toFixed(2)}</Text>
+            </View>
+            <View style={[styles.eoPriceRow, {marginTop: 8}]}>
+              <Text style={styles.eoTotalLabel}>Total:</Text>
+              <Text style={styles.eoTotalValue}>₱{item.final_price.toFixed(2)}</Text>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* Action to open full details */}
+      <View style={styles.eoFooter}>
+        <TouchableOpacity style={[styles.eoMainBtn, {backgroundColor: '#8B5CF6'}]} onPress={() => openDetailsModal(item)}>
+            <Ionicons name="eye" size={18} color="#fff" />
+            <Text style={styles.eoMainBtnText}>View Details</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 
   return (
@@ -2338,8 +2538,9 @@ const RequestsTab = () => {
       
       <FlatList
         data={requests}
-        renderItem={renderRequest}
+        renderItem={({item}) => <EnhancedRequestCard item={item} onMessageCustomer={handleMessageCustomer} onPhoneCall={handlePhoneCall} openDetailsModal={openDetailsModal} />}
         keyExtractor={item => item.id.toString()}
+        contentContainerStyle={{ paddingBottom: 20, paddingHorizontal: 16 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#ec4899']} />}
         ListEmptyComponent={<Text style={styles.emptyText}>No requests found</Text>}
       />
@@ -2349,17 +2550,16 @@ const RequestsTab = () => {
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Request Details</Text>
-              <TouchableOpacity onPress={() => setModalVisible(false)}>
-                <Ionicons name="close" size={24} color="#333" />
-              </TouchableOpacity>
-            </View>
-
-            {selectedRequest && (
-              <ScrollView showsVerticalScrollIndicator={false}>
-                <View style={styles.detailSection}>
-                  <Text style={styles.detailLabel}>Type:</Text>
-                  <Text style={styles.detailValue}>{getStatusLabel(selectedRequest.type)}</Text>
-                </View>
+                              <TouchableOpacity onPress={() => setModalVisible(false)}>
+                                <Ionicons name="close" size={24} color="#333" />
+                              </TouchableOpacity>
+                            </View>
+              {selectedRequest && (
+                <ScrollView showsVerticalScrollIndicator={false}>
+                  <View style={styles.detailSection}>
+                    <Text style={styles.detailLabel}>Type:</Text>
+                    <Text style={styles.detailValue}>{getStatusLabel(selectedRequest.type)}</Text>
+                  </View>
                 <View style={styles.detailSection}>
                   <Text style={styles.detailLabel}>Submitted:</Text>
                   <Text style={styles.detailValue}>{formatTimestamp(selectedRequest.created_at)}</Text>
@@ -2383,8 +2583,22 @@ const RequestsTab = () => {
                 )}
 
                 <View style={styles.actionButtons}>
-                  {/* Accept and Decline for Pending Requests */}
-                  {selectedRequest.status === 'pending' && (
+                  {/* For Special Order and Booking: Provide Quote */}
+                  {(selectedRequest.status === 'pending' || selectedRequest.status === 'quoted') && (selectedRequest.type === 'special_order' || selectedRequest.type === 'booking') && (
+                    <TouchableOpacity
+                      style={[styles.actionButton, {backgroundColor: '#2196F3', flexDirection: 'row', justifyContent: 'center', alignItems: 'center'}]} // Blue color, added flex direction
+                      onPress={() => {
+                        setModalVisible(false);
+                        openQuoteModal(selectedRequest);
+                      }}
+                    >
+                      <Ionicons name="pricetag-outline" size={16} color="#fff" />
+                      <Text style={styles.buttonText}> Provide Price</Text> {/* Changed text */}
+                    </TouchableOpacity>
+                  )}
+
+                  {/* Accept and Decline for Pending Customized Requests */}
+                  {selectedRequest.status === 'pending' && selectedRequest.type === 'customized' && (
                     <>
                       <TouchableOpacity
                         style={[styles.actionButton, styles.acceptButton]}
@@ -2401,28 +2615,13 @@ const RequestsTab = () => {
                     </>
                   )}
 
-                  {/* Change Status for Customized Requests (unless cancelled, completed, declined, or pending) */}
-                  {selectedRequest.type === 'customized' &&
-                   selectedRequest.status !== 'cancelled' &&
-                   selectedRequest.status !== 'completed' &&
-                   selectedRequest.status !== 'declined' &&
-                   selectedRequest.status !== 'pending' && (
+                  {/* Change Status for requests not in a final state */}
+                  {['processing', 'ready_for_pickup', 'out_for_delivery'].includes(selectedRequest.status) && (
                     <TouchableOpacity
                       style={[styles.actionButton, styles.changeStatusButton]}
                       onPress={() => openRequestStatusModal(selectedRequest)}
                     >
                       <Text style={styles.buttonText}>Change Status</Text>
-                    </TouchableOpacity>
-                  )}
-
-                  {/* Complete for other processing requests (non-customized) */}
-                  {selectedRequest.status === 'processing' &&
-                   selectedRequest.type !== 'customized' && (
-                    <TouchableOpacity
-                      style={[styles.actionButton, styles.saveButton]}
-                      onPress={() => handleStatusChange(selectedRequest.id, 'completed')}
-                    >
-                      <Text style={styles.buttonText}>Complete</Text>
                     </TouchableOpacity>
                   )}
                 </View>
@@ -2432,41 +2631,155 @@ const RequestsTab = () => {
         </View>
       </Modal>
 
-      {/* Request Change Status Modal */}
-      <Modal visible={requestStatusModalVisible} animationType="fade" transparent>
+      {/* Request Change Status Modal (Timeline UI) */}
+      <Modal visible={requestStatusModalVisible} transparent animationType="fade" onRequestClose={() => setRequestStatusModalVisible(false)}>
+          <View style={styles.statusModalBackdrop}>
+              <View style={styles.timelineModalContainer}>
+                  <View style={styles.statusModalHeader}>
+                      <Text style={styles.statusModalTitle}>Change Request Status</Text>
+                  </View>
+
+                  <ScrollView contentContainerStyle={styles.timelineScrollView}>
+                      
+                      {/* Delivery/Pickup Toggle */}
+                      <View style={styles.timelinePathSelector}>
+                          <TouchableOpacity 
+                              style={[styles.timelinePathButton, deliveryOrPickup === 'delivery' && styles.timelinePathButtonActive]}
+                              onPress={() => setDeliveryOrPickup('delivery')}
+                          >
+                              <Ionicons name="rocket-outline" size={16} color={deliveryOrPickup === 'delivery' ? '#fff' : '#3B82F6'} />
+                              <Text style={[styles.timelinePathText, deliveryOrPickup === 'delivery' && styles.timelinePathTextActive]}>Delivery</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity 
+                              style={[styles.timelinePathButton, deliveryOrPickup === 'pickup' && [styles.timelinePathButtonActive, { backgroundColor: '#10B981' }]]}
+                              onPress={() => setDeliveryOrPickup('pickup')}
+                          >
+                              <Ionicons name="storefront-outline" size={16} color={deliveryOrPickup === 'pickup' ? '#fff' : '#10B981'} />
+                              <Text style={[styles.timelinePathText, deliveryOrPickup === 'pickup' && styles.timelinePathTextActive]}>Pick-up</Text>
+                          </TouchableOpacity>
+                      </View>
+
+                      {(() => {
+                          if (!requestToUpdate) return null;
+                          const stepperStatuses = deliveryOrPickup === 'delivery' ? requestDeliveryStepperStatuses : requestPickupStepperStatuses;
+                          const getStepperIndex = (status) => stepperStatuses.findIndex(s => s.id === status);
+                          const selectedIndex = getStepperIndex(selectedRequestStatus);
+
+                          return (
+                              <>
+                                  {stepperStatuses.map((status, index) => {
+                                      const isSelected = selectedIndex === index;
+                                      const isPast = selectedIndex > index;
+                                      const isLast = index === stepperStatuses.length - 1;
+
+                                      return (
+                                          <View key={status.id} style={styles.timelineStepContainer}>
+                                              {!isLast && (
+                                                  <View style={[
+                                                      styles.timelineLine,
+                                                      (isPast || isSelected) && styles.timelineLineActive
+                                                  ]}/>
+                                              )}
+                                              <TouchableOpacity onPress={() => setSelectedRequestStatus(status.id)} style={styles.timelineStep}>
+                                                  <View style={styles.timelineIconContainer}>
+                                                      <View style={[
+                                                          styles.timelineCircle,
+                                                          isPast && styles.timelineCirclePast,
+                                                          isSelected && styles.timelineCircleSelected
+                                                      ]}>
+                                                          {isPast ? (
+                                                              <Ionicons name="checkmark" size={18} color="#fff" />
+                                                          ) : (
+                                                              <Text style={[styles.timelineCircleText, isSelected && {color: '#fff'}]}>{index + 1}</Text>
+                                                          )}
+                                                      </View>
+                                                  </View>
+                                                  <View style={styles.timelineTextContainer}>
+                                                      <Text style={[
+                                                          styles.timelineLabel,
+                                                          isPast && styles.timelineLabelPast,
+                                                          isSelected && styles.timelineLabelSelected
+                                                      ]}>
+                                                          {status.label}
+                                                      </Text>
+                                                      <Text style={[
+                                                          styles.timelineDescription,
+                                                          isSelected && styles.timelineDescriptionSelected
+                                                      ]}>
+                                                          {status.description}
+                                                      </Text>
+                                                  </View>
+                                              </TouchableOpacity>
+                                          </View>
+                                      );
+                                  })}
+                                  <View style={styles.timelineActions}>
+                                      <TouchableOpacity
+                                          onPress={() => setSelectedRequestStatus('cancelled')}
+                                          style={[
+                                              styles.timelineCancelButton,
+                                              selectedRequestStatus === 'cancelled' && styles.timelineCancelButtonSelected
+                                          ]}
+                                      >
+                                          <Ionicons name="close-circle-outline" size={16} color={selectedRequestStatus === 'cancelled' ? '#fff' : '#EF4444'} />
+                                          <Text style={[
+                                              styles.timelineCancelButtonText,
+                                              selectedRequestStatus === 'cancelled' && { color: '#fff' }
+                                          ]}>
+                                              Cancel Request
+                                          </Text>
+                                      </TouchableOpacity>
+                                  </View>
+                              </>
+                          );
+                      })()}
+                  </ScrollView>
+
+                  <View style={styles.statusModalFooter}>
+                      <TouchableOpacity onPress={confirmRequestStatusChange} style={styles.statusConfirmButton}>
+                          <Text style={styles.statusConfirmButtonText}>Confirm</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => setRequestStatusModalVisible(false)} style={styles.statusCloseButton}>
+                          <Text style={styles.statusCloseButtonText}>Cancel</Text>
+                      </TouchableOpacity>
+                  </View>
+              </View>
+          </View>
+      </Modal>
+
+      {/* Provide Quote Modal */}
+      <Modal visible={quoteModalVisible} animationType="fade" transparent>
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Change Request Status</Text>
-              <TouchableOpacity onPress={() => setRequestStatusModalVisible(false)}>
+              <Text style={styles.modalTitle}>Provide Price</Text>
+              <TouchableOpacity onPress={() => setQuoteModalVisible(false)}>
                 <Ionicons name="close" size={24} color="#333" />
               </TouchableOpacity>
             </View>
-            <Text style={styles.modalSubtitle}>Request #{requestToUpdate?.request_number}</Text>
-
-            <View style={styles.radioGroup}>
-              {requestStatusOptions.map(status => (
-                <TouchableOpacity key={status} style={styles.radioButtonContainer} onPress={() => setSelectedRequestStatus(status)}>
-                  <View style={[styles.radioButton, selectedRequestStatus === status && styles.radioButtonSelected]}>
-                    {selectedRequestStatus === status && <View style={styles.radioButtonInner} />}
-                  </View>
-                  <Text style={styles.radioLabel}>{getStatusLabel(status)}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+            <Text style={[styles.modalSubtitle, {textAlign: 'left', paddingHorizontal: 20}]}>Request #{requestToQuote?.request_number}</Text>
+            
+            <Text style={styles.inputLabel}>Price Amount (₱)</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Enter total price for the request"
+              keyboardType="numeric"
+              value={quoteAmount}
+              onChangeText={setQuoteAmount}
+            />
 
             <View style={styles.modalButtons}>
               <TouchableOpacity
                 style={[styles.modalButton, styles.cancelButton]}
-                onPress={() => setRequestStatusModalVisible(false)}
+                onPress={() => setQuoteModalVisible(false)}
               >
                 <Text style={styles.buttonText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.modalButton, styles.saveButton]}
-                onPress={confirmRequestStatusChange}
+                onPress={handleProvideQuote}
               >
-                <Text style={styles.buttonText}>Confirm</Text>
+                <Text style={styles.buttonText}>Submit Price</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -2877,6 +3190,7 @@ const MessagingTab = ({ customerToMessage, setCustomerToMessage }) => {
 
 // ==================== SALES TAB ====================
 const SalesTab = () => {
+  const { width } = useWindowDimensions();
   const [salesData, setSalesData] = useState({
     totalSales: 0,
     todaySales: 0,
@@ -2886,108 +3200,147 @@ const SalesTab = () => {
     completedOrders: 0,
     pendingOrders: 0,
   });
-  const [recentSales, setRecentSales] = useState([]);
+  const [chartData, setChartData] = useState({
+    labels: [],
+    datasets: [{ data: [] }],
+  });
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [selectedPeriod, setSelectedPeriod] = useState('today');
+  const [selectedPeriod, setSelectedPeriod] = useState('week');
 
   useEffect(() => {
     loadSalesData();
+
+    const subscription = supabase
+      .channel('sales-tab-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' },
+        (payload) => {
+          loadSalesData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(subscription);
+    };
   }, [selectedPeriod]);
 
   const loadSalesData = async () => {
     setLoading(true);
     try {
-      // Try to fetch from API
-      const response = await adminAPI.getAllOrders();
-      const orders = response.data.orders || [];
-
-      // Calculate sales statistics
-      const now = new Date();
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
-      const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
-
-      let totalSales = 0;
-      let todaySales = 0;
-      let weekSales = 0;
-      let monthSales = 0;
-      let completedOrders = 0;
-      let pendingOrders = 0;
-
-      orders.forEach(order => {
-        const orderDate = new Date(order.created_at);
-        const orderTotal = parseFloat(order.total || 0);
-
-        totalSales += orderTotal;
-
-        if (orderDate >= today) {
-          todaySales += orderTotal;
-        }
-        if (orderDate >= weekAgo) {
-          weekSales += orderTotal;
-        }
-        if (orderDate >= monthAgo) {
-          monthSales += orderTotal;
-        }
-
-        if (order.status === 'completed' || order.status === 'delivered') {
-          completedOrders++;
-        } else if (order.status === 'pending' || order.status === 'processing') {
-          pendingOrders++;
-        }
-      });
+      const summaryRes = await adminAPI.getSalesSummary();
+      if (summaryRes.error) throw summaryRes.error;
+      const summary = summaryRes.data;
 
       setSalesData({
-        totalSales,
-        todaySales,
-        weekSales,
-        monthSales,
-        totalOrders: orders.length,
-        completedOrders,
-        pendingOrders,
+        totalSales: summary.totalSales,
+        todaySales: summary.todaySales,
+        weekSales: summary.weekSales,
+        monthSales: summary.monthSales,
+        totalOrders: summary.totalOrders,
+        completedOrders: summary.completedOrders,
+        pendingOrders: summary.pendingOrders,
       });
 
-      // Get recent sales based on selected period
-      let filteredOrders = orders;
-      if (selectedPeriod === 'today') {
-        filteredOrders = orders.filter(o => new Date(o.created_at) >= today);
-      } else if (selectedPeriod === 'week') {
-        filteredOrders = orders.filter(o => new Date(o.created_at) >= weekAgo);
+      // Process data for chart
+      const chartRes = await adminAPI.getSalesChartData();
+      if (chartRes.error) throw chartRes.error;
+      const allSales = chartRes.data || [];
+
+      let labels = [];
+      let data = [];
+
+      if (selectedPeriod === 'week') {
+        const toDateString = (date) => {
+            const y = date.getFullYear();
+            const m = String(date.getMonth() + 1).padStart(2, '0');
+            const d = String(date.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+        }
+
+        const dailyData = new Map();
+        labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+        const today = new Date();
+        const dayOfWeek = today.getDay();
+        const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+        
+        const monday = new Date(today);
+        monday.setDate(today.getDate() + diff);
+        monday.setHours(0, 0, 0, 0);
+
+        for (let i = 0; i < 7; i++) {
+            const day = new Date(monday);
+            day.setDate(monday.getDate() + i);
+            dailyData.set(toDateString(day), 0);
+        }
+
+        allSales.forEach(sale => {
+            const saleDate = new Date(sale.sale_date);
+            const saleDateString = toDateString(saleDate);
+            if (dailyData.has(saleDateString)) {
+                dailyData.set(saleDateString, dailyData.get(saleDateString) + parseFloat(sale.total_amount || 0));
+            }
+        });
+        data = Array.from(dailyData.values());
+
       } else if (selectedPeriod === 'month') {
-        filteredOrders = orders.filter(o => new Date(o.created_at) >= monthAgo);
+        labels = ['Week 1', 'Week 2', 'Week 3', 'Week 4']; // Week 1 is most recent
+        data = [0, 0, 0, 0];
+
+        const now = new Date();
+        
+        allSales.forEach(sale => {
+            const saleDate = new Date(sale.sale_date);
+            const diffDays = Math.floor((now - saleDate) / (1000 * 60 * 60 * 24));
+            
+            if (diffDays >= 0 && diffDays < 28) {
+                const weekIndex = Math.floor(diffDays / 7); // 0 for last 7 days, 1 for 7-13 days ago, etc.
+                if (weekIndex >= 0 && weekIndex < 4) {
+                    data[weekIndex] += parseFloat(sale.total_amount || 0);
+                }
+            }
+        });
+
+      } else { // 'all'
+        labels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const monthTotals = Array(12).fill(0);
+        const currentYear = new Date().getFullYear();
+        allSales.forEach(sale => {
+            const saleDate = new Date(sale.sale_date);
+            if (saleDate.getFullYear() === currentYear) {
+                const monthIndex = saleDate.getMonth();
+                monthTotals[monthIndex] += parseFloat(sale.total_amount || 0);
+            }
+        });
+        data = monthTotals;
+      }
+      
+      const allSame = data.length > 1 && data.every(val => val === data[0]);
+      if (allSame) {
+        data[data.length - 1] += 0.0001;
       }
 
-      setRecentSales(filteredOrders.slice(0, 20));
-    } catch (error) {
-      console.error('Error loading sales data:', error);
-      // Set sample data if API fails
-      setSalesData({
-        totalSales: 15750.00,
-        todaySales: 700.00,
-        weekSales: 4200.00,
-        monthSales: 12500.00,
-        totalOrders: 45,
-        completedOrders: 32,
-        pendingOrders: 13,
+      setChartData({
+        labels,
+        datasets: [{ data: data.length > 0 ? data : [0] }],
       });
 
-      // Sample recent sales
-      setRecentSales([
-        {
-          id: 1,
-          order_number: 'ORD-20251204-3154',
-          customer_name: 'Rhiannah Niño Fernandez',
-          total: 700.00,
-          status: 'pending',
-          created_at: new Date().toISOString(),
-        },
-      ]);
+    } catch (error) {
+      console.error('Error loading sales data:', error);
+      setSalesData({
+        totalSales: 0, todaySales: 0, weekSales: 0, monthSales: 0,
+        totalOrders: 0, completedOrders: 0, pendingOrders: 0,
+      });
+      setChartData({
+        labels: ['N/A'],
+        datasets: [{ data: [0] }],
+      });
     } finally {
       setLoading(false);
     }
   };
-
+  
   const onRefresh = async () => {
     setRefreshing(true);
     await loadSalesData();
@@ -2996,17 +3349,6 @@ const SalesTab = () => {
 
   const formatCurrency = (amount) => {
     return `₱${parseFloat(amount).toFixed(2)}`;
-  };
-
-  const formatDate = (dateString) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
   };
 
   if (loading && !refreshing) {
@@ -3019,8 +3361,8 @@ const SalesTab = () => {
 
   const currentSales = selectedPeriod === 'today' ? salesData.todaySales :
     selectedPeriod === 'week' ? salesData.weekSales :
-      selectedPeriod === 'month' ? salesData.monthSales :
-        salesData.totalSales;
+    selectedPeriod === 'month' ? salesData.monthSales :
+      salesData.totalSales;
 
   return (
     <ScrollView
@@ -3035,7 +3377,7 @@ const SalesTab = () => {
       <View style={styles.filterContainer}>
         <Text style={styles.filterLabel}>Period:</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
-          {['today', 'week', 'month', 'all'].map((period) => (
+          {['week', 'month', 'all'].map((period) => (
             <TouchableOpacity
               key={period}
               style={[
@@ -3055,16 +3397,49 @@ const SalesTab = () => {
         </ScrollView>
       </View>
 
+      {/* Sales Chart */}
+      <View style={{
+        marginVertical: 8,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: '#eee',
+        overflow: 'hidden',
+        alignSelf: 'center'
+      }}>
+        <LineChart
+          data={chartData}
+          width={width - 32}
+          height={220}
+          yAxisLabel="₱"
+          chartConfig={{
+            backgroundColor: "#fff",
+            backgroundGradientFrom: "#fff",
+            backgroundGradientTo: "#fff",
+            decimalPlaces: 2,
+            color: (opacity = 1) => `rgba(236, 72, 153, ${opacity})`,
+            labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+            style: {
+              borderRadius: 16
+            },
+            propsForDots: {
+              r: "6",
+              strokeWidth: "2",
+              stroke: "#ec4899"
+            },
+            formatYLabel: (yLabel) => `₱${parseFloat(yLabel).toFixed(0)}`,
+            yLabelsOffset: 40,
+          }}
+          bezier
+        />
+      </View>
+
       {/* Sales Summary Cards */}
       <View style={styles.salesSummaryContainer}>
         <View style={styles.salesCard}>
           <Ionicons name="cash" size={32} color="#4CAF50" />
           <Text style={styles.salesCardValue}>{formatCurrency(currentSales)}</Text>
           <Text style={styles.salesCardLabel}>
-            {selectedPeriod === 'today' ? "Today's Sales" :
-              selectedPeriod === 'week' ? "This Week" :
-                selectedPeriod === 'month' ? "This Month" :
-                  "Total Sales"}
+            {selectedPeriod === 'all' ? 'Total Sales' : `Sales (${selectedPeriod.charAt(0).toUpperCase() + selectedPeriod.slice(1)})`}
           </Text>
         </View>
 
@@ -3088,52 +3463,6 @@ const SalesTab = () => {
           <Text style={styles.salesCardLabel}>Pending</Text>
         </View>
       </View>
-
-      {/* Quick Stats */}
-      <View style={styles.quickStatsContainer}>
-        <Text style={styles.sectionTitle}>Quick Stats</Text>
-        <View style={styles.statRow}>
-          <Text style={styles.statLabel}>Today:</Text>
-          <Text style={styles.statValue}>{formatCurrency(salesData.todaySales)}</Text>
-        </View>
-        <View style={styles.statRow}>
-          <Text style={styles.statLabel}>This Week:</Text>
-          <Text style={styles.statValue}>{formatCurrency(salesData.weekSales)}</Text>
-        </View>
-        <View style={styles.statRow}>
-          <Text style={styles.statLabel}>This Month:</Text>
-          <Text style={styles.statValue}>{formatCurrency(salesData.monthSales)}</Text>
-        </View>
-        <View style={[styles.statRow, styles.statRowTotal]}>
-          <Text style={styles.statLabelTotal}>All Time:</Text>
-          <Text style={styles.statValueTotal}>{formatCurrency(salesData.totalSales)}</Text>
-        </View>
-      </View>
-
-      {/* Recent Sales */}
-      <Text style={styles.sectionTitle}>Recent Sales</Text>
-      {recentSales.length > 0 ? (
-        recentSales.map((sale) => (
-          <View key={sale.id} style={styles.saleCard}>
-            <View style={styles.saleHeader}>
-              <View>
-                <Text style={styles.saleOrderNumber}>{sale.order_number}</Text>
-                <Text style={styles.saleCustomer}>{sale.customer_name}</Text>
-              </View>
-              <View style={styles.saleRight}>
-                <Text style={styles.saleAmount}>{formatCurrency(sale.total)}</Text>
-                <View style={[styles.statusBadge, { backgroundColor: sale.status === 'completed' ? '#4CAF50' : '#FF9800' }]}>
-                  <Text style={styles.statusText}>{sale.status}</Text>
-                </View>
-              </View>
-            </View>
-            <Text style={styles.saleDate}>{formatDate(sale.created_at)}</Text>
-          </View>
-        ))
-      ) : (
-        <Text style={styles.emptyText}>No sales for this period</Text>
-      )}
-
       <View style={{ height: 50 }} />
     </ScrollView>
   );
@@ -5745,7 +6074,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   statusCloseButton: {
-    backgroundColor: '#E5E7EB',
+    backgroundColor: '#FBCFE8', // Light pink/purple
     paddingVertical: 14,
     borderRadius: 12,
     alignItems: 'center',
@@ -5877,6 +6206,40 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 10,
     fontWeight: 'bold',
+  },
+  timelinePathSelector: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: 20,
+  },
+  timelinePathButton: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderRadius: 10,
+    gap: 8,
+  },
+  timelinePathButtonActive: {
+    backgroundColor: '#3B82F6', // Default to delivery blue
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  timelinePathText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  timelinePathTextActive: {
+    color: '#fff',
   },
 });
 

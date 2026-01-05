@@ -491,17 +491,135 @@ export const adminAPI = {
         return { data: { success: true, order: data } };
     },
 
+    getStats: async () => {
+        const { count: completedOrders, error: completedOrdersError } = await supabase
+            .from('orders')
+            .select('*', { count: 'exact', head: true })
+            .in('status', ['completed', 'claimed']);
+
+        const { count: pendingOrders, error: pendingOrdersError } = await supabase
+            .from('orders')
+            .select('*', { count: 'exact', head: true })
+            .eq('status', 'pending');
+
+        const { count: completedRequests, error: completedRequestsError } = await supabase
+            .from('requests')
+            .select('*', { count: 'exact', head: true })
+            .eq('status', 'completed');
+            
+        const { count: pendingRequests, error: pendingRequestsError } = await supabase
+            .from('requests')
+            .select('*', { count: 'exact', head: true })
+            .eq('status', 'pending');
+
+        if(completedOrdersError || pendingOrdersError || completedRequestsError || pendingRequestsError) {
+            console.error({completedOrdersError, pendingOrdersError, completedRequestsError, pendingRequestsError});
+            throw new Error("Could not fetch stats");
+        }
+
+        return { data: { 
+            completedOrders: completedOrders || 0,
+            pendingOrders: pendingOrders || 0,
+            completedRequests: completedRequests || 0,
+            pendingRequests: pendingRequests || 0,
+        } };
+    },
 
 
-    getSalesSummary: async (params) => {
-        const orders = JSON.parse(await AsyncStorage.getItem('orders') || '[]');
+
+    getSalesSummary: async () => {
+        console.log("Fetching sales summary...");
+
+        // 1. Calculate sales figures from `sales` table
+        const { data: sales, error: salesError } = await supabase.from('sales').select('total_amount, sale_date');
+        
+        console.log("Sales data from Supabase:", sales);
+        console.log("Error from Supabase:", salesError);
+
+        if (salesError) {
+            console.error("Error fetching sales:", salesError);
+            throw salesError;
+        }
+        
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        
+        let totalSales = 0, todaySales = 0, weekSales = 0, monthSales = 0;
+
+        console.log(`Found ${sales ? sales.length : 0} sales records to process.`);
+
+        (sales || []).forEach((sale, index) => {
+            const saleDate = new Date(sale.sale_date);
+            const saleAmount = parseFloat(sale.total_amount || 0);
+
+            console.log(`Processing sale #${index + 1}: Amount=${saleAmount}, Date=${saleDate}`);
+
+            if (!isNaN(saleAmount) && saleDate.getTime()) {
+                totalSales += saleAmount;
+                if (saleDate >= today) todaySales += saleAmount;
+                if (saleDate >= new Date(weekAgo)) weekSales += saleAmount;
+                if (saleDate >= new Date(monthAgo)) monthSales += saleAmount;
+            } else {
+                console.warn(`Skipping invalid sale record:`, sale);
+            }
+        });
+
+        console.log("Calculated sales:", { totalSales, todaySales, weekSales, monthSales });
+
+        // 2. Get other stats for other cards
+        const { data: stats, error: statsError } = await adminAPI.getStats();
+        if(statsError) {
+            console.error("Error fetching stats:", statsError);
+            throw statsError;
+        }
+
+        const { count: totalOrders, error: totalOrdersError } = await supabase
+            .from('orders')
+            .select('*', { count: 'exact', head: true });
+        if (totalOrdersError) {
+            console.error("Error fetching total orders:", totalOrdersError);
+            throw totalOrdersError;
+        }
+        
+        const { count: totalRequests, error: totalRequestsError } = await supabase
+            .from('requests')
+            .select('*', { count: 'exact', head: true });
+        if (totalRequestsError) {
+            console.error("Error fetching total requests:", totalRequestsError);
+            throw totalRequestsError;
+        }
+
         const summary = {
-            total_sales: orders.reduce((sum, o) => sum + (o.total || 0), 0),
-            total_orders: orders.length,
-            pending_orders: orders.filter(o => o.status === 'pending').length
+            totalSales,
+            todaySales,
+            weekSales,
+            monthSales,
+            totalOrders: (totalOrders || 0) + (totalRequests || 0),
+            completedOrders: stats.completedOrders + stats.completedRequests,
+            pendingOrders: stats.pendingOrders + stats.pendingRequests,
         };
+
+        console.log("Returning final summary:", summary);
+
+        // 3. Combine and return
         return { data: summary };
     },
+
+    getSalesChartData: async () => {
+        const { data, error } = await supabase
+            .from('sales')
+            .select('sale_date, total_amount')
+            .order('sale_date', { ascending: true });
+
+        if (error) {
+            console.error('Error fetching sales chart data:', error);
+            throw error;
+        }
+        return { data };
+    },
+
 
     getAllRequests: async (params) => {
         let query = supabase
@@ -511,11 +629,17 @@ export const adminAPI = {
                 request_number,
                 type,
                 status,
+                contact_number,
                 image_url,
                 notes,
                 data,
                 created_at,
+                delivery_method,
+                pickup_time,
+                final_price,
+                shipping_fee,
                 users (
+                    id,
                     name,
                     email,
                     phone
@@ -532,19 +656,24 @@ export const adminAPI = {
 
         const formattedRequests = requests.map(req => {
             const userData = req.users || {};
-            // requestData is no longer fetched
 
             return {
                 id: req.id,
                 request_number: req.request_number,
                 type: req.type,
-                status: req.status,
+                status: req.status === 'accepted' ? 'processing' : req.status,
+                contact_number: req.contact_number,
                 image_url: req.image_url,
                 notes: req.notes,
                 created_at: req.created_at,
+                delivery_method: req.delivery_method,
+                pickup_time: req.pickup_time,
+                final_price: req.final_price,
+                shipping_fee: req.shipping_fee,
                 user_name: userData.name,
                 user_email: userData.email,
                 user_phone: userData.phone,
+                users: userData,
                 data: req.data,
             };
         });
@@ -552,14 +681,43 @@ export const adminAPI = {
         return { data: { requests: formattedRequests } };
     },
 
-    provideQuote: async (id, data) => {
-        const requests = JSON.parse(await AsyncStorage.getItem('requests') || '[]');
-        const index = requests.findIndex(r => r.id === id);
-        if (index !== -1) {
-            requests[index] = { ...requests[index], ...data, status: 'quoted' };
-            await AsyncStorage.setItem('requests', JSON.stringify(requests));
+    provideQuote: async (id, price) => {
+        const { data: request, error } = await supabase
+            .from('requests')
+            .update({ 
+                final_price: price,
+                status: 'quoted' 
+            })
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (error) {
+            console.error('Error providing quote:', error);
+            throw error;
         }
-        return { data: { success: true } };
+        
+        // Send notification to the user who made the request
+        if (request && request.user_id) {
+            const notification = {
+                user_id: request.user_id,
+                title: `You have a new quote!`,
+                message: `A quote of ₱${parseFloat(price).toFixed(2)} has been provided for your request #${request.request_number}. Please review and accept it.`,
+                type: 'request_update',
+                link: '/profile' // Changed to '/profile' as requested
+            };
+
+            const { error: notificationError } = await supabase
+                .from('notifications')
+                .insert([notification]);
+            
+            if (notificationError) {
+                // Log the error but don't fail the whole operation
+                console.error("Failed to send quote notification:", notificationError);
+            }
+        }
+
+        return { data: { success: true, request: request } };
     },
 
     acceptRequest: async (id) => {
@@ -789,8 +947,56 @@ export const adminAPI = {
         return { data: [] };
     },
 
-    sendNotification: async (data) => {
-        return { data: { id: Date.now(), ...data } };
+    sendNotification: async (notificationData) => {
+        // If a specific user_id is provided, send to that user.
+        if (notificationData.user_id) {
+            const { data, error } = await supabase
+                .from('notifications')
+                .insert([notificationData])
+                .select()
+                .single();
+
+            if (error) {
+                console.error('Error sending single notification:', error);
+                throw error;
+            }
+            return { data };
+        }
+        
+        // If no user_id, it's a broadcast to all customers.
+        const { data: users, error: usersError } = await supabase
+            .from('users')
+            .select('id')
+            .eq('role', 'customer');
+
+        if (usersError) {
+            console.error('Error fetching users for broadcast:', usersError);
+            throw usersError;
+        }
+
+        if (!users || users.length === 0) {
+            return { data: { success: true, message: "No customers to notify." } };
+        }
+
+        const notifications = users.map(user => ({
+            user_id: user.id,
+            title: notificationData.title,
+            message: notificationData.message,
+            link: notificationData.link || null,
+            type: 'broadcast',
+        }));
+
+        const { data, error } = await supabase
+            .from('notifications')
+            .insert(notifications)
+            .select();
+
+        if (error) {
+            console.error('Error sending broadcast notifications:', error);
+            throw error;
+        }
+
+        return { data: { success: true, count: data ? data.length : 0 } };
     },
 
     deleteNotification: async (id) => {
