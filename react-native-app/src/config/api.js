@@ -491,17 +491,135 @@ export const adminAPI = {
         return { data: { success: true, order: data } };
     },
 
+    getStats: async () => {
+        const { count: completedOrders, error: completedOrdersError } = await supabase
+            .from('orders')
+            .select('*', { count: 'exact', head: true })
+            .in('status', ['completed', 'claimed']);
+
+        const { count: pendingOrders, error: pendingOrdersError } = await supabase
+            .from('orders')
+            .select('*', { count: 'exact', head: true })
+            .eq('status', 'pending');
+
+        const { count: completedRequests, error: completedRequestsError } = await supabase
+            .from('requests')
+            .select('*', { count: 'exact', head: true })
+            .eq('status', 'completed');
+            
+        const { count: pendingRequests, error: pendingRequestsError } = await supabase
+            .from('requests')
+            .select('*', { count: 'exact', head: true })
+            .eq('status', 'pending');
+
+        if(completedOrdersError || pendingOrdersError || completedRequestsError || pendingRequestsError) {
+            console.error({completedOrdersError, pendingOrdersError, completedRequestsError, pendingRequestsError});
+            throw new Error("Could not fetch stats");
+        }
+
+        return { data: { 
+            completedOrders: completedOrders || 0,
+            pendingOrders: pendingOrders || 0,
+            completedRequests: completedRequests || 0,
+            pendingRequests: pendingRequests || 0,
+        } };
+    },
 
 
-    getSalesSummary: async (params) => {
-        const orders = JSON.parse(await AsyncStorage.getItem('orders') || '[]');
+
+    getSalesSummary: async () => {
+        console.log("Fetching sales summary...");
+
+        // 1. Calculate sales figures from `sales` table
+        const { data: sales, error: salesError } = await supabase.from('sales').select('total_amount, sale_date');
+        
+        console.log("Sales data from Supabase:", sales);
+        console.log("Error from Supabase:", salesError);
+
+        if (salesError) {
+            console.error("Error fetching sales:", salesError);
+            throw salesError;
+        }
+        
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        
+        let totalSales = 0, todaySales = 0, weekSales = 0, monthSales = 0;
+
+        console.log(`Found ${sales ? sales.length : 0} sales records to process.`);
+
+        (sales || []).forEach((sale, index) => {
+            const saleDate = new Date(sale.sale_date);
+            const saleAmount = parseFloat(sale.total_amount || 0);
+
+            console.log(`Processing sale #${index + 1}: Amount=${saleAmount}, Date=${saleDate}`);
+
+            if (!isNaN(saleAmount) && saleDate.getTime()) {
+                totalSales += saleAmount;
+                if (saleDate >= today) todaySales += saleAmount;
+                if (saleDate >= new Date(weekAgo)) weekSales += saleAmount;
+                if (saleDate >= new Date(monthAgo)) monthSales += saleAmount;
+            } else {
+                console.warn(`Skipping invalid sale record:`, sale);
+            }
+        });
+
+        console.log("Calculated sales:", { totalSales, todaySales, weekSales, monthSales });
+
+        // 2. Get other stats for other cards
+        const { data: stats, error: statsError } = await adminAPI.getStats();
+        if(statsError) {
+            console.error("Error fetching stats:", statsError);
+            throw statsError;
+        }
+
+        const { count: totalOrders, error: totalOrdersError } = await supabase
+            .from('orders')
+            .select('*', { count: 'exact', head: true });
+        if (totalOrdersError) {
+            console.error("Error fetching total orders:", totalOrdersError);
+            throw totalOrdersError;
+        }
+        
+        const { count: totalRequests, error: totalRequestsError } = await supabase
+            .from('requests')
+            .select('*', { count: 'exact', head: true });
+        if (totalRequestsError) {
+            console.error("Error fetching total requests:", totalRequestsError);
+            throw totalRequestsError;
+        }
+
         const summary = {
-            total_sales: orders.reduce((sum, o) => sum + (o.total || 0), 0),
-            total_orders: orders.length,
-            pending_orders: orders.filter(o => o.status === 'pending').length
+            totalSales,
+            todaySales,
+            weekSales,
+            monthSales,
+            totalOrders: (totalOrders || 0) + (totalRequests || 0),
+            completedOrders: stats.completedOrders + stats.completedRequests,
+            pendingOrders: stats.pendingOrders + stats.pendingRequests,
         };
+
+        console.log("Returning final summary:", summary);
+
+        // 3. Combine and return
         return { data: summary };
     },
+
+    getSalesChartData: async () => {
+        const { data, error } = await supabase
+            .from('sales')
+            .select('sale_date, total_amount')
+            .order('sale_date', { ascending: true });
+
+        if (error) {
+            console.error('Error fetching sales chart data:', error);
+            throw error;
+        }
+        return { data };
+    },
+
 
     getAllRequests: async (params) => {
         let query = supabase

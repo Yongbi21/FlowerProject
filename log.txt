@@ -1,7 +1,1 @@
-C:\Users\AJ\Document…ts\View\index.js:57 Unexpected text node:  . A text node cannot be a child of a <View>.
-Show 30 more frames
-C:\Users\AJ\Document…ts\View\index.js:57 Unexpected text node:  . A text node cannot be a child of a <View>.
-Show 28 more frames
-2
-C:\Users\AJ\Document…ts\View\index.js:57 Unexpected text node:  . A text node cannot be a child of a <View>.
-Show 30 more frames
+C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:1120 Error: <path> attribute d: Expected number, "M0,0 L-Infinity,181 L6…".
