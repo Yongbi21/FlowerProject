@@ -1348,6 +1348,7 @@ const OrdersTab = ({ setActiveTab, handleSelectCustomerForMessage }) => {
                           const stepperStatuses = isDelivery ? deliveryStepperStatuses : pickupStepperStatuses;
                           const getStepperIndex = (status) => stepperStatuses.findIndex(s => s.id === status);
                           const selectedIndex = getStepperIndex(selectedStatus);
+                          const currentStatusIndex = getStepperIndex(orderToUpdate.status);
 
                           return (
                               <>
@@ -1366,7 +1367,11 @@ const OrdersTab = ({ setActiveTab, handleSelectCustomerForMessage }) => {
                                                   ]}/>
                                               )}
                                               {/* Content */}
-                                              <TouchableOpacity onPress={() => setSelectedStatus(status.id)} style={styles.timelineStep}>
+                                              <TouchableOpacity
+                                                onPress={() => setSelectedStatus(status.id)}
+                                                style={styles.timelineStep}
+                                                disabled={isPast}
+                                              >
                                                   <View style={styles.timelineIconContainer}>
                                                       <View style={[
                                                           styles.timelineCircle,
@@ -2664,6 +2669,7 @@ const RequestsTab = ({ setActiveTab, handleSelectCustomerForMessage }) => {
                           const stepperStatuses = deliveryOrPickup === 'delivery' ? requestDeliveryStepperStatuses : requestPickupStepperStatuses;
                           const getStepperIndex = (status) => stepperStatuses.findIndex(s => s.id === status);
                           const selectedIndex = getStepperIndex(selectedRequestStatus);
+                          const currentStatusIndex = getStepperIndex(requestToUpdate.status);
 
                           return (
                               <>
@@ -2680,7 +2686,11 @@ const RequestsTab = ({ setActiveTab, handleSelectCustomerForMessage }) => {
                                                       (isPast || isSelected) && styles.timelineLineActive
                                                   ]}/>
                                               )}
-                                              <TouchableOpacity onPress={() => setSelectedRequestStatus(status.id)} style={styles.timelineStep}>
+                                              <TouchableOpacity
+                                                onPress={() => setSelectedRequestStatus(status.id)}
+                                                style={styles.timelineStep}
+                                                disabled={isPast}
+                                              >
                                                   <View style={styles.timelineIconContainer}>
                                                       <View style={[
                                                           styles.timelineCircle,
