@@ -3214,7 +3214,7 @@ const SalesTab = () => {
     labels: [],
     datasets: [{ data: [] }],
   });
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedPeriod, setSelectedPeriod] = useState('week');
 

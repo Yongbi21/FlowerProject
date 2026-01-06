@@ -1,1 +1,1 @@
-C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\react-dom\cjs\react-dom-client.development.js:1120 Error: <path> attribute d: Expected number, "M0,0 L-Infinity,181 L6…".
+C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\src\screens\AdminDashboard.js:3419 Error: <path> attribute d: Expected number, "M0,0 L-Infinity,181 L6…".
