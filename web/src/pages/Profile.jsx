@@ -3,51 +3,20 @@ import Select from 'react-select';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import '../styles/Shop.css';
 import { supabase } from '../config/supabase';
-
-
-const orderTabs = [
-    { id: 'all', label: 'All Orders' },
-    { id: 'pending', label: 'Pending' },
-    { id: 'processing', label: 'Processing' },
-    { id: 'ready_for_pickup', label: 'Ready for Pickup' },
-    { id: 'out_for_delivery', label: 'Out for Delivery' },
-    { id: 'claimed', label: 'Claimed' },
-    { id: 'completed', label: 'Completed' },
-    { id: 'cancelled', label: 'Cancelled' },
-];
-
-const menuItems = [
-    { id: 'orders', label: 'My Orders', icon: 'fa-box' },
-    { id: 'messages', label: 'Messages', icon: 'fa-comments' },
-    { id: 'addresses', label: 'Addresses', icon: 'fa-map-marker-alt' },
-    { id: 'settings', label: 'Account Settings', icon: 'fa-cog' },
-];
-
-
+import { formatPhoneNumber } from '../utils/format';
 
 const Profile = ({ user, logout }) => {
     const navigate = useNavigate();
     const location = useLocation();
 
-    // Effect to handle redirection if user is not logged in
-    useEffect(() => {
-        if (!user) {
-            navigate('/login');
-        }
-    }, [user, navigate]);
-
-    // If user is not present, render nothing (or a loading spinner)
-    // All hooks must be called unconditionally after this check
-    if (!user) {
-        return null;
-    }
-
-    const [activeMenu, setActiveMenu] = useState(location.state?.activeMenu || 'orders');
-    const [activeOrderTab, setActiveOrderTab] = useState('all');
+    const [activeMenu, setActiveMenu] = useState('orders');
     const [orders, setOrders] = useState([]);
+    const [activeOrderTab, setActiveOrderTab] = useState('all');
+    const [messages, setMessages] = useState([]);
+    const [newMessage, setNewMessage] = useState('');
+    const [adminId, setAdminId] = useState(null);
     const [addresses, setAddresses] = useState([]);
     const [showAddressModal, setShowAddressModal] = useState(false);
-    const [editingAddress, setEditingAddress] = useState(null);
     const [addressForm, setAddressForm] = useState({
         label: '',
         name: '',
@@ -57,140 +26,47 @@ const Profile = ({ user, logout }) => {
         city: '',
         province: ''
     });
-    
-    // NEW STATE for address dropdowns
+    const [editingAddress, setEditingAddress] = useState(null);
     const [provinces, setProvinces] = useState([]);
     const [cities, setCities] = useState([]);
     const [barangays, setBarangays] = useState([]);
-    const [addressLoading, setAddressLoading] = useState(null); // Can be 'provinces', 'cities', 'barangays'
-    
     const [selectedProvince, setSelectedProvince] = useState(null);
     const [selectedCity, setSelectedCity] = useState(null);
     const [selectedBarangay, setSelectedBarangay] = useState(null);
-
-
-    const [messages, setMessages] = useState([]);
-    const [newMessage, setNewMessage] = useState('');
-    const [adminId, setAdminId] = useState(null);
-
-    // NEW: Fetch provinces when modal opens
+    const [addressLoading, setAddressLoading] = useState(false);
+    
     useEffect(() => {
-        if (showAddressModal) {
-            setAddressLoading('provinces');
-            fetch('https://psgc.gitlab.io/api/provinces/')
-                .then(response => response.json())
-                .then(data => {
-                    const provinceOptions = data.map(p => ({ value: p.code, label: p.name }));
-                    setProvinces(provinceOptions);
-                })
-                .catch(error => console.error('Error fetching provinces:', error))
-                .finally(() => setAddressLoading(null));
+        const params = new URLSearchParams(location.search);
+        const menu = params.get('menu');
+        if (menu && ['orders', 'messages', 'addresses', 'settings'].includes(menu)) {
+            setActiveMenu(menu);
         }
-    }, [showAddressModal]);
+    }, [location.search]);
 
-    // NEW: Fetch cities when province changes
-    useEffect(() => {
-        if (selectedProvince?.value) {
-            setAddressLoading('cities');
-            setCities([]);
-            setBarangays([]);
-            setSelectedCity(null);
-            setSelectedBarangay(null);
-            setAddressForm(prev => ({ ...prev, city: '', barangay: '' }));
-            
-            fetch(`https://psgc.gitlab.io/api/provinces/${selectedProvince.value}/cities-municipalities/`)
-                .then(response => response.json())
-                .then(data => {
-                    const cityOptions = data.map(c => ({ value: c.code, label: c.name }));
-                    setCities(cityOptions);
-                })
-                .catch(error => console.error('Error fetching cities:', error))
-                .finally(() => setAddressLoading(null));
-        } else {
-            setCities([]);
-            setBarangays([]);
-        }
-    }, [selectedProvince]);
+    const menuItems = [
+        { id: 'orders', label: 'My Orders', icon: 'fa-box' },
+        { id: 'messages', label: 'Messages', icon: 'fa-comments' },
+        { id: 'addresses', label: 'My Addresses', icon: 'fa-map-marker-alt' },
+        { id: 'settings', label: 'Account Settings', icon: 'fa-cog' },
+    ];
 
-    // NEW: Fetch barangays when city changes
-    useEffect(() => {
-        if (selectedCity?.value) {
-            setAddressLoading('barangays');
-            setBarangays([]);
-            setSelectedBarangay(null);
-            setAddressForm(prev => ({ ...prev, barangay: '' }));
-
-            fetch(`https://psgc.gitlab.io/api/cities-municipalities/${selectedCity.value}/barangays/`)
-                .then(response => response.json())
-                .then(data => {
-                    const barangayOptions = data.map(b => ({ value: b.code, label: b.name }));
-                    setBarangays(barangayOptions);
-                })
-                .catch(error => console.error('Error fetching barangays:', error))
-                .finally(() => setAddressLoading(null));
-        } else {
-            setBarangays([]);
-        }
-    }, [selectedCity]);
-
-    // NEW: Handle pre-filling dropdowns when editing an address
-    useEffect(() => {
-        if (editingAddress && provinces.length > 0) {
-            const currentProvince = provinces.find(p => p.label === editingAddress.province);
-            if (currentProvince) {
-                setSelectedProvince(currentProvince);
-            }
-        }
-    }, [editingAddress, provinces]);
-
-    useEffect(() => {
-        if (editingAddress && cities.length > 0) {
-            const currentCity = cities.find(c => c.label === editingAddress.city);
-            if (currentCity) {
-                setSelectedCity(currentCity);
-            }
-        }
-    }, [editingAddress, cities]);
-
-    useEffect(() => {
-        if (editingAddress && barangays.length > 0) {
-            const currentBarangay = barangays.find(b => b.label === editingAddress.barangay);
-            if (currentBarangay) {
-                setSelectedBarangay(currentBarangay);
-            }
-        }
-    }, [editingAddress, barangays]);
-
-
+    const orderTabs = [
+        { id: 'all', label: 'All Orders' },
+        { id: 'pending', label: 'Pending' },
+        { id: 'processing', label: 'Processing' },
+        { id: 'to_pay', label: 'To Pay' },
+        { id: 'completed', label: 'Completed' },
+        { id: 'cancelled', label: 'Cancelled' },
+    ];
+    
     const formatMessageTime = (timestamp) => {
         if (!timestamp) return '';
-        try {
-            const date = new Date(timestamp);
-            const now = new Date();
-            
-            const isToday = now.toDateString() === date.toDateString();
-            if (isToday) {
-                return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-            }
-            
-            const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-            const startOfMessageDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-            const diffTime = startOfToday.getTime() - startOfMessageDate.getTime();
-            const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
-
-            if (diffDays === 1) {
-              return '1 day ago';
-            }
-            
-            if (diffDays > 1) {
-              return `${diffDays} days ago`;
-            }
-
-            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-
-        } catch (e) {
-            return timestamp;
-        }
+        const date = new Date(timestamp);
+        return date.toLocaleTimeString('en-US', {
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true
+        });
     };
 
     useEffect(() => {
@@ -323,7 +199,7 @@ const Profile = ({ user, logout }) => {
         if (profileData) {
             setProfileForm({
                 fullName: profileData.name || '',
-                phone: profileData.phone || '',
+                phone: formatPhoneNumber(profileData.phone || ''),
                 dateOfBirth: profileData.birthdate || '',
             });
         }
@@ -982,8 +858,8 @@ const Profile = ({ user, logout }) => {
                                                     <div className="order-item-name">Customized Bouquet</div>
                                                     {order.flower && <div className="order-item-variant"><strong>Flower:</strong> {typeof order.flower === 'object' ? order.flower.name : order.flower}</div>}
                                                     {order.bundleSize && <div className="order-item-variant"><strong>Bundle Size:</strong> {order.bundleSize}</div>}
-                                                    {order.wrapper && <div className="order-item-variant"><strong>Wrapper:</strong> {order.wrapper}</div>}
-                                                    {order.ribbon && <div className="order-item-variant"><strong>Ribbon:</strong> {order.ribbon}</div>}
+                                                    {order.wrapper && <div className="order-item-variant"><strong>Wrapper:</strong> {typeof order.wrapper === 'object' ? order.wrapper.name : order.wrapper}</div>}
+                                                    {order.ribbon && <div className="order-item-variant"><strong>Ribbon:</strong> {typeof order.ribbon === 'object' ? order.ribbon.name : order.ribbon}</div>}
                                                     {order.notes && <div className="order-item-variant"><strong>Notes:</strong> {order.notes}</div>}
                                                 </>
                                             )}
@@ -1135,7 +1011,7 @@ const Profile = ({ user, logout }) => {
                         setAddressForm({
                             label: '',
                             name: user?.user_metadata?.name || '', // Use user_metadata
-                            phone: user?.user_metadata?.phone || '', // Use user_metadata
+                            phone: formatPhoneNumber(user?.user_metadata?.phone || ''), // Use user_metadata
                             street: '',
                             barangay: '',
                             city: '', 
@@ -1163,7 +1039,7 @@ const Profile = ({ user, logout }) => {
                                     setAddressForm({
                                         label: addr.label || '',
                                         name: addr.name || '',
-                                        phone: addr.phone || '',
+                                        phone: formatPhoneNumber(addr.phone || ''),
                                         street: addr.street,
                                         barangay: addr.barangay || '',
                                         city: addr.city,
@@ -1246,7 +1122,11 @@ const Profile = ({ user, logout }) => {
 
     const handleProfileFormChange = (e) => {
         const { name, value } = e.target;
-        setProfileForm(prev => ({ ...prev, [name]: value }));
+        if (name === 'phone') {
+            setProfileForm(prev => ({ ...prev, [name]: formatPhoneNumber(value) }));
+        } else {
+            setProfileForm(prev => ({ ...prev, [name]: value }));
+        }
     };
 
     const renderSettingsContent = () => (
@@ -1509,7 +1389,7 @@ const Profile = ({ user, logout }) => {
                                     type="tel"
                                     className="form-control-custom"
                                     value={addressForm.phone}
-                                    onChange={e => setAddressForm({ ...addressForm, phone: e.target.value })}
+                                    onChange={e => setAddressForm({ ...addressForm, phone: formatPhoneNumber(e.target.value) })}
                                 />
                             </div>
 

@@ -4,12 +4,14 @@ import Select from 'react-select';
 import { supabase } from '../config/supabase';
 import '../styles/BookEvent.css';
 import '../styles/Shop.css';
+import { formatPhoneNumber } from '../utils/format'; // Import the shared utility
 
 
 const initialFormState = {
     recipientName: '',
     contactNumber: '',
     eventType: '',
+    otherOccasion: '',
     eventDate: '',
     venue: '',
     details: '',
@@ -28,88 +30,35 @@ const BookEvent = ({ user }) => {
     const [addressForm, setAddressForm] = useState({
         street: '',
         barangay: '',
-        city: '',
-        province: ''
     });
 
-    // NEW STATE for address dropdowns
-    const [provinces, setProvinces] = useState([]);
-    const [cities, setCities] = useState([]);
     const [barangays, setBarangays] = useState([]);
-    const [addressLoading, setAddressLoading] = useState(null); // Can be 'provinces', 'cities', 'barangays'
-    
-    const [selectedProvince, setSelectedProvince] = useState(null);
-    const [selectedCity, setSelectedCity] = useState(null);
+    const [addressLoading, setAddressLoading] = useState(false);
     const [selectedBarangay, setSelectedBarangay] = useState(null);
 
     useEffect(() => {
         if (user) {
             setFormData(prev => ({
                 ...prev,
-                contactNumber: user.user_metadata?.phone || ''
+                contactNumber: formatPhoneNumber(user.user_metadata?.phone || '')
             }));
         }
     }, [user]);
 
-    // NEW: Fetch provinces when modal opens
+    // Fetch barangays for Zamboanga City when modal opens
     useEffect(() => {
         if (showAddressModal) {
-            setAddressLoading('provinces');
-            fetch('https://psgc.gitlab.io/api/provinces/')
-                .then(response => response.json())
-                .then(data => {
-                    const provinceOptions = data.map(p => ({ value: p.code, label: p.name }));
-                    setProvinces(provinceOptions);
-                })
-                .catch(error => console.error('Error fetching provinces:', error))
-                .finally(() => setAddressLoading(null));
-        }
-    }, [showAddressModal]);
-
-    // NEW: Fetch cities when province changes
-    useEffect(() => {
-        if (selectedProvince?.value) {
-            setAddressLoading('cities');
-            setCities([]);
-            setBarangays([]);
-            setSelectedCity(null);
-            setSelectedBarangay(null);
-            setAddressForm(prev => ({ ...prev, city: '', barangay: '' }));
-            
-            fetch(`https://psgc.gitlab.io/api/provinces/${selectedProvince.value}/cities-municipalities/`)
-                .then(response => response.json())
-                .then(data => {
-                    const cityOptions = data.map(c => ({ value: c.code, label: c.name }));
-                    setCities(cityOptions);
-                })
-                .catch(error => console.error('Error fetching cities:', error))
-                .finally(() => setAddressLoading(null));
-        } else {
-            setCities([]);
-            setBarangays([]);
-        }
-    }, [selectedProvince]);
-
-    // NEW: Fetch barangays when city changes
-    useEffect(() => {
-        if (selectedCity?.value) {
-            setAddressLoading('barangays');
-            setBarangays([]);
-            setSelectedBarangay(null);
-            setAddressForm(prev => ({ ...prev, barangay: '' }));
-
-            fetch(`https://psgc.gitlab.io/api/cities-municipalities/${selectedCity.value}/barangays/`)
+            setAddressLoading(true);
+            fetch(`https://psgc.gitlab.io/api/cities-municipalities/097332000/barangays/`)
                 .then(response => response.json())
                 .then(data => {
                     const barangayOptions = data.map(b => ({ value: b.code, label: b.name }));
                     setBarangays(barangayOptions);
                 })
                 .catch(error => console.error('Error fetching barangays:', error))
-                .finally(() => setAddressLoading(null));
-        } else {
-            setBarangays([]);
+                .finally(() => setAddressLoading(false));
         }
-    }, [selectedCity]);
+    }, [showAddressModal]);
 
     useEffect(() => {
         const savedInquiry = localStorage.getItem('bookingInquiry');
@@ -127,7 +76,7 @@ const BookEvent = ({ user }) => {
                 
                 setFormData({
                     recipientName: recipient_name || '',
-                    contactNumber: contact_number || user?.user_metadata?.phone || '',
+                    contactNumber: formatPhoneNumber(contact_number || user?.user_metadata?.phone || ''),
                     eventType: occasion || '',
                     eventDate: event_date || '',
                     venue: venue || '',
@@ -150,6 +99,8 @@ const BookEvent = ({ user }) => {
         return `${year}-${month}-${day}`;
     }, []);
 
+
+
     const handleChange = (event) => {
         const { name, value, files } = event.target;
 
@@ -165,6 +116,11 @@ const BookEvent = ({ user }) => {
             return;
         }
 
+        if (name === 'contactNumber') {
+            setFormData((prev) => ({ ...prev, [name]: formatPhoneNumber(value) }));
+            return;
+        }
+
         let nextValue = value;
         if (name === 'eventDate' && value) {
             nextValue = value < minEventDate ? minEventDate : value;
@@ -173,12 +129,12 @@ const BookEvent = ({ user }) => {
     };
 
     const handleSaveAddress = () => {
-        const { street, barangay, city, province } = addressForm;
-        if (!street || !barangay || !city || !province) {
+        const { street, barangay } = addressForm;
+        if (!street || !barangay) {
             alert('Please fill in all address fields.');
             return;
         }
-        const fullAddress = `${street}, ${barangay}, ${city}, ${province}`;
+        const fullAddress = `${street}, ${barangay}, Zamboanga City, Zamboanga Del Sur`;
         setFormData(prev => ({ ...prev, venue: fullAddress }));
         setShowAddressModal(false);
     };
@@ -228,14 +184,16 @@ const BookEvent = ({ user }) => {
                 imageUrl = urlData.publicUrl;
             }
 
+            const occasion = formData.eventType === 'Other' ? formData.otherOccasion : formData.eventType;
+
             const inquiryData = {
-                name: `Event Booking: ${formData.eventType || 'Custom'}`,
+                name: `Event Booking: ${occasion || 'Custom'}`,
                 image: imagePreview,
                 requestData: {
                     type: 'booking',
                     recipient_name: formData.recipientName,
                     contact_number: formData.contactNumber,
-                    occasion: formData.eventType,
+                    occasion: occasion,
                     event_date: formData.eventDate,
                     venue: formData.venue,
                     image_url: imageUrl,
@@ -310,6 +268,17 @@ const BookEvent = ({ user }) => {
                                                     <option value="Funeral">Funeral / Sympathy</option>
                                                     <option value="Other">Other</option>
                                                 </select>
+                                                {formData.eventType === 'Other' && (
+                                                    <input
+                                                        type="text"
+                                                        name="otherOccasion"
+                                                        className="form-control bg-light border-0 py-3 mt-2"
+                                                        placeholder="Please specify"
+                                                        value={formData.otherOccasion || ''}
+                                                        onChange={handleChange}
+                                                        required
+                                                    />
+                                                )}
                                             </div>
                                             <div className="col-md-6">
                                                 <label className="form-label fw-semibold" htmlFor="eventDate">Event Date</label>
@@ -372,50 +341,18 @@ const BookEvent = ({ user }) => {
                             </button>
                         </div>
                         <div className="modal-body-custom">
-                             <div className="form-group">
-                                <label className="form-label">Province</label>
-                                <Select
-                                    styles={selectStyles}
-                                    options={provinces}
-                                    isLoading={addressLoading === 'provinces'}
-                                    placeholder="Select Province"
-                                    onChange={option => {
-                                        setSelectedProvince(option);
-                                        setAddressForm({ ...addressForm, province: option ? option.label : '' });
-                                    }}
-                                    value={selectedProvince}
-                                    isClearable
-                                />
-                            </div>
-                            <div className="form-group">
-                                <label className="form-label">City / Municipality</label>
-                                <Select
-                                    styles={selectStyles}
-                                    options={cities}
-                                    isLoading={addressLoading === 'cities'}
-                                    placeholder="Select City/Municipality"
-                                    onChange={option => {
-                                        setSelectedCity(option);
-                                        setAddressForm({ ...addressForm, city: option ? option.label : '' });
-                                    }}
-                                    value={selectedCity}
-                                    isDisabled={!selectedProvince}
-                                    isClearable
-                                />
-                            </div>
                             <div className="form-group">
                                 <label className="form-label">Barangay</label>
                                 <Select
                                     styles={selectStyles}
                                     options={barangays}
-                                    isLoading={addressLoading === 'barangays'}
+                                    isLoading={addressLoading}
                                     placeholder="Select Barangay"
                                     onChange={option => {
                                         setSelectedBarangay(option);
                                         setAddressForm({ ...addressForm, barangay: option ? option.label : '' });
                                     }}
                                     value={selectedBarangay}
-                                    isDisabled={!selectedCity}
                                     isClearable
                                 />
                             </div>

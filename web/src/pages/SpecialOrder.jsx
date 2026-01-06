@@ -4,13 +4,15 @@ import Select from 'react-select';
 import { supabase } from '../config/supabase';
 import '../styles/SpecialOrder.css';
 import '../styles/Shop.css';
+import { formatPhoneNumber } from '../utils/format';
 
 const initialFormState = {
     recipientName: '',
     occasion: '',
+    otherOccasion: '',
     contactNumber: '',
     preferences: '',
-    addon: '',
+    addons: [],
     inspirationFile: null,
     message: '',
     deliveryAddress: '', // New field for address
@@ -26,81 +28,34 @@ const SpecialOrder = ({ user }) => {
 
     // Address Modal State
     const [showAddressModal, setShowAddressModal] = useState(false);
-    const [addressForm, setAddressForm] = useState({ street: '', barangay: '', city: '', province: '' });
-    const [provinces, setProvinces] = useState([]);
-    const [cities, setCities] = useState([]);
+    const [addressForm, setAddressForm] = useState({ street: '', barangay: '' });
     const [barangays, setBarangays] = useState([]);
-    const [addressLoading, setAddressLoading] = useState(null);
-    const [selectedProvince, setSelectedProvince] = useState(null);
-    const [selectedCity, setSelectedCity] = useState(null);
+    const [addressLoading, setAddressLoading] = useState(false);
     const [selectedBarangay, setSelectedBarangay] = useState(null);
 
     useEffect(() => {
         if (user) {
             setFormData(prev => ({
                 ...prev,
-                contactNumber: user.user_metadata?.phone || ''
+                contactNumber: formatPhoneNumber(user.user_metadata?.phone || '')
             }));
         }
     }, [user]);
 
-    // Fetch provinces when modal opens
+    // Fetch barangays for Zamboanga City when modal opens
     useEffect(() => {
         if (showAddressModal) {
-            setAddressLoading('provinces');
-            fetch('https://psgc.gitlab.io/api/provinces/')
-                .then(response => response.json())
-                .then(data => {
-                    const provinceOptions = data.map(p => ({ value: p.code, label: p.name }));
-                    setProvinces(provinceOptions);
-                })
-                .catch(error => console.error('Error fetching provinces:', error))
-                .finally(() => setAddressLoading(null));
-        }
-    }, [showAddressModal]);
-
-    // Fetch cities when province changes
-    useEffect(() => {
-        if (selectedProvince?.value) {
-            setAddressLoading('cities');
-            setCities([]);
-            setBarangays([]);
-            setSelectedCity(null);
-            setSelectedBarangay(null);
-            setAddressForm(prev => ({ ...prev, city: '', barangay: '' }));
-            fetch(`https://psgc.gitlab.io/api/provinces/${selectedProvince.value}/cities-municipalities/`)
-                .then(response => response.json())
-                .then(data => {
-                    const cityOptions = data.map(c => ({ value: c.code, label: c.name }));
-                    setCities(cityOptions);
-                })
-                .catch(error => console.error('Error fetching cities:', error))
-                .finally(() => setAddressLoading(null));
-        } else {
-            setCities([]);
-            setBarangays([]);
-        }
-    }, [selectedProvince]);
-
-    // Fetch barangays when city changes
-    useEffect(() => {
-        if (selectedCity?.value) {
-            setAddressLoading('barangays');
-            setBarangays([]);
-            setSelectedBarangay(null);
-            setAddressForm(prev => ({ ...prev, barangay: '' }));
-            fetch(`https://psgc.gitlab.io/api/cities-municipalities/${selectedCity.value}/barangays/`)
+            setAddressLoading(true);
+            fetch(`https://psgc.gitlab.io/api/cities-municipalities/097332000/barangays/`)
                 .then(response => response.json())
                 .then(data => {
                     const barangayOptions = data.map(b => ({ value: b.code, label: b.name }));
                     setBarangays(barangayOptions);
                 })
                 .catch(error => console.error('Error fetching barangays:', error))
-                .finally(() => setAddressLoading(null));
-        } else {
-            setBarangays([]);
+                .finally(() => setAddressLoading(false));
         }
-    }, [selectedCity]);
+    }, [showAddressModal]);
 
     useEffect(() => {
         const savedInquiry = localStorage.getItem('bookingInquiry');
@@ -111,22 +66,27 @@ const SpecialOrder = ({ user }) => {
                     recipient_name,
                     occasion,
                     notes,
-                    addon,
+                    addons,
                     message,
                     deliveryAddress,
                     contact_number,
                 } = parsedInquiry.requestData;
+
+                const standardOccasions = ['Birthday', 'Anniversary', 'Valentines', 'MothersDay', 'JustBecause', 'Apology'];
+                const isOther = occasion && !standardOccasions.includes(occasion);
                 
-                setFormData({
+                setFormData(prev => ({
+                    ...prev,
                     recipientName: recipient_name || '',
-                    occasion: occasion || '',
-                    contactNumber: contact_number || user?.user_metadata?.phone || '',
+                    occasion: isOther ? 'Other' : (occasion || ''),
+                    otherOccasion: isOther ? occasion : '',
+                    contactNumber: formatPhoneNumber(contact_number || user?.user_metadata?.phone || ''),
                     preferences: notes || '',
-                    addon: addon || '',
+                    addons: addons || [],
                     message: message || '',
                     deliveryAddress: deliveryAddress || '',
                     inspirationFile: null, // File object cannot be restored from JSON
-                });
+                }));
 
                 if (parsedInquiry.image) {
                     setImagePreview(parsedInquiry.image);
@@ -134,6 +94,28 @@ const SpecialOrder = ({ user }) => {
             }
         }
     }, [user]);
+
+
+
+    const handleAddonsChange = (event) => {
+        const { value, checked } = event.target;
+        setFormData(prev => {
+            let newAddons = [...prev.addons];
+    
+            if (checked) {
+                if (value === 'None') {
+                    newAddons = ['None'];
+                } else {
+                    newAddons = newAddons.filter(item => item !== 'None');
+                    newAddons.push(value);
+                }
+            } else {
+                newAddons = newAddons.filter(item => item !== value);
+            }
+    
+            return { ...prev, addons: newAddons };
+        });
+    };
 
     const handleChange = (event) => {
         const { name, value, files } = event.target;
@@ -150,6 +132,11 @@ const SpecialOrder = ({ user }) => {
             return;
         }
 
+        if (name === 'contactNumber') {
+            setFormData((prev) => ({ ...prev, [name]: formatPhoneNumber(value) }));
+            return;
+        }
+
         setFormData((prev) => ({
             ...prev,
             [name]: value,
@@ -157,12 +144,12 @@ const SpecialOrder = ({ user }) => {
     };
 
     const handleSaveAddress = () => {
-        const { street, barangay, city, province } = addressForm;
-        if (!street || !barangay || !city || !province) {
+        const { street, barangay } = addressForm;
+        if (!street || !barangay) {
             alert('Please fill in all address fields.');
             return;
         }
-        const fullAddress = `${street}, ${barangay}, ${city}, ${province}`;
+        const fullAddress = `${street}, ${barangay}, Zamboanga City, Zamboanga Del Sur`;
         setFormData(prev => ({ ...prev, deliveryAddress: fullAddress }));
         setShowAddressModal(false);
     };
@@ -212,16 +199,19 @@ const SpecialOrder = ({ user }) => {
                 imageUrl = urlData.publicUrl;
             }
 
+            const occasion = formData.occasion === 'Other' ? formData.otherOccasion : formData.occasion;
+            const finalAddons = formData.addons.includes('None') ? [] : formData.addons;
+
             const inquiryData = {
-                name: `Special Order: ${formData.occasion || 'Custom'}`,
+                name: `Special Order: ${occasion || 'Custom'}`,
                 image: imagePreview,
                 requestData: {
                     type: 'special_order',
                     recipient_name: formData.recipientName,
-                    occasion: formData.occasion,
+                    occasion: occasion,
                     contact_number: formData.contactNumber,
-                    addon: formData.addon,
-                    deliveryAddress: formData.deliveryAddress, // Add delivery address
+                    addons: finalAddons,
+                    deliveryAddress: formData.deliveryAddress,
                     image_url: imageUrl,
                     notes: formData.preferences,
                     message: formData.message,
@@ -326,7 +316,19 @@ const SpecialOrder = ({ user }) => {
                                                     <option value="MothersDay">Mother's Day</option>
                                                     <option value="JustBecause">Just Because</option>
                                                     <option value="Apology">Apology</option>
+                                                    <option value="Other">Other</option>
                                                 </select>
+                                                {formData.occasion === 'Other' && (
+                                                    <input
+                                                        type="text"
+                                                        name="otherOccasion"
+                                                        className="form-control bg-light border-0 py-3 mt-2"
+                                                        placeholder="Please specify"
+                                                        value={formData.otherOccasion || ''}
+                                                        onChange={handleChange}
+                                                        required
+                                                    />
+                                                )}
                                             </div>
 
                                             <div className="col-12 mt-4">
@@ -357,21 +359,29 @@ const SpecialOrder = ({ user }) => {
                                                 ></textarea>
                                             </div>
                                             <div className="col-12 mt-4">
-                                                <label className="form-label fw-semibold" htmlFor="addon">Add-on Items</label>
-                                                <select
-                                                    id="addon"
-                                                    name="addon"
-                                                    className="form-select bg-light border-0 py-3"
-                                                    value={formData.addon}
-                                                    onChange={handleChange}
-                                                >
-                                                    <option value="" disabled>Select an Item</option>
-                                                    <option value="Chocolates">Chocolates</option>
-                                                    <option value="Teddy Bear">Teddy Bear</option>
-                                                    <option value="Balloons">Balloons</option>
-                                                    <option value="Message Card">Message Card</option>
-                                                    <option value="None">None</option>
-                                                </select>
+                                                <label className="form-label fw-semibold">Add-on Items</label>
+                                                <div className="addon-options">
+                                                    <div className="form-check">
+                                                        <input className="form-check-input" type="checkbox" value="Chocolates" id="addonChocolates" name="addons" onChange={handleAddonsChange} checked={formData.addons.includes('Chocolates')} />
+                                                        <label className="form-check-label" htmlFor="addonChocolates">Chocolates</label>
+                                                    </div>
+                                                    <div className="form-check">
+                                                        <input className="form-check-input" type="checkbox" value="Teddy Bear" id="addonTeddyBear" name="addons" onChange={handleAddonsChange} checked={formData.addons.includes('Teddy Bear')} />
+                                                        <label className="form-check-label" htmlFor="addonTeddyBear">Teddy Bear</label>
+                                                    </div>
+                                                    <div className="form-check">
+                                                        <input className="form-check-input" type="checkbox" value="Balloons" id="addonBalloons" name="addons" onChange={handleAddonsChange} checked={formData.addons.includes('Balloons')} />
+                                                        <label className="form-check-label" htmlFor="addonBalloons">Balloons</label>
+                                                    </div>
+                                                    <div className="form-check">
+                                                        <input className="form-check-input" type="checkbox" value="Message Card" id="addonMessageCard" name="addons" onChange={handleAddonsChange} checked={formData.addons.includes('Message Card')} />
+                                                        <label className="form-check-label" htmlFor="addonMessageCard">Message Card</label>
+                                                    </div>
+                                                    <div className="form-check">
+                                                        <input className="form-check-input" type="checkbox" value="None" id="addonNone" name="addons" onChange={handleAddonsChange} checked={formData.addons.includes('None')} />
+                                                        <label className="form-check-label" htmlFor="addonNone">None</label>
+                                                    </div>
+                                                </div>
                                             </div>
                                             <div className="col-12 mt-4">
                                                 <label className="form-label fw-semibold" htmlFor="inspirationFile">Inspiration Gallery</label>
@@ -428,50 +438,18 @@ const SpecialOrder = ({ user }) => {
                             </button>
                         </div>
                         <div className="modal-body-custom">
-                             <div className="form-group">
-                                <label className="form-label">Province</label>
-                                <Select
-                                    styles={selectStyles}
-                                    options={provinces}
-                                    isLoading={addressLoading === 'provinces'}
-                                    placeholder="Select Province"
-                                    onChange={option => {
-                                        setSelectedProvince(option);
-                                        setAddressForm({ ...addressForm, province: option ? option.label : '' });
-                                    }}
-                                    value={selectedProvince}
-                                    isClearable
-                                />
-                            </div>
-                            <div className="form-group">
-                                <label className="form-label">City / Municipality</label>
-                                <Select
-                                    styles={selectStyles}
-                                    options={cities}
-                                    isLoading={addressLoading === 'cities'}
-                                    placeholder="Select City/Municipality"
-                                    onChange={option => {
-                                        setSelectedCity(option);
-                                        setAddressForm({ ...addressForm, city: option ? option.label : '' });
-                                    }}
-                                    value={selectedCity}
-                                    isDisabled={!selectedProvince}
-                                    isClearable
-                                />
-                            </div>
                             <div className="form-group">
                                 <label className="form-label">Barangay</label>
                                 <Select
                                     styles={selectStyles}
                                     options={barangays}
-                                    isLoading={addressLoading === 'barangays'}
+                                    isLoading={addressLoading}
                                     placeholder="Select Barangay"
                                     onChange={option => {
                                         setSelectedBarangay(option);
                                         setAddressForm({ ...addressForm, barangay: option ? option.label : '' });
                                     }}
                                     value={selectedBarangay}
-                                    isDisabled={!selectedCity}
                                     isClearable
                                 />
                             </div>
