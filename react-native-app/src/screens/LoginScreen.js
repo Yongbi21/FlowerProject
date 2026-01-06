@@ -43,7 +43,7 @@ const LoginScreen = () => {
       // Navigate to dashboard
       navigation.navigate('AdminDashboard');
     } catch (error) {
-      console.error('Full error:', error);
+      console.error('Full error:', error.message);
       console.error('Error response:', error.response);
       console.error('Error message:', error.message);
 
