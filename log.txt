@@ -1,1 +1,11 @@
-C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\src\screens\AdminDashboard.js:3419 Error: <path> attribute d: Expected number, "M0,0 L-Infinity,181 L6…".
+Uncaught Error: Objects are not valid as a React child (found: object with keys {id, img, name, price, layerImg}). If you meant to render a collection of children, use an array instead.
+    at throwOnInvalidObjectType (react-dom-client.development.js:7082:13)
+    at createChild (react-dom-client.development.js:7360:11)
+    at reconcileChildrenArray (react-dom-client.development.js:7629:25)
+    at reconcileChildFibersImpl (react-dom-client.development.js:7952:30)
+    at react-dom-client.development.js:8057:33
+    at reconcileChildren (react-dom-client.development.js:8621:13)
+    at beginWork (react-dom-client.development.js:10793:13)
+    at runWithFiberInDEV (react-dom-client.development.js:1519:30)
+    at performUnitOfWork (react-dom-client.development.js:15132:22)
+    at workLoopSync (react-dom-client.development.js:14956:41)

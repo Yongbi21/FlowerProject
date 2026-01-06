@@ -5,6 +5,70 @@ import '../styles/Shop.css';
 import { supabase } from '../config/supabase';
 import { formatPhoneNumber } from '../utils/format';
 
+const Profile = ({ user, logout }) => {
+    const navigate = useNavigate();
+    const location = useLocation();
+
+    const [activeMenu, setActiveMenu] = useState('orders');
+    const [orders, setOrders] = useState([]);
+    const [activeOrderTab, setActiveOrderTab] = useState('all');
+    const [messages, setMessages] = useState([]);
+    const [newMessage, setNewMessage] = useState('');
+    const [adminId, setAdminId] = useState(null);
+    const [addresses, setAddresses] = useState([]);
+    const [showAddressModal, setShowAddressModal] = useState(false);
+    const [addressForm, setAddressForm] = useState({
+        label: '',
+        name: '',
+        phone: '',
+        street: '',
+        barangay: '',
+        city: '',
+        province: ''
+    });
+    const [editingAddress, setEditingAddress] = useState(null);
+    const [provinces, setProvinces] = useState([]);
+    const [cities, setCities] = useState([]);
+    const [barangays, setBarangays] = useState([]);
+    const [selectedProvince, setSelectedProvince] = useState(null);
+    const [selectedCity, setSelectedCity] = useState(null);
+    const [selectedBarangay, setSelectedBarangay] = useState(null);
+    const [addressLoading, setAddressLoading] = useState(false);
+    
+    useEffect(() => {
+        const params = new URLSearchParams(location.search);
+        const menu = params.get('menu');
+        if (menu && ['orders', 'messages', 'addresses', 'settings'].includes(menu)) {
+            setActiveMenu(menu);
+        }
+    }, [location.search]);
+
+    const menuItems = [
+        { id: 'orders', label: 'My Orders', icon: 'fa-box' },
+        { id: 'messages', label: 'Messages', icon: 'fa-comments' },
+        { id: 'addresses', label: 'My Addresses', icon: 'fa-map-marker-alt' },
+        { id: 'settings', label: 'Account Settings', icon: 'fa-cog' },
+    ];
+
+    const orderTabs = [
+        { id: 'all', label: 'All Orders' },
+        { id: 'pending', label: 'Pending' },
+        { id: 'processing', label: 'Processing' },
+        { id: 'to_pay', label: 'To Pay' },
+        { id: 'completed', label: 'Completed' },
+        { id: 'cancelled', label: 'Cancelled' },
+    ];
+    
+    const formatMessageTime = (timestamp) => {
+        if (!timestamp) return '';
+        const date = new Date(timestamp);
+        return date.toLocaleTimeString('en-US', {
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true
+        });
+    };
+
     useEffect(() => {
         if (!user) return;
     
@@ -794,8 +858,8 @@ import { formatPhoneNumber } from '../utils/format';
                                                     <div className="order-item-name">Customized Bouquet</div>
                                                     {order.flower && <div className="order-item-variant"><strong>Flower:</strong> {typeof order.flower === 'object' ? order.flower.name : order.flower}</div>}
                                                     {order.bundleSize && <div className="order-item-variant"><strong>Bundle Size:</strong> {order.bundleSize}</div>}
-                                                    {order.wrapper && <div className="order-item-variant"><strong>Wrapper:</strong> {order.wrapper}</div>}
-                                                    {order.ribbon && <div className="order-item-variant"><strong>Ribbon:</strong> {order.ribbon}</div>}
+                                                    {order.wrapper && <div className="order-item-variant"><strong>Wrapper:</strong> {typeof order.wrapper === 'object' ? order.wrapper.name : order.wrapper}</div>}
+                                                    {order.ribbon && <div className="order-item-variant"><strong>Ribbon:</strong> {typeof order.ribbon === 'object' ? order.ribbon.name : order.ribbon}</div>}
                                                     {order.notes && <div className="order-item-variant"><strong>Notes:</strong> {order.notes}</div>}
                                                 </>
                                             )}
