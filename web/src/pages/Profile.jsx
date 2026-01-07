@@ -4,6 +4,7 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import '../styles/Shop.css';
 import { supabase } from '../config/supabase';
 import { formatPhoneNumber } from '../utils/format';
+import qrCodeImage from '../assets/qr-code-1.jpg';
 
 const Profile = ({ user, logout }) => {
     const navigate = useNavigate();
@@ -22,16 +23,10 @@ const Profile = ({ user, logout }) => {
         name: '',
         phone: '',
         street: '',
-        barangay: '',
-        city: '',
-        province: ''
+        barangay: ''
     });
     const [editingAddress, setEditingAddress] = useState(null);
-    const [provinces, setProvinces] = useState([]);
-    const [cities, setCities] = useState([]);
     const [barangays, setBarangays] = useState([]);
-    const [selectedProvince, setSelectedProvince] = useState(null);
-    const [selectedCity, setSelectedCity] = useState(null);
     const [selectedBarangay, setSelectedBarangay] = useState(null);
     const [addressLoading, setAddressLoading] = useState(false);
     
@@ -55,6 +50,9 @@ const Profile = ({ user, logout }) => {
         { id: 'pending', label: 'Pending' },
         { id: 'processing', label: 'Processing' },
         { id: 'to_pay', label: 'To Pay' },
+        { id: 'ready_for_pickup', label: 'For Pickup' },
+        { id: 'out_for_delivery', label: 'Out for Delivery' },
+        { id: 'claimed', label: 'Claimed' },
         { id: 'completed', label: 'Completed' },
         { id: 'cancelled', label: 'Cancelled' },
     ];
@@ -175,6 +173,89 @@ const Profile = ({ user, logout }) => {
     });
     const [profileData, setProfileData] = useState(null); // New state for fetched profile data
     const [status, setStatus] = useState(null);
+    const [showQRModal, setShowQRModal] = useState(false);
+    const [orderForPayment, setOrderForPayment] = useState(null);
+    const [receiptFile, setReceiptFile] = useState(null);
+    const [receiptPreview, setReceiptPreview] = useState(null);
+    const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+
+    const handleReceiptUpload = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            setReceiptFile(file);
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                setReceiptPreview(reader.result);
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
+    const handleConfirmPayment = async () => {
+        if (!receiptFile) {
+            alert('Please upload your payment receipt before confirming.');
+            return;
+        }
+        if (!orderForPayment) return;
+
+        setIsProcessingPayment(true);
+
+        let uploadedReceiptUrl = null;
+        try {
+            const fileExt = receiptFile.name.split('.').pop();
+            const fileName = `${user.id}-request-${orderForPayment.request_id}-${Date.now()}.${fileExt}`;
+            const filePath = `public/${fileName}`;
+
+            const { error: uploadError } = await supabase.storage
+                .from('receipts')
+                .upload(filePath, receiptFile);
+
+            if (uploadError) throw uploadError;
+
+            const { data: urlData } = supabase.storage
+                .from('receipts')
+                .getPublicUrl(filePath);
+            
+            if (!urlData || !urlData.publicUrl) throw new Error('Could not retrieve receipt URL.');
+            
+            uploadedReceiptUrl = urlData.publicUrl;
+
+            // Now update the request
+            const { error: updateError } = await supabase
+                .from('requests')
+                .update({
+                    status: 'accepted',
+                    payment_status: 'waiting_for_confirmation',
+                    receipt_url: uploadedReceiptUrl,
+                })
+                .eq('id', orderForPayment.request_id);
+
+            if (updateError) throw updateError;
+            
+            // Success
+            setShowQRModal(false);
+            setOrderForPayment(null);
+            setReceiptFile(null);
+            setReceiptPreview(null);
+            
+            setModalContent({
+                type: 'info',
+                title: 'Payment Submitted',
+                message: 'Your payment is now being confirmed. Thank you!',
+                confirmText: 'Great!',
+                onConfirm: () => {
+                    loadOrders(user.id);
+                    setModalContent(null);
+                }
+            });
+
+        } catch (error) {
+            console.error('Error confirming payment:', error);
+            alert('There was an error submitting your payment. Please try again. ' + error.message);
+        } finally {
+            setIsProcessingPayment(false);
+        }
+    };
 
     useEffect(() => {
         const fetchProfile = async () => {
@@ -395,66 +476,83 @@ const Profile = ({ user, logout }) => {
         fetchAddresses();
     }, [user]);
 
-    const handleSaveAddress = async () => {
-        if (!addressForm.label || !addressForm.name || !addressForm.phone || !addressForm.street || !addressForm.barangay || !addressForm.city || !addressForm.province) {
-            alert('Please fill in all required fields (Label, Name, Phone, Street, Barangay, City, Province)');
-            return;
-        }
-
-        const { data: { user: currentUser }, error: userError } = await supabase.auth.getUser();
-
-        if (userError || !currentUser) {
-            alert('You must be logged in to save an address.');
-            console.error('Error fetching user for saving address:', userError);
-            return;
-        }
-
-        const addressData = {
-            user_id: currentUser.id,
-            label: addressForm.label,
-            name: addressForm.name,
-            phone: addressForm.phone,
-            street: addressForm.street,
-            barangay: addressForm.barangay,
-            city: addressForm.city,
-            province: addressForm.province,
-            is_default: addresses.length === 0 && !editingAddress // If no existing addresses and not editing, set as default
-        };
-
-        if (editingAddress) {
-            const { data, error } = await supabase
-                .from('addresses')
-                .update(addressData)
-                .eq('id', editingAddress.id)
-                .select()
-                .single();
-
-            if (error) {
-                console.error('Error updating address:', error);
-                alert('Failed to update address: ' + error.message);
-                return;
-            }
-            setAddresses(addresses.map(addr => (addr.id === editingAddress.id ? data : addr)));
+    // Fetch barangays for Zamboanga City when modal opens
+    useEffect(() => {
+        if (showAddressModal) {
+            setAddressLoading(true);
+            fetch(`https://psgc.gitlab.io/api/cities-municipalities/097332000/barangays/`)
+                .then(response => response.json())
+                .then(data => {
+                    const barangayOptions = data.map(b => ({ value: b.code, label: b.name }));
+                    setBarangays(barangayOptions);
+                })
+                .catch(error => console.error('Error fetching barangays:', error))
+                .finally(() => setAddressLoading(false));
         } else {
-            const { data, error } = await supabase
-                .from('addresses')
-                .insert([addressData])
-                .select()
-                .single();
+            setBarangays([]); // Clear barangays when modal closes
+            setSelectedBarangay(null); // Clear selected barangay
+        }
+    }, [showAddressModal]);
 
-            if (error) {
-                console.error('Error adding address:', error);
-                alert('Failed to add address: ' + error.message);
+        const handleSaveAddress = async () => {
+            if (!addressForm.label || !addressForm.name || !addressForm.phone || !addressForm.street || !addressForm.barangay) {
+                alert('Please fill in all required fields (Label, Name, Phone, Street, Barangay)');
                 return;
             }
-            setAddresses([...addresses, data]);
-        }
-
-        setShowAddressModal(false);
-        setAddressForm({ label: '', name: user?.user_metadata?.name || user?.email || '', phone: user?.user_metadata?.phone || '', street: '', barangay: '', city: '', province: '' });
-        setEditingAddress(null);
-    };
-
+    
+            const { data: { user: currentUser }, error: userError } = await supabase.auth.getUser();
+    
+            if (userError || !currentUser) {
+                alert('You must be logged in to save an address.');
+                console.error('Error fetching user for saving address:', userError);
+                return;
+            }
+    
+            const addressData = {
+                user_id: currentUser.id,
+                label: addressForm.label,
+                name: addressForm.name,
+                phone: addressForm.phone,
+                street: addressForm.street,
+                barangay: addressForm.barangay,
+                city: 'Zamboanga City',
+                province: 'Zamboanga Del Sur',
+                is_default: addresses.length === 0 && !editingAddress // If no existing addresses and not editing, set as default
+            };
+    
+            if (editingAddress) {
+                const { data, error } = await supabase
+                    .from('addresses')
+                    .update(addressData)
+                    .eq('id', editingAddress.id)
+                    .select()
+                    .single();
+    
+                if (error) {
+                    console.error('Error updating address:', error);
+                    alert('Failed to update address: ' + error.message);
+                    return;
+                }
+                setAddresses(addresses.map(addr => (addr.id === editingAddress.id ? data : addr)));
+            } else {
+                const { data, error } = await supabase
+                    .from('addresses')
+                    .insert([addressData])
+                    .select()
+                    .single();
+    
+                if (error) {
+                    console.error('Error adding address:', error);
+                    alert('Failed to add address: ' + error.message);
+                    return;
+                    }
+                setAddresses([...addresses, data]);
+            }
+    
+            setShowAddressModal(false);
+            setAddressForm({ label: '', name: user?.user_metadata?.name || user?.email || '', phone: user?.user_metadata?.phone || '', street: '', barangay: '' });
+            setEditingAddress(null);
+        };
     const handleDeleteAddress = async (id) => {
         if (!window.confirm('Are you sure you want to delete this address?')) return;
 
@@ -628,34 +726,12 @@ const Profile = ({ user, logout }) => {
         setModalContent({
             type: 'confirm',
             title: 'Accept Quote',
-            message: `Are you sure you want to accept the quote of ₱${(order.total || 0).toLocaleString()}?`,
-            confirmText: 'Accept',
-            onConfirm: async () => {
-                const { error } = await supabase
-                    .from('requests')
-                    .update({ status: 'accepted' })
-                    .eq('id', order.request_id);
-
-                if (error) {
-                    setModalContent({
-                        type: 'info',
-                        title: 'Error',
-                        message: 'Failed to accept quote. Please try again.',
-                        confirmText: 'OK',
-                        onConfirm: () => setModalContent(null)
-                    });
-                } else {
-                    setModalContent({
-                        type: 'info',
-                        title: 'Quote Accepted',
-                        message: 'Your request is now being processed.',
-                        confirmText: 'Great!',
-                        onConfirm: () => {
-                            loadOrders(user.id);
-                            setModalContent(null);
-                        }
-                    });
-                }
+            message: `You are about to accept a quote of ₱${(order.total || 0).toLocaleString()}. You will be directed to payment after confirming.`,
+            confirmText: 'Accept & Pay',
+            onConfirm: () => {
+                setOrderForPayment(order);
+                setShowQRModal(true);
+                setModalContent(null);
             }
         });
     };
@@ -1005,17 +1081,13 @@ const Profile = ({ user, logout }) => {
                     style={{ background: 'var(--shop-pink)', color: 'white' }}
                     onClick={() => {
                         setEditingAddress(null);
-                        setSelectedProvince(null);
-                        setSelectedCity(null);
                         setSelectedBarangay(null);
                         setAddressForm({
                             label: '',
                             name: user?.user_metadata?.name || '', // Use user_metadata
                             phone: formatPhoneNumber(user?.user_metadata?.phone || ''), // Use user_metadata
                             street: '',
-                            barangay: '',
-                            city: '', 
-                            province: ''
+                            barangay: ''
                         });
                         setShowAddressModal(true);
                     }}
@@ -1042,8 +1114,6 @@ const Profile = ({ user, logout }) => {
                                         phone: formatPhoneNumber(addr.phone || ''),
                                         street: addr.street,
                                         barangay: addr.barangay || '',
-                                        city: addr.city,
-                                        province: addr.province,
                                     });
                                     setShowAddressModal(true);
                                 }}
@@ -1309,8 +1379,8 @@ const Profile = ({ user, logout }) => {
                     <div className="col-lg-3 mb-4">
                         <div className="profile-sidebar">
                             <div className="text-center pb-3 mb-3" style={{ borderBottom: '1px solid #eee' }}>
-                                <h5 className="fw-bold mb-1" style={{ color: '#333' }}>{user.name}</h5>
-                                <small className="text-muted">{user.email}</small>
+                                <h5 className="fw-bold mb-1" style={{ color: '#333' }}>{user?.name}</h5>
+                                <small className="text-muted">{user?.email}</small>
                             </div>
 
                             <ul className="profile-menu" style={{ listStyle: 'none', padding: 0, margin: 0 }}>
@@ -1393,37 +1463,7 @@ const Profile = ({ user, logout }) => {
                                 />
                             </div>
 
-                             <div className="form-group">
-                                <label className="form-label">Province</label>
-                                <Select
-                                    styles={selectStyles}
-                                    options={provinces}
-                                    isLoading={addressLoading === 'provinces'}
-                                    placeholder="Select Province"
-                                    onChange={option => {
-                                        setSelectedProvince(option);
-                                        setAddressForm({ ...addressForm, province: option ? option.label : '' });
-                                    }}
-                                    value={selectedProvince}
-                                    isClearable
-                                />
-                            </div>
-                            <div className="form-group">
-                                <label className="form-label">City / Municipality</label>
-                                <Select
-                                    styles={selectStyles}
-                                    options={cities}
-                                    isLoading={addressLoading === 'cities'}
-                                    placeholder="Select City/Municipality"
-                                    onChange={option => {
-                                        setSelectedCity(option);
-                                        setAddressForm({ ...addressForm, city: option ? option.label : '' });
-                                    }}
-                                    value={selectedCity}
-                                    isDisabled={!selectedProvince}
-                                    isClearable
-                                />
-                            </div>
+
                             <div className="form-group">
                                 <label className="form-label">Barangay</label>
                                 <Select
@@ -1436,7 +1476,7 @@ const Profile = ({ user, logout }) => {
                                         setAddressForm({ ...addressForm, barangay: option ? option.label : '' });
                                     }}
                                     value={selectedBarangay}
-                                    isDisabled={!selectedCity}
+
                                     isClearable
                                 />
                             </div>
@@ -1629,6 +1669,72 @@ const Profile = ({ user, logout }) => {
                                 }
                             }}>
                                 {modalContent.confirmText || 'OK'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showQRModal && orderForPayment && (
+                <div className="modal-overlay" onClick={() => !isProcessingPayment && setShowQRModal(false)}>
+                    <div className="modal-content-custom" onClick={e => e.stopPropagation()} style={{ maxWidth: '400px' }}>
+                        <div className="modal-header-custom">
+                            <h4>GCash Payment</h4>
+                            <button className="modal-close" disabled={isProcessingPayment} onClick={() => setShowQRModal(false)}>
+                                <i className="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <div className="modal-body-custom text-center">
+                            <p>Please scan the QR code to pay for request #{orderForPayment.request_number}.</p>
+                            <div className="mb-3">
+                                <img 
+                                    src={qrCodeImage} 
+                                    alt="GCash QR Code" 
+                                    style={{ width: '100%', height: 'auto', maxWidth: '250px', margin: '0 auto', borderRadius: '10px' }} 
+                                />
+                            </div>
+                            <div className="p-3 rounded mb-3" style={{ background: '#f8f9fa' }}>
+                                <h6 className="fw-bold mb-2">Payment Instructions:</h6>
+                                <ol className="text-start small" style={{ paddingLeft: '20px' }}>
+                                    <li>Open your GCash app and tap "Scan QR".</li>
+                                    <li>Scan this QR code.</li>
+                                    <li>Enter the amount: <strong>₱{(orderForPayment.total || 0).toLocaleString()}</strong></li>
+                                    <li>Complete the payment and take a screenshot.</li>
+                                    <li>Upload the screenshot below for confirmation.</li>
+                                </ol>
+                            </div>
+
+                            <div className="mt-3">
+                                <label className="form-label fw-bold small">
+                                    <i className="fas fa-receipt me-2" style={{ color: 'var(--shop-pink)' }}></i>
+                                    Upload Payment Receipt
+                                </label>
+                                <input
+                                    type="file"
+                                    className="form-control form-control-sm"
+                                    accept="image/*"
+                                    onChange={handleReceiptUpload}
+                                    disabled={isProcessingPayment}
+                                />
+                                {receiptPreview && (
+                                    <div className="mt-2">
+                                        <img src={receiptPreview} alt="Receipt Preview" style={{ maxWidth: '100px', maxHeight: '100px', borderRadius: '8px' }} />
+                                    </div>
+                                )}
+                            </div>
+
+                            <button
+                                className="btn w-100 mt-3"
+                                style={{ background: 'var(--shop-pink)', color: 'white' }}
+                                onClick={handleConfirmPayment}
+                                disabled={isProcessingPayment || !receiptFile}
+                            >
+                                {isProcessingPayment ? (
+                                    <>
+                                        <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                                        Submitting...
+                                    </>
+                                ) : 'Submit for Confirmation'}
                             </button>
                         </div>
                     </div>

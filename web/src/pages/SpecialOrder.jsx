@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Select from 'react-select';
 import { supabase } from '../config/supabase';
@@ -10,6 +10,7 @@ const initialFormState = {
     recipientName: '',
     occasion: '',
     otherOccasion: '',
+    eventDate: '', // Added
     contactNumber: '',
     preferences: '',
     addons: [],
@@ -65,6 +66,7 @@ const SpecialOrder = ({ user }) => {
                 const {
                     recipient_name,
                     occasion,
+                    event_date, // Added
                     notes,
                     addons,
                     message,
@@ -80,6 +82,7 @@ const SpecialOrder = ({ user }) => {
                     recipientName: recipient_name || '',
                     occasion: isOther ? 'Other' : (occasion || ''),
                     otherOccasion: isOther ? occasion : '',
+                    eventDate: event_date || '', // Added
                     contactNumber: formatPhoneNumber(contact_number || user?.user_metadata?.phone || ''),
                     preferences: notes || '',
                     addons: addons || [],
@@ -95,7 +98,13 @@ const SpecialOrder = ({ user }) => {
         }
     }, [user]);
 
-
+    const minEventDate = useMemo(() => {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }, []);
 
     const handleAddonsChange = (event) => {
         const { value, checked } = event.target;
@@ -137,9 +146,15 @@ const SpecialOrder = ({ user }) => {
             return;
         }
 
+        // Add eventDate handling
+        let nextValue = value;
+        if (name === 'eventDate' && value) {
+            nextValue = value < minEventDate ? minEventDate : value;
+        }
+
         setFormData((prev) => ({
             ...prev,
-            [name]: value,
+            [name]: nextValue, // Use nextValue here
         }));
     };
 
@@ -209,6 +224,7 @@ const SpecialOrder = ({ user }) => {
                     type: 'special_order',
                     recipient_name: formData.recipientName,
                     occasion: occasion,
+                    event_date: formData.eventDate, // Added
                     contact_number: formData.contactNumber,
                     addons: finalAddons,
                     deliveryAddress: formData.deliveryAddress,
@@ -329,6 +345,10 @@ const SpecialOrder = ({ user }) => {
                                                         required
                                                     />
                                                 )}
+                                            </div>
+                                            <div className="col-md-6">
+                                                <label className="form-label fw-semibold" htmlFor="eventDate">Event Date</label>
+                                                <input type="date" id="eventDate" name="eventDate" className="form-control bg-light border-0 py-3" value={formData.eventDate} onChange={handleChange} min={minEventDate} required />
                                             </div>
 
                                             <div className="col-12 mt-4">

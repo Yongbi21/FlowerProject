@@ -9,8 +9,9 @@ const requestDeliverySteps = [
     { id: 2, status: 'quoted', title: 'Quote Provided', description: 'We have provided a quote for your request', icon: 'fa-file-invoice-dollar' },
     { id: 3, status: 'accepted', title: 'Quote Accepted', description: 'You have accepted the quote, and processing has begun', icon: 'fa-check-circle' },
     { id: 4, status: 'processing', title: 'Processing', description: 'Our florists are preparing your request', icon: 'fa-seedling' },
-    { id: 5, status: 'out_for_delivery', title: 'Out for Delivery', description: 'Your request is on its way', icon: 'fa-truck' },
-    { id: 6, status: 'completed', title: 'Delivered', description: 'Your request has been delivered successfully', icon: 'fa-truck' },
+    { id: 5, status: 'ready_for_delivery', title: 'Ready for Delivery', description: 'Your request is ready to be shipped', icon: 'fa-box' },
+    { id: 6, status: 'out_for_delivery', title: 'Out for Delivery', description: 'Your request is on its way', icon: 'fa-truck' },
+    { id: 7, status: 'completed', title: 'Delivered', description: 'Your request has been delivered successfully', icon: 'fa-truck' },
 ];
 
 // Timeline steps for Pickup Requests
@@ -20,7 +21,7 @@ const requestPickupSteps = [
     { id: 3, status: 'accepted', title: 'Quote Accepted', description: 'You have accepted the quote, and processing has begun', icon: 'fa-check-circle' },
     { id: 4, status: 'processing', title: 'Processing', description: 'Our florists are preparing your request', icon: 'fa-seedling' },
     { id: 5, status: 'ready_for_pickup', title: 'Ready for Pickup', description: 'Your request is ready for pickup', icon: 'fa-store' },
-    { id: 6, status: 'completed', title: 'Claimed', description: 'Your request has been picked up', icon: 'fa-check-circle' },
+    { id: 6, status: 'completed', title: 'Picked up', description: 'Your request has been picked up', icon: 'fa-check-circle' },
 ];
 
 const OrderBookingTracking = () => {
@@ -69,9 +70,24 @@ const OrderBookingTracking = () => {
                 }
             }
 
+            let riderDetails = null;
+            if (foundRequest.assigned_rider && ['processing', 'ready_for_delivery', 'out_for_delivery', 'completed', 'claimed'].includes(foundRequest.status)) {
+                const { data: rider, error: riderError } = await supabase
+                    .from('users')
+                    .select('name, phone')
+                    .eq('id', foundRequest.assigned_rider)
+                    .single();
+                if (riderError) {
+                    console.error('Error fetching rider for request:', riderError);
+                } else {
+                    riderDetails = rider;
+                }
+            }
+
             // Step 3: Combine data and set state
             const transformedRequest = {
                 ...foundRequest,
+                rider: riderDetails,
                 date: foundRequest.created_at,
                 deliveryMethod: foundRequest.delivery_method, // Changed from foundRequest.data?.delivery_method
                 pickupTime: foundRequest.pickup_time,         // Changed from foundRequest.data?.pickup_time
@@ -183,6 +199,8 @@ const OrderBookingTracking = () => {
         return typeMap[request.type] || 'Request';
     };
 
+
+
     const trackingSteps = getTrackingSteps();
     const isPickup = request?.deliveryMethod === 'pickup';
     const isFinalStep = currentStep >= trackingSteps.length && currentStep !== -1;
@@ -245,6 +263,7 @@ const OrderBookingTracking = () => {
                             </span>
                         </div>
                         <div className="tracking-current-status">
+
                             {isDeclinedOrCancelled ? (
                                 <div className="current-status-badge" style={{ backgroundColor: '#f44336', color: '#fff' }}>
                                     Request {request.status === 'declined' ? 'Declined' : 'Cancelled'}
@@ -261,7 +280,7 @@ const OrderBookingTracking = () => {
                                     request.status === 'quoted' ? `Please review quote by: ${getExpectedResolutionDate()}` : 
                                     `Expected resolution by: ${getExpectedResolutionDate()}`
                                 )}
-                                {isFinalStep && (isPickup ? 'Request fulfilled!' : 'Request fulfilled!')}
+                                {isFinalStep && (isPickup ? 'Picked up successfully!' : 'Request fulfilled!')}
                                 {isDeclinedOrCancelled && (request.status === 'declined' ? 'Request not fulfilled.' : 'Request cancelled by user.')}
                             </div>
                         </div>
@@ -290,7 +309,16 @@ const OrderBookingTracking = () => {
                                         </div>
                                         <div className="timeline-content">
                                             <h5>{step.title}</h5>
-                                            <p>{step.description}</p>
+                                            <p>
+                                                {step.description}
+                                                {step.status === 'ready_for_delivery' && ['out_for_delivery', 'delivered', 'completed', 'claimed'].includes(request.status) && request.rider && (
+                                                    <>
+                                                        <br />
+                                                        <span className="fw-bold">Rider:</span> {request.rider.name}
+                                                        {request.rider.phone && ` (${request.rider.phone})`}
+                                                    </>
+                                                )}
+                                            </p>
                                             <div className="timeline-date">{getTimelineDate(step.id)}</div>
                                         </div>
                                     </div>

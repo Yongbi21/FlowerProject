@@ -238,11 +238,13 @@ const MyOrders = () => {
         };
         
         window.addEventListener('messageUpdated', handleMessageUpdate);
-        window.addEventListener('storage', (e) => {
+        const handleStorageChange = (e) => {
             if (e.key === 'messages') {
-                loadOrderMessages(orders); // orders is the state variable, already updated by loadOrders
+                loadOrderMessages(orders);
             }
-        });
+        };
+        
+        window.addEventListener('storage', handleStorageChange);
 
         return () => {
             clearInterval(interval);

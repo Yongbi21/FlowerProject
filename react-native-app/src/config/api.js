@@ -352,6 +352,7 @@ export const adminAPI = {
                 created_at,
                 order_number,
                 status,
+                assigned_rider,
                 payment_status,
                 payment_method,
                 receipt_url,
@@ -359,8 +360,7 @@ export const adminAPI = {
                 subtotal,
                 shipping_fee,
                 delivery_method,
-
-
+                shipping_address: addresses!address_id(*),
                 users (
                     id,
                     name,
@@ -403,6 +403,13 @@ export const adminAPI = {
                 image_url: item.products ? item.products.image_url : null,
             }));
 
+            // Construct full address description if shipping_address exists
+            let shippingAddressDescription = null;
+            if (order.shipping_address) {
+                const { street, city, province, zip } = order.shipping_address;
+                shippingAddressDescription = [street, city, province, zip].filter(Boolean).join(', ');
+            }
+
             return {
                 ...order,
                 customer_name: customerName,
@@ -410,6 +417,10 @@ export const adminAPI = {
                 customer_phone: customerPhone,
                 items: items,
                 order_items: undefined, // Remove the raw order_items object
+                shipping_address: order.shipping_address ? { // Reconstruct shipping_address to add description
+                    ...order.shipping_address,
+                    description: shippingAddressDescription
+                } : null,
             };
         });
 
@@ -486,6 +497,21 @@ export const adminAPI = {
 
         if (error) {
             console.error('Error declining order:', error);
+            throw error;
+        }
+        return { data: { success: true, order: data } };
+    },
+
+    assignRider: async (orderId, riderId) => {
+        const { data, error } = await supabase
+            .from('orders')
+            .update({ assigned_rider: riderId })
+            .eq('id', orderId)
+            .select()
+            .single();
+
+        if (error) {
+            console.error('Error assigning rider:', error);
             throw error;
         }
         return { data: { success: true, order: data } };
@@ -638,6 +664,8 @@ export const adminAPI = {
                 pickup_time,
                 final_price,
                 shipping_fee,
+                payment_status,
+                receipt_url,
                 users (
                     id,
                     name,
@@ -670,6 +698,8 @@ export const adminAPI = {
                 pickup_time: req.pickup_time,
                 final_price: req.final_price,
                 shipping_fee: req.shipping_fee,
+                payment_status: req.payment_status,
+                receipt_url: req.receipt_url,
                 user_name: userData.name,
                 user_email: userData.email,
                 user_phone: userData.phone,
@@ -740,6 +770,21 @@ export const adminAPI = {
 
         if (error) {
             console.error('Error updating request status:', error);
+            throw error;
+        }
+        return { data: { success: true, request: data } };
+    },
+
+    updateRequestPaymentStatus: async (id, status) => {
+        const { data, error } = await supabase
+            .from('requests')
+            .update({ payment_status: status })
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (error) {
+            console.error('Error updating request payment status:', error);
             throw error;
         }
         return { data: { success: true, request: data } };
