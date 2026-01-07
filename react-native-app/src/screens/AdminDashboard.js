@@ -2466,9 +2466,18 @@ const RequestsTab = ({ setActiveTab, handleSelectCustomerForMessage }) => {
       <DetailSection label="Contact Number:" value={request.contact_number} />
       <DetailSection label="Recipient Name:" value={request.data?.recipient_name} />
       <DetailSection label="Occasion:" value={request.data?.occasion} />
+      <DetailSection label="Event Date:" value={request.data?.event_date} />
       <DetailSection label="Delivery Address:" value={request.data?.deliveryAddress} />
       <DetailSection label="Preferences:" value={request.notes} />
-      <DetailSection label="Add-on:" value={request.data?.addon} />
+      <DetailSection label="Message for Card:" value={request.data?.message} />
+      <DetailSection
+        label="Add-ons:"
+        value={
+          request.data?.addons && request.data.addons.length
+            ? request.data.addons.join(', ')
+            : 'None'
+        }
+      />
     </>
   );
 
