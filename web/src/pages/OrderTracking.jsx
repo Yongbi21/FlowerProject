@@ -6,10 +6,10 @@ import '../styles/Shop.css';
 // Timeline steps for Delivery orders
 const deliverySteps = [
     { id: 1, status: 'order_received', title: 'Order Received', description: 'Your order has been received', icon: 'fa-clipboard-check' },
-    { id: 2, status: 'payment', title: 'Payment', description: 'Payment confirmed', icon: 'fa-credit-card' },
-    { id: 3, status: 'processing', title: 'Processing', description: 'Our florists are preparing your order', icon: 'fa-seedling' },
-    { id: 4, status: 'ready_for_delivery', title: 'Ready for Delivery', description: 'Your order is ready to be shipped', icon: 'fa-box' },
-    { id: 5, status: 'out_for_delivery', title: 'Out for Delivery', description: 'Your order is on its way', icon: 'fa-truck' },
+    { id: 2, status: 'processing', title: 'Processing', description: 'Our florists are preparing your order', icon: 'fa-seedling' },
+    { id: 3, status: 'ready_for_delivery', title: 'Ready for Delivery', description: 'Your order is ready to be shipped', icon: 'fa-box' },
+    { id: 4, status: 'out_for_delivery', title: 'Out for Delivery', description: 'Your order is on its way', icon: 'fa-truck' },
+    { id: 5, status: 'payment', title: 'Payment', description: 'Payment confirmed', icon: 'fa-credit-card' },
     { id: 6, status: 'delivered', title: 'Delivered', description: 'Order has been delivered successfully', icon: 'fa-check-circle' },
 ];
 
@@ -19,7 +19,7 @@ const pickupSteps = [
     { id: 2, status: 'payment', title: 'Payment', description: 'Payment confirmed', icon: 'fa-credit-card' },
     { id: 3, status: 'processing', title: 'Processing', description: 'Our florists are preparing your order', icon: 'fa-seedling' },
     { id: 4, status: 'ready_for_pickup', title: 'Ready for Pickup', description: 'Your order is ready for pickup', icon: 'fa-store' },
-    { id: 5, status: 'claimed', title: 'Claimed', description: 'Order has been picked up', icon: 'fa-check-circle' },
+    { id: 5, status: 'claimed', title: 'Picked up', description: 'Order has been picked up', icon: 'fa-check-circle' },
 ];
 
 const OrderTracking = () => {
@@ -46,8 +46,23 @@ const OrderTracking = () => {
                 console.error('Error fetching order:', dbError);
                 setOrder(null);
             } else {
+                let riderDetails = null;
+                if (foundOrder.assigned_rider && ['processing', 'ready_for_delivery', 'out_for_delivery', 'completed', 'claimed'].includes(foundOrder.status)) {
+                    const { data: rider, error: riderError } = await supabase
+                        .from('users')
+                        .select('name, phone')
+                        .eq('id', foundOrder.assigned_rider)
+                        .single();
+                    if (riderError) {
+                        console.error('Error fetching rider details:', riderError);
+                    } else {
+                        riderDetails = rider;
+                    }
+                }
+
                 const transformedOrder = {
                     ...foundOrder,
+                    rider: riderDetails,
                     date: foundOrder.created_at,
                     deliveryMethod: foundOrder.delivery_method,
                     shippingFee: foundOrder.shipping_fee,
@@ -296,7 +311,16 @@ const OrderTracking = () => {
                                         </div>
                                         <div className="timeline-content">
                                             <h5>{step.title}</h5>
-                                            <p>{step.description}</p>
+                                            <p>
+                                                {step.description}
+                                                {step.status === 'ready_for_delivery' && ['out_for_delivery', 'delivered', 'completed', 'claimed'].includes(order.status) && order.rider && (
+                                                    <>
+                                                        <br />
+                                                        <span className="fw-bold">Rider:</span> {order.rider.name}
+                                                        {order.rider.phone && ` (${order.rider.phone})`}
+                                                    </>
+                                                )}
+                                            </p>
                                             <div className="timeline-date">{getTimelineDate(step.id)}</div>
                                         </div>
                                     </div>

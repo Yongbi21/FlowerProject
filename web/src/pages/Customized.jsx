@@ -50,7 +50,7 @@ const getInitialPositions = (count) => {
 const Customized = ({ addToCart }) => {
   const [activeStep, setActiveStep] = useState(1);
   const [selection, setSelection] = useState({
-    flower: null,
+    flowers: [],
     bundleSize: 0,
     wrapper: null,
     ribbon: null
@@ -154,34 +154,58 @@ const Customized = ({ addToCart }) => {
   };
 
   const handleOptionSelect = (type, id) => {
-    let item = null;
     if (type === 'flowers') {
-      item = flowers.find((entry) => entry.id === id);
-    } else if (type === 'wrappers') {
-      item = wrappers.find((entry) => entry.id === id);
-    } else if (type === 'ribbons') {
-      item = ribbons.find((entry) => entry.id === id);
+        setSelection(prev => {
+            const alreadySelected = prev.flowers.find(f => f.id === id);
+            let newFlowers;
+            if (alreadySelected) {
+                // Deselect
+                newFlowers = prev.flowers.filter(f => f.id !== id);
+            } else {
+                // Select, but with limit
+                if (prev.flowers.length >= 5) {
+                    setInfoModal({
+                        show: true,
+                        title: 'Flower Limit Reached',
+                        message: 'You can select up to 5 types of flowers.'
+                    });
+                    return prev; // No change
+                }
+                const item = flowers.find(f => f.id === id);
+                newFlowers = [...prev.flowers, item];
+            }
+            
+            const next = { ...prev, flowers: newFlowers };
+            if (newFlowers.length > 0 && prev.bundleSize === 0) {
+                next.bundleSize = 3; // Keep default bundle size logic
+            }
+            if (newFlowers.length === 0) {
+                next.bundleSize = 0;
+            }
+            return next;
+        });
+    } else {
+        let item = null;
+        if (type === 'wrappers') {
+            item = wrappers.find((entry) => entry.id === id);
+        } else if (type === 'ribbons') {
+            item = ribbons.find((entry) => entry.id === id);
+        }
+        if (!item) return;
+        setSelection((prev) => ({ ...prev, [type === 'wrappers' ? 'wrapper' : 'ribbon']: item }));
     }
-    
-    if (!item) return;
-    setSelection((prev) => {
-      const next = { ...prev, [type === 'flowers' ? 'flower' : type === 'wrappers' ? 'wrapper' : 'ribbon']: item };
-      if (type === 'flowers' && prev.bundleSize === 0) {
-        next.bundleSize = 3;
-      }
-      return next;
-    });
   };
 
   const handleReset = () => {
-    setSelection({ flower: null, bundleSize: 0, wrapper: null, ribbon: null });
+    setSelection({ flowers: [], bundleSize: 0, wrapper: null, ribbon: null });
     setActiveStep(1);
   };
 
   const totalPrice = useMemo(() => {
     let total = 0;
-    if (selection.flower && selection.bundleSize) {
-      total += selection.flower.price * selection.bundleSize;
+    if (selection.flowers.length > 0 && selection.bundleSize) {
+        const avgFlowerPrice = selection.flowers.reduce((sum, f) => sum + f.price, 0) / selection.flowers.length;
+        total += avgFlowerPrice * selection.bundleSize;
     }
     if (selection.wrapper) total += selection.wrapper.price;
     if (selection.ribbon) total += selection.ribbon.price;
@@ -189,8 +213,8 @@ const Customized = ({ addToCart }) => {
   }, [selection]);
 
   const handleSubmitRequest = async () => {
-    if (!selection.flower || !selection.bundleSize) {
-      alert('Please complete your bouquet selection!');
+    if (selection.flowers.length < 2 || selection.flowers.length > 5 || !selection.bundleSize) {
+      alert('Please select 2 to 5 flower types and a bundle size!');
       return;
     }
 
@@ -327,7 +351,7 @@ const Customized = ({ addToCart }) => {
         shipping_fee: shippingFee,
         final_price: totalPrice + shippingFee,
         data: {
-          flower: selection.flower,
+          flowers: selection.flowers,
           bundleSize: selection.bundleSize,
           wrapper: selection.wrapper,
           ribbon: selection.ribbon,
@@ -352,7 +376,7 @@ const Customized = ({ addToCart }) => {
         user_id: userId,
         type: 'request', // Assuming 'request' is a valid type in your notifications table
         title: 'Customized Bouquet Request Submitted!',
-        message: `Your customized bouquet (${selection.flower?.name || 'bouquet'}, ${selection.bundleSize} stems) has been submitted and is pending approval. Request Number: ${requestNumber}. You can view it in My Orders.`,
+        message: `Your customized bouquet (${selection.flowers.map(f => f.name).join(', ') || 'bouquet'}, ${selection.bundleSize} stems) has been submitted and is pending approval. Request Number: ${requestNumber}. You can view it in My Orders.`,
         link: '/my-orders',
         is_read: false,
       };
@@ -374,17 +398,16 @@ const Customized = ({ addToCart }) => {
     }
   };
 
-  const stemImage = selection.flower?.stemImg || selection.flower?.layerImg || placeholderStemImg;
-  const stemSlots = selection.flower && selection.bundleSize ? getInitialPositions(selection.bundleSize) : [];
+  const stemSlots = selection.flowers.length > 0 && selection.bundleSize ? getInitialPositions(selection.bundleSize) : [];
   const stemRefs = useMemo(
     () => Array.from({ length: stemSlots.length }, () => React.createRef()),
     [stemSlots.length]
   );
-  const isEmpty = !selection.flower || !selection.bundleSize;
+  const isEmpty = selection.flowers.length === 0 || !selection.bundleSize;
 
   const formatPrice = (value) => `₱${value.toLocaleString('en-PH')}`;
 
-  const renderOptions = (groupKey, selectedId) => {
+  const renderOptions = (groupKey, selectedIds) => {
     let options = [];
     if (groupKey === 'flowers') {
       options = flowers;
@@ -401,13 +424,15 @@ const Customized = ({ addToCart }) => {
       return <div className="no-options">No {groupKey} available.</div>;
     }
 
+    const isMultiSelect = Array.isArray(selectedIds);
+
     return (
       <div className="grid-options" id={`${groupKey}Options`}>
         {options.map((item) => (
           <button
             key={item.id}
             type="button"
-            className={`option-card ${selectedId === item.id ? 'selected' : ''}`}
+            className={`option-card ${isMultiSelect ? (selectedIds.includes(item.id) ? 'selected' : '') : (selectedIds === item.id ? 'selected' : '')}`}
             onClick={() => handleOptionSelect(groupKey, item.id)}
           >
             <img src={item.img || placeholderImg} alt={item.name} className="option-img" />
@@ -483,7 +508,12 @@ const Customized = ({ addToCart }) => {
                   touchAction: 'none'
                 }}
               >
-                {stemSlots.map((slot, index) => (
+                {stemSlots.map((slot, index) => {
+                  const flowerIndex = index % selection.flowers.length;
+                  const flower = selection.flowers[flowerIndex];
+                  const stemImage = flower?.stemImg || flower?.layerImg || placeholderStemImg;
+                  
+                  return (
                   <Draggable
                     key={`stem-${index}`}
                     bounds="parent"
@@ -508,7 +538,8 @@ const Customized = ({ addToCart }) => {
                       </div>
                     </div>
                   </Draggable>
-                ))}
+                  );
+                })}
               </div>
 
               {selection.ribbon && (
@@ -609,7 +640,7 @@ const Customized = ({ addToCart }) => {
 
               <div className="control-group">
                 <label>Flower Type</label>
-                {renderOptions('flowers', selection.flower?.id || null)}
+                {renderOptions('flowers', selection.flowers.map(f => f.id))}
               </div>
             </div>
           </div>
