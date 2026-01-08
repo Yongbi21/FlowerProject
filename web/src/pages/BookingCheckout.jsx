@@ -229,6 +229,8 @@ const BookingCheckout = ({ user }) => {
                                         <p className="mb-1"><strong>Recipient:</strong> {inquiryItem.requestData.recipient_name}</p>
                                         <p className="mb-1"><strong>Occasion:</strong> {inquiryItem.requestData.occasion}</p>
                                         <p className="mb-1"><strong>Event Date:</strong> {inquiryItem.requestData.event_date}</p>
+                                        {inquiryItem.requestData.addon && <p className="mb-1"><strong>Add-on:</strong> {inquiryItem.requestData.addon}</p>}
+                                        {inquiryItem.requestData.message && <p className="mb-1"><strong>Message:</strong> {inquiryItem.requestData.message}</p>}
                                         <p className="mb-1"><strong>Venue:</strong> {inquiryItem.requestData.venue}</p>
                                         {inquiryItem.requestData.notes && <p className="mb-1"><strong>Details:</strong> {inquiryItem.requestData.notes}</p>}
                                     </>
@@ -236,6 +238,7 @@ const BookingCheckout = ({ user }) => {
                                     <>
                                         <p className="mb-1"><strong>Recipient:</strong> {inquiryItem.requestData.recipient_name}</p>
                                         <p className="mb-1"><strong>Occasion:</strong> {inquiryItem.requestData.occasion}</p>
+                                        {inquiryItem.requestData.event_date && <p className="mb-1"><strong>Event Date:</strong> {inquiryItem.requestData.event_date}</p>}
                                         {inquiryItem.requestData.addon && <p className="mb-1"><strong>Add-on:</strong> {inquiryItem.requestData.addon}</p>}
                                         {inquiryItem.requestData.notes && <p className="mb-1"><strong>Preferences:</strong> {inquiryItem.requestData.notes}</p>}
                                         {inquiryItem.requestData.message && <p className="mb-1"><strong>Message:</strong> {inquiryItem.requestData.message}</p>}
