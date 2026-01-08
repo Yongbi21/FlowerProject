@@ -319,7 +319,7 @@ const OrderCustomizedTracking = () => {
                                             <h5>{step.title}</h5>
                                             <p>
                                                 {step.description}
-                                                {step.status === 'out_for_delivery' && ['out_for_delivery', 'delivered', 'completed', 'claimed'].includes(request.status) && request.rider && (
+                                                {step.key === 'out_for_delivery' && ['out_for_delivery', 'delivered', 'completed', 'claimed'].includes(request.status) && request.rider && (
                                                     <><br /><span className="fw-bold">Rider:</span> {request.rider.name} {request.rider.phone && `(${request.rider.phone})`}</>
                                                 )}
                                             </p>

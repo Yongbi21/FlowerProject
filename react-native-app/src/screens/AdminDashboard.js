@@ -1249,14 +1249,20 @@ const OrdersTab = ({ setActiveTab, handleSelectCustomerForMessage }) => {
         </View>
         <View style={styles.eoContactInfo}>
             {item.customer_email && (<View style={styles.eoInfoRow}>
-                <Ionicons name="mail" size={14} color="#9CA3AF" />
-                <Text style={styles.eoInfoText}>{item.customer_email}</Text>
-            </View>)}
-            {item.shipping_address?.description && (
-              <View style={styles.eoInfoRow}>
-                  <Ionicons name="location" size={14} color="#9CA3AF" />
-                  <Text style={styles.eoInfoText}>{item.shipping_address.description}</Text>
-              </View>
+              <Ionicons name="mail" size={14} color="#9CA3AF" />
+              <Text style={styles.eoInfoText}>{item.customer_email}</Text>
+          </View>)}
+          {item.delivery_method === 'pickup' && item.pickup_time && (
+            <View style={styles.eoInfoRow}>
+              <Ionicons name="time" size={14} color="#9CA3AF" />
+              <Text style={styles.eoInfoText}>Pickup Time: {item.pickup_time}</Text>
+            </View>
+          )}
+          {item.shipping_address?.description && (
+            <View style={styles.eoInfoRow}>
+                <Ionicons name="location" size={14} color="#9CA3AF" />
+                <Text style={styles.eoInfoText}>{item.shipping_address.description}</Text>
+            </View>
             )}
         </View>
       </View>
@@ -2465,6 +2471,11 @@ const RequestsTab = ({ setActiveTab, handleSelectCustomerForMessage }) => {
   };
 
 
+  const renderPickupTimeSection = (request) => {
+    if (request.delivery_method !== 'pickup' || !request.pickup_time) return null;
+    return <DetailSection label="Pickup Time:" value={request.pickup_time} />;
+  };
+
   const renderBookingDetails = (request) => (
     <>
       <DetailSection label="Request Number:" value={request.request_number} />
@@ -2475,6 +2486,7 @@ const RequestsTab = ({ setActiveTab, handleSelectCustomerForMessage }) => {
       <DetailSection label="Event Date:" value={request.data?.event_date} />
       <DetailSection label="Venue:" value={request.data?.venue} />
       <DetailSection label="Additional Notes:" value={request.notes} />
+      {renderPickupTimeSection(request)}
     </>
   );
 
@@ -2498,6 +2510,7 @@ const RequestsTab = ({ setActiveTab, handleSelectCustomerForMessage }) => {
             : 'None'
         }
       />
+      {renderPickupTimeSection(request)}
     </>
   );
 
@@ -2569,6 +2582,7 @@ const RequestsTab = ({ setActiveTab, handleSelectCustomerForMessage }) => {
             <TextInput style={styles.input} value={`₱${request.final_price.toFixed(2)}`} editable={false} />
           </>
         )}
+        {renderPickupTimeSection(request)}
       </>
     );
   };

@@ -356,6 +356,7 @@ export const adminAPI = {
                 payment_status,
                 payment_method,
                 receipt_url,
+                pickup_time,
                 total,
                 subtotal,
                 shipping_fee,
@@ -710,6 +711,9 @@ export const adminAPI = {
             // (even if there are top-level columns), this ensures `data` takes precedence if present.
             // If they are only top-level, paymentStatusToUse, paymentMethodToUse, receiptUrlToUse remain `req.payment_status`, etc.
 
+            const deliveryMethodFromData = requestData?.delivery_method;
+            const pickupTimeFromData = requestData?.pickup_time;
+
             return {
                 ...req, // Keep all original top-level fields (including original payment_status, etc. if they exist)
                 status: req.status === 'accepted' ? 'processing' : req.status,
@@ -717,6 +721,8 @@ export const adminAPI = {
                 payment_status: paymentStatusToUse,
                 payment_method: paymentMethodToUse,
                 receipt_url: receiptUrlToUse,
+                delivery_method: deliveryMethodFromData || req.delivery_method,
+                pickup_time: pickupTimeFromData || req.pickup_time,
                 user_name: userData.name,
                 user_email: userData.email,
                 user_phone: userData.phone,
