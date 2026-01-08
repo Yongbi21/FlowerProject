@@ -1649,6 +1649,8 @@ const StockTab = () => {
   const [stockItems, setStockItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
+  const [stockToDelete, setStockToDelete] = useState(null);
 
   // Modal State
   const [modalVisible, setModalVisible] = useState(false);
@@ -1840,48 +1842,23 @@ const StockTab = () => {
   
       
   
-        const handleDeleteStock = (id) => {
-  
-          Alert.alert(
-  
-            'Delete Item',
-  
-            'Are you sure you want to delete this item?',
-  
-            [
-  
-              { text: 'Cancel', style: 'cancel' },
-  
-              {
-  
-                text: 'Delete',
-  
-                style: 'destructive',
-  
-                onPress: async () => {
-  
-                  try {
-  
-                    await adminAPI.deleteStock(id);
-  
-                    Alert.alert('Success', 'Item deleted');
-  
-                    loadStock();
-  
-                  } catch (error) {
-  
-                    Alert.alert('Error', 'Failed to delete item');
-  
-                  }
-  
-                }
-  
-              }
-  
-            ]
-  
-          );
-  
+        const handleDeleteStock = (item) => {
+          setStockToDelete(item);
+          setDeleteConfirmVisible(true);
+        };
+
+        const performDeleteStock = async () => {
+          if (!stockToDelete) return;
+          try {
+            await adminAPI.deleteStock(stockToDelete.id);
+            Toast.show({ type: 'success', text1: 'Item deleted' });
+            setDeleteConfirmVisible(false);
+            setStockToDelete(null);
+            await loadStock();
+          } catch (error) {
+            console.error('Delete stock failed:', error);
+            Toast.show({ type: 'error', text1: 'Failed to delete item' });
+          }
         };
   
       
@@ -2017,7 +1994,7 @@ const StockTab = () => {
     
                 </TouchableOpacity>
     
-                <TouchableOpacity style={styles.deleteButton} onPress={() => handleDeleteStock(item.id)}>
+                <TouchableOpacity style={styles.deleteButton} onPress={() => handleDeleteStock(item)}>
     
                   <Ionicons name="trash-outline" size={18} color="#fff" />
     
@@ -2111,6 +2088,24 @@ const StockTab = () => {
       
                     />
       
+                    {/* Delete Confirmation Modal */}
+                    <Modal visible={deleteConfirmVisible} animationType="fade" transparent>
+                      <View style={styles.modalContainer}>
+                        <View style={styles.modalContent}>
+                          <Text style={styles.modalTitle}>Delete Item</Text>
+                          <Text style={styles.modalText}>Are you sure you want to delete this item?</Text>
+                          <View style={styles.modalButtons}>
+                            <TouchableOpacity style={[styles.modalButton, styles.cancelButton]} onPress={() => { setDeleteConfirmVisible(false); setStockToDelete(null); }}>
+                              <Text style={styles.buttonText}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={[styles.modalButton, styles.deleteButton]} onPress={performDeleteStock}>
+                              <Text style={styles.buttonText}>Delete</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      </View>
+                    </Modal>
+
                     {/* Add/Edit Stock Modal */}
       
                     <Modal visible={modalVisible} animationType="slide" transparent>
