@@ -1004,16 +1004,19 @@ const Profile = ({ user, logout }) => {
                             </div>
                             <div className="order-card-footer">
                                 <div className="order-total">
-                                    {order.type ? ( // It's a request (booking, customized, special_order)
-                                        (order.status === 'pending' || order.total === 0) ? (
-                                            <>Request Total: <span style={{ color: 'var(--shop-pink)' }}>To be discuss further</span></>
-                                        ) : (
-                                            <>{order.status === 'quoted' ? 'Quoted Price' : 'Request Total'}: <span>₱{(order.total || 0).toLocaleString()}</span></>
-                                        )
-                                    ) : ( // It's a regular order
-                                        <>Order Total: <span>₱{(order.total || order.price || 0).toLocaleString()}</span></>
-                                    )}
-                                </div>
+                                                                    {order.type ? (
+                                                                        order.type === 'customized' ? ( // Special handling for customized bouquets
+                                                                            <>Request Total: <span>₱{(order.total || 0).toLocaleString()}</span></>
+                                                                        ) : ( // Existing logic for other request types
+                                                                            (order.status === 'pending' || order.total === 0) ? (
+                                                                                <>Request Total: <span style={{ color: 'var(--shop-pink)' }}>To be discuss further</span></>
+                                                                            ) : (
+                                                                                <>{order.status === 'quoted' ? 'Quoted Price' : 'Request Total'}: <span>₱{(order.total || 0).toLocaleString()}</span></>
+                                                                            )
+                                                                        )
+                                                                    ) : ( // It's a regular order
+                                                                        <>Order Total: <span>₱{(order.total || order.price || 0).toLocaleString()}</span></>
+                                                                    )}                                </div>
                                 <div className="order-actions">
                                     {order.status === 'quoted' ? (
                                         <div className="d-flex gap-2">
@@ -1037,7 +1040,11 @@ const Profile = ({ user, logout }) => {
                                                 order.type ? ( // It's a Request
                                                     <button
                                                         className="btn-order-action primary"
-                                                        onClick={() => navigate(`/request-tracking/${order.request_number}`)}
+                                                        onClick={() => navigate(
+                                                            order.type === 'customized'
+                                                                ? `/customized-request-tracking/${order.request_number}`
+                                                                : `/request-tracking/${order.request_number}`
+                                                        )}
                                                     >
                                                         Track Request
                                                     </button>

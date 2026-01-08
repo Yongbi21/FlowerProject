@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useRef, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import Draggable from 'react-draggable';
 import { FaChevronLeft, FaArrowRotateLeft, FaScroll, FaRibbon, FaSeedling } from 'react-icons/fa6';
 import html2canvas from 'html2canvas';
@@ -48,6 +48,7 @@ const getInitialPositions = (count) => {
 };
 
 const Customized = ({ addToCart }) => {
+  const navigate = useNavigate();
   const [activeStep, setActiveStep] = useState(1);
   const [selection, setSelection] = useState({
     flowers: [],
@@ -56,8 +57,6 @@ const Customized = ({ addToCart }) => {
     ribbon: null
   });
   const [customBundleSizeInput, setCustomBundleSizeInput] = useState('');
-  const [showModal, setShowModal] = useState(false);
-  const [capturedPhoto, setCapturedPhoto] = useState(null);
   const [infoModal, setInfoModal] = useState({ show: false, title: '', message: '', linkTo: null, linkText: '', linkState: null }); // State for InfoModal
   const previewRef = useRef(null);
 
@@ -212,189 +211,52 @@ const Customized = ({ addToCart }) => {
     return total;
   }, [selection]);
 
-  const handleSubmitRequest = async () => {
+  const handleAddToCart = async () => {
     if (selection.flowers.length < 2 || selection.flowers.length > 5 || !selection.bundleSize) {
       alert('Please select 2 to 5 flower types and a bundle size!');
       return;
     }
 
     try {
-      // Get current user info from Supabase
-      const { data: { session } } = await supabase.auth.getSession();
-      const userId = session?.user?.id;
-
-      if (!userId) {
-        alert('You need to be logged in to submit a customized bouquet request.');
-        return;
-      }
-      
-      // Fetch user's phone number
-      let userPhone = null;
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('phone')
-        .eq('id', userId)
-        .single();
-
-      if (userError) {
-        console.error('Error fetching user phone number:', userError.message);
-        // Decide if you want to block or allow submission without a phone number
-      } else {
-        userPhone = userData?.phone;
-      }
-
-      // Check if user has a shipping address and fetch it
-      const { data: addresses, error: addressError } = await supabase
-        .from('addresses')
-        .select('barangay') // We need the barangay for the fee
-        .eq('user_id', userId)
-        .order('id', { ascending: false }) // Get the latest/primary address by ID
-        .limit(1);
-
-      if (addressError) {
-        console.error('Error checking for address:', addressError);
-        alert("Could not verify your address information. Please try again.");
-        return;
-      }
-
-      let shippingFee = 0;
-      if (addresses && addresses.length > 0) {
-        const userBarangay = addresses[0].barangay;
-        
-        // Fetch fee from barangay_fee table
-        const { data: feeData, error: feeError } = await supabase
-            .from('barangay_fee')
-            .select('delivery_fee')
-            .eq('barangay_name', userBarangay) // Changed from 'barangay'
-            .single();
-            
-        if (feeError) {
-            console.error('Error fetching shipping fee:', feeError);
-            alert('Could not determine shipping fee. Please ensure your address is correct and supported.');
-            // Stop the submission if fee is critical
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user?.id) {
+            alert('You need to be logged in to add to cart.');
             return;
         }
-        
-        if (feeData) {
-            shippingFee = feeData.delivery_fee;
-        }
-      } else {
-        setInfoModal({
-          show: true,
-          title: 'Address Required',
-          message: 'Please add a shipping address to your profile before submitting a request.',
-          linkTo: '/profile',
-          linkText: 'Go to Profile',
-          linkState: { activeMenu: 'addresses' }
-        });
-        return;
-      }
 
-      // Capture screenshot of the preview
-      let photoBase64 = null;
-      if (previewRef.current) {
-        try {
-          const canvas = await html2canvas(previewRef.current, {
-            backgroundColor: null, // Allow transparent background
-            scale: 1,
-            logging: false,
-            useCORS: true, // Enable cross-origin image support
-          });
-          photoBase64 = canvas.toDataURL('image/png');
-        } catch (canvasError) {
-          console.error('Error capturing screenshot:', canvasError);
-          // Continue without photo if screenshot fails
-        }
-      }
-
-      // Function to upload image to Supabase Storage
-      const uploadImageToSupabase = async (base64, userId) => {
-        if (!base64) return null;
-
-        const fileName = `customized-bouquets/${userId}-${Date.now()}.png`;
-        const base64WithoutPrefix = base64.split(',')[1];
-        const imageBuffer = Uint8Array.from(atob(base64WithoutPrefix), (c) => c.charCodeAt(0));
-
-        const { data, error } = await supabase.storage
-          .from('request-images') // Ensure this bucket exists in your Supabase project
-          .upload(fileName, imageBuffer, {
-            contentType: 'image/png',
-            upsert: false,
-          });
-
-        if (error) {
-          console.error('Error uploading image to Supabase:', error);
-          return null;
+        let photoBase64 = null;
+        if (previewRef.current) {
+            try {
+                const canvas = await html2canvas(previewRef.current, {
+                    backgroundColor: null, scale: 1, logging: false, useCORS: true,
+                });
+                photoBase64 = canvas.toDataURL('image/png');
+            } catch (canvasError) {
+                console.error('Error capturing screenshot:', canvasError);
+            }
         }
 
-        // Get public URL
-        const { data: publicUrlData } = supabase.storage
-          .from('request-images')
-          .getPublicUrl(fileName);
+        const customizedBouquet = {
+            id: `custom-${Date.now()}`,
+            name: 'Customized Bouquet',
+            image: photoBase64,
+            flowers: selection.flowers.map(f => ({ id: f.id, name: f.name, price: f.price })),
+            bundleSize: selection.bundleSize,
+            wrapper: selection.wrapper ? { id: selection.wrapper.id, name: selection.wrapper.name, price: selection.wrapper.price } : null,
+            ribbon: selection.ribbon ? { id: selection.ribbon.id, name: selection.ribbon.name, price: selection.ribbon.price } : null,
+            price: totalPrice,
+            qty: 1
+        };
 
-        return publicUrlData.publicUrl;
-      };
+        const existingCart = JSON.parse(localStorage.getItem('customizedCart') || '[]');
+        const updatedCart = [...existingCart, customizedBouquet];
+        localStorage.setItem('customizedCart', JSON.stringify(updatedCart));
 
-      // Upload the photo to Supabase Storage
-      const photoUrl = await uploadImageToSupabase(photoBase64, userId);
+        navigate('/customized-cart');
 
-      // Create a unique request number
-      const requestNumber = `CUS-${Date.now()}`;
-      
-      // Prepare data for Supabase requests table
-      const requestData = {
-        user_id: userId,
-        request_number: requestNumber,
-        type: 'customized',
-        status: 'pending', // Initial status
-        contact_number: userPhone,
-        shipping_fee: shippingFee,
-        final_price: totalPrice + shippingFee,
-        data: {
-          flowers: selection.flowers,
-          bundleSize: selection.bundleSize,
-          wrapper: selection.wrapper,
-          ribbon: selection.ribbon,
-          subtotal: totalPrice
-        },
-        image_url: photoUrl,
-      };
-
-      const { data: insertedRequest, error: requestError } = await supabase
-        .from('requests')
-        .insert([requestData])
-        .select();
-
-      if (requestError) {
-        console.error('Error inserting request:', requestError);
-        alert('Error submitting request. Please try again.');
-        return;
-      }
-
-      // Create notification in Supabase
-      const notificationData = {
-        user_id: userId,
-        type: 'request', // Assuming 'request' is a valid type in your notifications table
-        title: 'Customized Bouquet Request Submitted!',
-        message: `Your customized bouquet (${selection.flowers.map(f => f.name).join(', ') || 'bouquet'}, ${selection.bundleSize} stems) has been submitted and is pending approval. Request Number: ${requestNumber}. You can view it in My Orders.`,
-        link: '/my-orders',
-        is_read: false,
-      };
-
-      const { error: notificationError } = await supabase
-        .from('notifications')
-        .insert([notificationData]);
-
-      if (notificationError) {
-        console.error('Error inserting notification:', notificationError);
-        // Do not block submission if notification fails
-      }
-
-      setCapturedPhoto(photoBase64);
-      setShowModal(true);
     } catch (error) {
-      console.error('Error submitting request:', error);
-      alert('Error submitting request. Please try again.');
+      console.error('Error adding to cart:', error);
+      alert('Error adding to cart. Please try again.');
     }
   };
 
@@ -462,19 +324,11 @@ const Customized = ({ addToCart }) => {
             <span className="label">Total</span>
             <span className="amount">{formatPrice(totalPrice)}</span>
           </div>
-          <button type="button" className="btn-action" onClick={handleSubmitRequest}>Submit a Request</button>
+          <button type="button" className="btn-action" onClick={handleAddToCart}>Add to Cart</button>
         </div>
       </header>
 
-      <RequestSuccessModal
-        show={showModal}
-        onClose={() => {
-          setShowModal(false);
-          setCapturedPhoto(null);
-        }}
-        message="Your customized bouquet request has been added to My Orders! You can view it in your Profile page under the Pending tab. The admin will review and respond soon."
-        photo={capturedPhoto}
-      />
+
 
       <InfoModal
         show={infoModal.show}

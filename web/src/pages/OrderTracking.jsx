@@ -3,23 +3,23 @@ import { useParams, Link } from 'react-router-dom';
 import { supabase } from '../config/supabase';
 import '../styles/Shop.css';
 
+const paymentStep = { status: 'payment', title: 'Payment', description: 'Payment confirmed', icon: 'fa-credit-card' };
+
 // Timeline steps for Delivery orders
-const deliverySteps = [
+const baseDeliverySteps = [
     { id: 1, status: 'order_received', title: 'Order Received', description: 'Your order has been received', icon: 'fa-clipboard-check' },
     { id: 2, status: 'processing', title: 'Processing', description: 'Our florists are preparing your order', icon: 'fa-seedling' },
     { id: 3, status: 'ready_for_delivery', title: 'Ready for Delivery', description: 'Your order is ready to be shipped', icon: 'fa-box' },
     { id: 4, status: 'out_for_delivery', title: 'Out for Delivery', description: 'Your order is on its way', icon: 'fa-truck' },
-    { id: 5, status: 'payment', title: 'Payment', description: 'Payment confirmed', icon: 'fa-credit-card' },
-    { id: 6, status: 'delivered', title: 'Delivered', description: 'Order has been delivered successfully', icon: 'fa-check-circle' },
+    { id: 5, status: 'delivered', title: 'Delivered', description: 'Order has been delivered successfully', icon: 'fa-check-circle' },
 ];
 
 // Timeline steps for Pickup orders
-const pickupSteps = [
+const basePickupSteps = [
     { id: 1, status: 'order_received', title: 'Order Received', description: 'Your order has been received', icon: 'fa-clipboard-check' },
-    { id: 2, status: 'payment', title: 'Payment', description: 'Payment confirmed', icon: 'fa-credit-card' },
-    { id: 3, status: 'processing', title: 'Processing', description: 'Our florists are preparing your order', icon: 'fa-seedling' },
-    { id: 4, status: 'ready_for_pickup', title: 'Ready for Pickup', description: 'Your order is ready for pickup', icon: 'fa-store' },
-    { id: 5, status: 'claimed', title: 'Picked up', description: 'Order has been picked up', icon: 'fa-check-circle' },
+    { id: 2, status: 'processing', title: 'Processing', description: 'Our florists are preparing your order', icon: 'fa-seedling' },
+    { id: 3, status: 'ready_for_pickup', title: 'Ready for Pickup', description: 'Your order is ready for pickup', icon: 'fa-store' },
+    { id: 4, status: 'claimed', title: 'Picked up', description: 'Order has been picked up', icon: 'fa-check-circle' },
 ];
 
 const OrderTracking = () => {
@@ -28,111 +28,57 @@ const OrderTracking = () => {
     const [currentStep, setCurrentStep] = useState(1);
     const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
-        const fetchOrder = async () => {
-            if (!orderNumber) {
-                setLoading(false);
-                return;
-            }
+    const getTrackingSteps = (orderData) => {
+        if (!orderData) return baseDeliverySteps;
 
-            setLoading(true);
-            const { data: foundOrder, error: dbError } = await supabase
-                .from('orders')
-                .select('*, order_items(*, products(image_url)), addresses(*)')
-                .eq('order_number', orderNumber)
-                .single();
-
-            if (dbError || !foundOrder) {
-                console.error('Error fetching order:', dbError);
-                setOrder(null);
+        let steps;
+        if (orderData.deliveryMethod === 'pickup') {
+            if (orderData.payment_method === 'cod') {
+                // COD: Payment is just before claimed
+                steps = [
+                    basePickupSteps[0], // order_received
+                    basePickupSteps[1], // processing
+                    basePickupSteps[2], // ready_for_pickup
+                    paymentStep,
+                    basePickupSteps[3], // claimed
+                ];
             } else {
-                let riderDetails = null;
-                if (foundOrder.assigned_rider && ['processing', 'ready_for_delivery', 'out_for_delivery', 'completed', 'claimed'].includes(foundOrder.status)) {
-                    const { data: rider, error: riderError } = await supabase
-                        .from('users')
-                        .select('name, phone')
-                        .eq('id', foundOrder.assigned_rider)
-                        .single();
-                    if (riderError) {
-                        console.error('Error fetching rider details:', riderError);
-                    } else {
-                        riderDetails = rider;
-                    }
-                }
-
-                const transformedOrder = {
-                    ...foundOrder,
-                    rider: riderDetails,
-                    date: foundOrder.created_at,
-                    deliveryMethod: foundOrder.delivery_method,
-                    shippingFee: foundOrder.shipping_fee,
-                    pickupTime: foundOrder.pickup_time,
-                    address: foundOrder.addresses,
-                    type: foundOrder.request_type || null,
-                    items: foundOrder.order_items.map(item => ({
-                        ...item,
-                        image: item.products?.image_url || item.image_url,
-                        qty: item.quantity,
-                    })),
-                };
-                setOrder(transformedOrder);
-
-                const steps = transformedOrder.deliveryMethod === 'pickup' ? pickupSteps : deliverySteps;
-                const finalStatuses = ['delivered', 'completed', 'claimed'];
-                if (finalStatuses.includes(transformedOrder.status)) {
-                    setCurrentStep(steps.length + 1);
-                } else {
-                    const statusMap = {
-                        'pending': 'order_received',
-                        'cancelled': 'cancelled',
-                        'accepted': 'processing',
-                        'processing': 'processing',
-                        'ready_for_delivery': 'ready_for_delivery',
-                        'out_for_delivery': 'out_for_delivery',
-                        'ready_for_pickup': 'ready_for_pickup',
-                    };
-                    
-                    const currentTimelineStatus = statusMap[transformedOrder.status] || 'order_received';
-                    let stepIndex = steps.findIndex(step => step.status === currentTimelineStatus);
-
-                    if (stepIndex === -1) {
-                        stepIndex = 0;
-                    }
-
-                    setCurrentStep(stepIndex + 1);
-                }
+                // Pre-paid: Payment is after order_received
+                steps = [
+                    basePickupSteps[0], // order_received
+                    paymentStep,
+                    basePickupSteps[1], // processing
+                    basePickupSteps[2], // ready_for_pickup
+                    basePickupSteps[3], // claimed
+                ];
             }
-            setLoading(false);
-        };
+        } else { // Delivery
+            if (orderData.payment_method === 'gcash') {
+                // GCash payment for delivery: Payment step after order_received
+                steps = [
+                    baseDeliverySteps[0], // Order Received
+                    paymentStep,
+                    baseDeliverySteps[1], // Processing
+                    baseDeliverySteps[2], // Ready for Delivery
+                    baseDeliverySteps[3], // Out for Delivery
+                    baseDeliverySteps[4], // Delivered
+                ];
+            } else {
+                // Other payment methods for delivery: Payment step before delivered
+                steps = [
+                    baseDeliverySteps[0], // Order Received
+                    baseDeliverySteps[1], // Processing
+                    baseDeliverySteps[2], // Ready for Delivery
+                    baseDeliverySteps[3], // Out for Delivery
+                    paymentStep, 
+                    baseDeliverySteps[4], // Delivered
+                ];
+            }
+        }
 
-        fetchOrder();
-
-        const channel = supabase
-            .channel(`orders:${orderNumber}`)
-            .on(
-                'postgres_changes',
-                {
-                    event: 'UPDATE',
-                    schema: 'public',
-                    table: 'orders',
-                    filter: `order_number=eq.${orderNumber}`,
-                },
-                (payload) => {
-                    fetchOrder();
-                }
-            )
-            .subscribe();
-
-        return () => {
-            supabase.removeChannel(channel);
-        };
-    }, [orderNumber]);
-
-    const getTrackingSteps = () => {
-        if (!order) return deliverySteps;
-        return order.deliveryMethod === 'pickup' ? pickupSteps : deliverySteps;
+        // Reassign IDs to ensure they are sequential and unique for mapping
+        return steps.map((step, index) => ({ ...step, id: index + 1 }));
     };
-
     const getTimelineDate = (stepId) => {
         if (!order) return '';
         const orderDate = new Date(order.date);
@@ -187,9 +133,115 @@ const OrderTracking = () => {
         }
     };
 
-    const trackingSteps = getTrackingSteps();
+    const trackingSteps = getTrackingSteps(order);
     const isPickup = order?.deliveryMethod === 'pickup';
     const isFinalStep = currentStep >= trackingSteps.length;
+
+    useEffect(() => {
+        const fetchOrder = async () => {
+            if (!orderNumber) {
+                setLoading(false);
+                return;
+            }
+
+            setLoading(true);
+            const { data: foundOrder, error: dbError } = await supabase
+                .from('orders')
+                .select('*, order_items(*, products(image_url)), addresses(*)')
+                .eq('order_number', orderNumber)
+                .single();
+
+            if (dbError || !foundOrder) {
+                console.error('Error fetching order:', dbError);
+                setOrder(null);
+            } else {
+                let riderDetails = null;
+                if (foundOrder.assigned_rider && ['processing', 'ready_for_delivery', 'out_for_delivery', 'completed', 'claimed'].includes(foundOrder.status)) {
+                    const { data: rider, error: riderError } = await supabase
+                        .from('users')
+                        .select('name, phone')
+                        .eq('id', foundOrder.assigned_rider)
+                        .single();
+                    if (riderError) {
+                        console.error('Error fetching rider details:', riderError);
+                    } else {
+                        riderDetails = rider;
+                    }
+                }
+
+                const transformedOrder = {
+                    ...foundOrder,
+                    rider: riderDetails,
+                    date: foundOrder.created_at,
+                    deliveryMethod: foundOrder.delivery_method,
+                    payment_method: foundOrder.payment_method,
+                    shippingFee: foundOrder.shipping_fee,
+                    pickupTime: foundOrder.pickup_time,
+                    address: foundOrder.addresses,
+                    type: foundOrder.request_type || null,
+                    items: foundOrder.order_items.map(item => ({
+                        ...item,
+                        image: item.products?.image_url || item.image_url,
+                        qty: item.quantity,
+                    })),
+                };
+                setOrder(transformedOrder);
+
+                const steps = getTrackingSteps(transformedOrder);
+                const finalStatuses = ['delivered', 'completed', 'claimed'];
+                if (finalStatuses.includes(transformedOrder.status)) {
+                    setCurrentStep(steps.length + 1);
+                } else {
+                    const statusMap = {
+                        'pending': 'order_received',
+                        'cancelled': 'cancelled',
+                        'accepted': 'processing', // Default to processing if accepted
+                        'processing': 'processing',
+                        'ready_for_delivery': 'ready_for_delivery',
+                        'out_for_delivery': 'out_for_delivery',
+                        'ready_for_pickup': 'ready_for_pickup',
+                    };
+                    
+                    let currentTimelineStatus = statusMap[transformedOrder.status] || 'order_received';
+
+                    // Explicitly mark payment as current if accepted and not COD
+                    if (transformedOrder.status === 'accepted' && transformedOrder.payment_method !== 'cod') {
+                        currentTimelineStatus = 'payment';
+                    }
+                    let stepIndex = steps.findIndex(step => step.status === currentTimelineStatus);
+
+                    if (stepIndex === -1) {
+                        stepIndex = 0;
+                    }
+
+                    setCurrentStep(stepIndex + 1);
+                }
+            }
+            setLoading(false);
+        };
+
+        fetchOrder();
+
+        const channel = supabase
+            .channel(`orders:${orderNumber}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'orders',
+                    filter: `order_number=eq.${orderNumber}`,
+                },
+                (payload) => {
+                    fetchOrder();
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [orderNumber]);
 
     if (loading) {
         return (
@@ -248,7 +300,7 @@ const OrderTracking = () => {
                             </span>
                         </div>
                         <div className="tracking-current-status">
-                            {order.status === 'out_for_delivery' && (
+                            {(order.status === 'out_for_delivery' || order.status === 'ready_for_pickup') && (
                                 <button 
                                     style={{
                                         padding: '8px 20px',
@@ -313,7 +365,7 @@ const OrderTracking = () => {
                                             <h5>{step.title}</h5>
                                             <p>
                                                 {step.description}
-                                                {step.status === 'ready_for_delivery' && ['out_for_delivery', 'delivered', 'completed', 'claimed'].includes(order.status) && order.rider && (
+                                                {step.status === 'out_for_delivery' && ['out_for_delivery', 'delivered', 'completed', 'claimed'].includes(order.status) && order.rider && (
                                                     <>
                                                         <br />
                                                         <span className="fw-bold">Rider:</span> {order.rider.name}

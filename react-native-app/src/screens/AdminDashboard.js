@@ -99,6 +99,13 @@ const getStatusColor = (status) => {
   }
 };
 
+const getPaymentStatusDisplay = (paymentStatus, paymentMethod) => {
+  if (paymentStatus === 'to_pay' && paymentMethod?.toLowerCase() === 'gcash') {
+    return 'Waiting for Confirmation';
+  }
+  return getStatusLabel(paymentStatus);
+};
+
 const AdminDashboard = () => {
   const navigation = useNavigation();
   const [activeTab, setActiveTab] = useState('catalogue');
@@ -1317,10 +1324,9 @@ const OrdersTab = ({ setActiveTab, handleSelectCustomerForMessage }) => {
                 </Text>
             </View>
             <View style={{flexDirection: 'row', gap: 8, alignItems: 'center'}}>
-                <View style={[styles.eoPaymentStatus, {backgroundColor: item.payment_status === 'paid' ? '#22C55E' : '#FFA726'}]}>
-                    <Text style={styles.eoPaymentStatusText}>{getStatusLabel(item.payment_status)}</Text>
-                </View>
-                {item.payment_method?.toLowerCase() === 'gcash' && item.receipt_url && (
+                                            <View style={[styles.eoPaymentStatus, {backgroundColor: item.payment_status === 'paid' ? '#22C55E' : '#FFA726'}]}>
+                                                <Text style={styles.eoPaymentStatusText}>{getPaymentStatusDisplay(item.payment_status, item.payment_method)}</Text>
+                                            </View>                {item.payment_method?.toLowerCase() === 'gcash' && item.receipt_url && (
                     <TouchableOpacity onPress={() => openReceiptModal(item.receipt_url)}>
                         <Text style={styles.eoViewReceipt}>View Receipt</Text>
                     </TouchableOpacity>
@@ -1646,7 +1652,6 @@ const StockTab = () => {
     price: '',
     quantity: '',
     unit: '',
-    reorder_level: '10',
     is_available: true, // Boolean status field
     image: null,
   });
@@ -1703,15 +1708,13 @@ const StockTab = () => {
   
             quantity: '',
   
-            unit: '',
+                        unit: '',
   
-            reorder_level: '10',
+                        is_available: true, // Boolean status field
   
-            is_available: true, // Boolean status field
+                        image: null,
   
-            image: null,
-  
-          });
+                      });
   
           setEditingStock(null);
   
@@ -1815,17 +1818,15 @@ const StockTab = () => {
   
             price: item.price ? item.price.toString() : '',
   
-            quantity: item.quantity ? item.quantity.toString() : '',
+                        quantity: item.quantity ? item.quantity.toString() : '',
   
-            unit: item.unit || '',
+                        unit: item.unit || '',
   
-            reorder_level: item.reorder_level ? item.reorder_level.toString() : '10',
+                        is_available: item.is_available, // Corrected: use item.is_available from API
   
-            is_available: item.is_available, // Corrected: use item.is_available from API
+                        image: item.image_url ? { uri: item.image_url.startsWith('http') ? item.image_url : `${BASE_URL}${item.image_url}` } : null,
   
-            image: item.image_url ? { uri: item.image_url.startsWith('http') ? item.image_url : `${BASE_URL}${item.image_url}` } : null,
-  
-          });
+                      });
   
           setModalVisible(true);
   
@@ -1901,17 +1902,15 @@ const StockTab = () => {
   
               category: activeStockTab, // Add this line to include the category from activeStockTab
   
-              price: parseFloat(stockFormData.price) || 0,
+                            price: parseFloat(stockFormData.price) || 0,
   
-              quantity: parseInt(stockFormData.quantity) || 0,
+                            quantity: parseInt(stockFormData.quantity) || 0,
   
-              reorder_level: parseInt(stockFormData.reorder_level) || 10,
+                            is_available: stockFormData.is_available, // Corrected: send is_available
   
-              is_available: stockFormData.is_available, // Corrected: send is_available
+                            image: stockFormData.image,
   
-              image: stockFormData.image,
-  
-            };
+                          };
   
       
   
@@ -2210,26 +2209,6 @@ const StockTab = () => {
       
                               </View>
       
-                              <View style={styles.halfInput}>
-      
-                                <Text style={styles.inputLabel}>Reorder Level</Text>
-      
-                                <TextInput
-      
-                                  style={styles.input}
-      
-                                  placeholder="10"
-      
-                                  keyboardType="numeric"
-      
-                                  value={stockFormData.reorder_level}
-      
-                                  onChangeText={(text) => setStockFormData({ ...stockFormData, reorder_level: text })}
-      
-                                />
-      
-                              </View>
-      
                             </View>
       
                             <Text style={styles.inputLabel}>Status</Text>
@@ -2403,6 +2382,46 @@ const RequestsTab = ({ setActiveTab, handleSelectCustomerForMessage }) => {
   const [receiptModalVisible, setReceiptModalVisible] = useState(false);
   const [selectedReceiptUrl, setSelectedReceiptUrl] = useState(null);
 
+  // New state for rider assignment
+  const [riders, setRiders] = useState([]);
+  const [assignRiderModalVisible, setAssignRiderModalVisible] = useState(false);
+  const [selectedRider, setSelectedRider] = useState(null);
+  const [requestToAssignRider, setRequestToAssignRider] = useState(null);
+  const [riderSearchQuery, setRiderSearchQuery] = useState('');
+
+  const filteredAndSortedRiders = React.useMemo(() => {
+    let result = riders;
+    if (riderSearchQuery) {
+      result = result.filter(rider =>
+        rider.name.toLowerCase().includes(riderSearchQuery.toLowerCase()) ||
+        (rider.email && rider.email.toLowerCase().includes(riderSearchQuery.toLowerCase()))
+      );
+    }
+    result.sort((a, b) => a.name.localeCompare(b.name));
+    return result;
+  }, [riders, riderSearchQuery]);
+
+  const loadRiders = async () => {
+    try {
+      const { data, error } = await supabase.from('users').select('*').eq('role', 'employee');
+      if (error) throw error;
+      setRiders(data || []);
+    } catch (error) {
+      console.error('Error loading riders:', error);
+    }
+  };
+
+  const requestsWithRiderDetails = React.useMemo(() => {
+    if (!requests.length || !riders.length) return requests;
+    return requests.map(request => {
+      if (request.assigned_rider) {
+        const riderDetails = riders.find(r => r.id === request.assigned_rider);
+        return { ...request, rider: riderDetails || null };
+      }
+      return request;
+    });
+  }, [requests, riders]);
+
   const requestDeliveryStepperStatuses = [
     { id: 'pending', label: 'Pending', description: 'Request received' },
     { id: 'processing', label: 'Processing', description: 'Being prepared' },
@@ -2420,6 +2439,7 @@ const RequestsTab = ({ setActiveTab, handleSelectCustomerForMessage }) => {
   useFocusEffect(
     React.useCallback(() => {
       loadRequests();
+      loadRiders();
 
       const channel = supabase
         .channel('public:requests')
@@ -2472,25 +2492,89 @@ const RequestsTab = ({ setActiveTab, handleSelectCustomerForMessage }) => {
     </>
   );
 
-  const renderCustomizedDetails = (request) => (
-    <>
-      <DetailSection label="Customer Email:" value={request.user_email} />
-      <DetailSection label="Contact Number:" value={request.contact_number || request.user_phone} />
-      <DetailSection label="Quantity (Stems):" value={request.data?.bundleSize?.toString()} />
-      <DetailSection label="Flower Type:" value={request.data?.flower?.name} />
-      <DetailSection label="Wrapper:" value={request.data?.wrapper?.name} />
-      <DetailSection label="Ribbon:" value={request.data?.ribbon?.name} />
-      {/* Optionally, you might want to show individual prices or total price for customized items */}
-            {request.final_price && (
-              <DetailSection label="Final Price:" value={`₱${request.final_price.toFixed(2)}`} />
-            )}    </>
-  );
+  const renderCustomizedDetails = (request) => {
+    // Attempt to parse data if it's a string
+    let requestData = request.data;
+    if (typeof requestData === 'string') {
+        try {
+            requestData = JSON.parse(requestData);
+        } catch (e) {
+            console.error("Failed to parse request.data:", e);
+            requestData = {}; // Default to empty object on parse error
+        }
+    }
+
+    const item = requestData?.items?.[0]; // Get the first item from the items array
+    const flowersString = item?.flowers?.map(f => f.name).join(', ') || '';
+
+    return (
+      <>
+        <Text style={styles.inputLabel}>Customer Email</Text>
+        <TextInput style={styles.input} value={request.user_email} editable={false} />
+        
+        <Text style={styles.inputLabel}>Contact Number</Text>
+        <TextInput style={styles.input} value={request.contact_number || request.user_phone} editable={false} />
+
+        {item ? (
+          <>
+            <Text style={styles.inputLabel}>Quantity (Stems)</Text>
+            <TextInput style={styles.input} value={item.bundleSize?.toString() || ''} editable={false} />
+
+            <Text style={styles.inputLabel}>Flowers</Text>
+            <TextInput style={styles.input} value={flowersString} editable={false} multiline/>
+
+            <Text style={styles.inputLabel}>Wrapper</Text>
+            <TextInput style={styles.input} value={item.wrapper?.name || ''} editable={false} />
+
+            <Text style={styles.inputLabel}>Ribbon</Text>
+            <TextInput style={styles.input} value={item.ribbon?.name || ''} editable={false} />
+            
+            {item.image_url && (
+              <>
+                <Text style={styles.inputLabel}>Customized Bouquet Image</Text>
+                <Image
+                  source={{ uri: item.image_url }}
+                  style={styles.fullImage}
+                  resizeMode="contain"
+                />
+              </>
+            )}
+          </>
+        ) : (
+          // Fallback for old data structure or if items is empty
+          <>
+            <Text style={styles.inputLabel}>Quantity (Stems)</Text>
+            <TextInput style={styles.input} value={requestData?.bundleSize?.toString()} editable={false} />
+            <Text style={styles.inputLabel}>Flower Type</Text>
+            <TextInput style={styles.input} value={requestData?.flower?.name} editable={false} />
+            <Text style={styles.inputLabel}>Wrapper</Text>
+            <TextInput style={styles.input} value={requestData?.wrapper?.name} editable={false} />
+            <Text style={styles.inputLabel}>Ribbon</Text>
+            <TextInput style={styles.input} value={requestData?.ribbon?.name} editable={false} />
+          </>
+        )}
+        
+        {request.final_price && (
+          <>
+            <Text style={styles.inputLabel}>Final Price</Text>
+            <TextInput style={styles.input} value={`₱${request.final_price.toFixed(2)}`} editable={false} />
+          </>
+        )}
+      </>
+    );
+  };
 
   const loadRequests = async () => {
     setLoading(true);
     try {
       const response = await adminAPI.getAllRequests();
-      setRequests(response.data.requests || []);
+      const requests = (response.data.requests || []).map(req => {
+        return {
+            ...req,
+            status: req.status === 'accepted' ? 'processing' : req.status, // Keep this transformation
+        }
+      });
+      setRequests(requests);
     } catch (error) {
       console.error('Error loading requests:', error);
       Alert.alert('Error', 'Failed to load requests');
@@ -2533,13 +2617,14 @@ const RequestsTab = ({ setActiveTab, handleSelectCustomerForMessage }) => {
 
       let toastMessage = `Request Status Updated: Request #${requestToUpdate.request_number} is now ${selectedRequestStatus}.`;
 
-      // New logic for requests: if status changes to 'out_for_delivery' or 'ready_for_pickup'
-      // and payment status is 'waiting_for_confirmation', update payment to 'paid'.
+      // New logic for requests: if status changes to 'processing', 'out_for_delivery', or 'ready_for_pickup'
+      // and payment method is not COD and payment is 'waiting_for_confirmation', update payment to 'paid'.
       if (
-        (selectedRequestStatus === 'out_for_delivery' || selectedRequestStatus === 'ready_for_pickup') &&
-        requestToUpdate.payment_status === 'waiting_for_confirmation'
+        (selectedRequestStatus === 'processing' || selectedRequestStatus === 'out_for_delivery' || selectedRequestStatus === 'ready_for_pickup' || selectedRequestStatus === 'completed') &&
+        requestToUpdate.payment_method?.toLowerCase() !== 'cod' &&
+        (requestToUpdate.payment_status !== 'paid' && requestToUpdate.payment_status !== 'cancelled') // Check if it's not already paid or cancelled
       ) {
-        await adminAPI.updateRequestPaymentStatus(requestId, 'paid');
+        await adminAPI.updateRequestPaymentStatus(requestToUpdate, 'paid');
         toastMessage = `Request Status Updated and Payment Marked as Paid for Request #${requestToUpdate.request_number}.`;
       }
 
@@ -2619,7 +2704,32 @@ const RequestsTab = ({ setActiveTab, handleSelectCustomerForMessage }) => {
     setModalVisible(true);
   };
 
-  const EnhancedRequestCard = ({ item, onMessageCustomer, onPhoneCall, openDetailsModal, openReceiptModal, handleUpdatePaymentStatus }) => (
+  const handleAssignRider = (request) => {
+    setRequestToAssignRider(request);
+    setSelectedRider(request.rider); // pre-select if already assigned
+    setAssignRiderModalVisible(true);
+  };
+
+  const handleConfirmAssignRider = async () => {
+    if (!requestToAssignRider || !selectedRider) return;
+    try {
+      const { error } = await supabase
+        .from('requests')
+        .update({ assigned_rider: selectedRider.id })
+        .eq('id', requestToAssignRider.id);
+
+      if (error) throw error;
+
+      Toast.show({ type: 'success', text1: 'Rider Assigned' });
+      setAssignRiderModalVisible(false);
+      loadRequests(); // To refresh the list with the new rider
+    } catch (error) {
+      console.error('Error assigning rider to request:', error);
+      Toast.show({ type: 'error', text1: 'Assignment Failed' });
+    }
+  };
+
+  const EnhancedRequestCard = ({ item, onMessageCustomer, onPhoneCall, openDetailsModal, openReceiptModal, handleUpdatePaymentStatus, onAssignRider }) => (
     <View style={styles.eoCard}>
       {/* Header */}
       <View style={styles.eoCardHeader}>
@@ -2708,6 +2818,20 @@ const RequestsTab = ({ setActiveTab, handleSelectCustomerForMessage }) => {
         </View>
       )}
 
+      {/* Assigned Rider Info */}
+      {item.rider && (
+        <View style={styles.eoSection}>
+            <View style={styles.eoSectionHeader}>
+              <Ionicons name="bicycle-outline" size={16} color="#6B7280"/>
+              <Text style={styles.eoSectionTitle}>Assigned Rider</Text>
+            </View>
+            <View style={styles.eoFlexBetween}>
+                <Text style={styles.eoDetailText}>Name:</Text>
+                <Text style={styles.eoInfoTextBold}>{item.rider.name}</Text>
+            </View>
+        </View>
+      )}
+
                   {/* Payment Details */}
 
                   {(item.payment_status || item.final_price) && (
@@ -2738,11 +2862,11 @@ const RequestsTab = ({ setActiveTab, handleSelectCustomerForMessage }) => {
 
                         <View style={{flexDirection: 'row', gap: 8, alignItems: 'center'}}>
 
-                            <View style={[styles.eoPaymentStatus, {backgroundColor: item.payment_status === 'paid' ? '#22C55E' : '#FFA726'}]}>
+                                                                        <View style={[styles.eoPaymentStatus, {backgroundColor: item.payment_status === 'paid' ? '#22C55E' : '#FFA726'}]}>
 
-                                <Text style={styles.eoPaymentStatusText}>{getStatusLabel(item.payment_status)}</Text>
+                                                                            <Text style={styles.eoPaymentStatusText}>{getPaymentStatusDisplay(item.payment_status, item.payment_method)}</Text>
 
-                            </View>
+                                                                        </View>
 
                             {(item.payment_method?.toLowerCase() === 'gcash' || !item.payment_method) && item.receipt_url && (
 
@@ -2810,6 +2934,12 @@ const RequestsTab = ({ setActiveTab, handleSelectCustomerForMessage }) => {
             <Ionicons name="eye" size={18} color="#fff" />
             <Text style={styles.eoMainBtnText}>View Details</Text>
         </TouchableOpacity>
+        {item.delivery_method === 'delivery' && item.status === 'processing' && (
+          <TouchableOpacity style={[styles.eoMainBtn, {backgroundColor: '#10B981', marginTop: 10}]} onPress={() => onAssignRider(item)}>
+            <Ionicons name="person-add-outline" size={18} color="#fff" />
+            <Text style={styles.eoMainBtnText}>Assign Rider</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </View>
   );
@@ -2819,7 +2949,7 @@ const RequestsTab = ({ setActiveTab, handleSelectCustomerForMessage }) => {
       <Text style={styles.tabTitle}>Booking & Custom Requests</Text>
       
       <FlatList
-        data={requests}
+        data={requestsWithRiderDetails}
         renderItem={({item}) => <EnhancedRequestCard 
                                     item={item} 
                                     onMessageCustomer={handleMessageCustomer} 
@@ -2827,6 +2957,7 @@ const RequestsTab = ({ setActiveTab, handleSelectCustomerForMessage }) => {
                                     openDetailsModal={openDetailsModal} 
                                     openReceiptModal={openReceiptModal}
                                     handleUpdatePaymentStatus={handleUpdatePaymentStatus}
+                                    onAssignRider={handleAssignRider}
                                 />}
         keyExtractor={item => item.id.toString()}
         contentContainerStyle={{ paddingBottom: 20, paddingHorizontal: 16 }}
@@ -3095,6 +3226,56 @@ const RequestsTab = ({ setActiveTab, handleSelectCustomerForMessage }) => {
               style={styles.receiptImage}
               resizeMode="contain"
             />
+          </View>
+        </View>
+      </Modal>
+
+      {/* Assign Rider Modal */}
+      <Modal visible={assignRiderModalVisible} animationType="fade" transparent>
+        <View style={styles.modalContainer}>
+          <View style={[styles.modalContent, {maxHeight: '70%'}]}>
+            <Text style={styles.modalTitle}>Assign Rider</Text>
+
+            {/* Clean Search Bar */}
+            <View style={styles.riderSearchContainer}>
+              <Ionicons name="search" size={20} color="#999" style={styles.riderSearchIcon} />
+              <TextInput
+                style={styles.riderSearchInput}
+                placeholder="Search riders..."
+                placeholderTextColor="#999"
+                value={riderSearchQuery}
+                onChangeText={setRiderSearchQuery}
+              />
+            </View>
+            
+            <FlatList
+              data={filteredAndSortedRiders}
+              renderItem={({ item: rider }) => (
+                <TouchableOpacity
+                  style={styles.radioButtonContainer}
+                  onPress={() => setSelectedRider(rider)}
+                >
+                  <View style={[styles.radioButton, selectedRider?.id === rider.id && styles.radioButtonSelected]}>
+                    {selectedRider?.id === rider.id && <View style={styles.radioButtonInner} />}
+                  </View>
+                  <View style={{flex: 1}}>
+                    <Text style={styles.riderName}>{rider.name}</Text>
+                    <Text style={styles.riderEmail}>{rider.phone}</Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+              keyExtractor={(item) => item.id.toString()}
+              ListEmptyComponent={<Text style={styles.emptyText}>No riders found.</Text>}
+              style={{ marginVertical: 10 }}
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={[styles.modalButton, styles.cancelButton]} onPress={() => { setAssignRiderModalVisible(false); setRiderSearchQuery(''); }}>
+                <Text style={styles.buttonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.modalButton, styles.saveButton]} onPress={handleConfirmAssignRider} disabled={!selectedRider}>
+                <Text style={styles.buttonText}>Confirm</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
