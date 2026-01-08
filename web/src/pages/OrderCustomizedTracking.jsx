@@ -5,26 +5,24 @@ import '../styles/Shop.css';
 
 // Timeline steps for Delivery Requests
 const requestDeliverySteps = [
-    { id: 1, status: 'pending', title: 'Request Submitted', description: 'Your booking request has been received', icon: 'fa-clipboard-check' },
-    { id: 2, status: 'quoted', title: 'Quote Provided', description: 'We have provided a quote for your request', icon: 'fa-file-invoice-dollar' },
-    { id: 3, status: 'accepted', title: 'Quote Paid and Accepted', description: 'You have paid and accepted the quote, and processing has begun', icon: 'fa-check-circle' },
-    { id: 4, status: 'processing', title: 'Processing', description: 'Our florists are preparing your request', icon: 'fa-seedling' },
-    { id: 5, status: 'ready_for_delivery', title: 'Ready for Delivery', description: 'Your request is ready to be shipped', icon: 'fa-box' },
-    { id: 6, status: 'out_for_delivery', title: 'Out for Delivery', description: 'Your request is on its way', icon: 'fa-truck' },
-    { id: 7, status: 'completed', title: 'Delivered', description: 'Your request has been delivered successfully', icon: 'fa-truck' },
+    { id: 1, key: 'submitted', title: 'Request Submitted', description: 'Your request has been received.', icon: 'fa-clipboard-check' },
+    { id: 2, key: 'payment', title: 'Payment', description: 'We are confirming your GCash payment.', icon: 'fa-credit-card' },
+    { id: 3, key: 'processing', title: 'Processing', description: 'Your payment is confirmed and our florists are preparing your request.', icon: 'fa-seedling' },
+    { id: 4, key: 'ready_for_delivery', title: 'Ready for Delivery', description: 'Your request is ready to be shipped.', icon: 'fa-box' },
+    { id: 5, key: 'out_for_delivery', title: 'Out for Delivery', description: 'Your request is on its way.', icon: 'fa-truck' },
+    { id: 6, key: 'completed', title: 'Delivered', description: 'Your request has been delivered successfully.', icon: 'fa-truck' },
 ];
 
 // Timeline steps for Pickup Requests
 const requestPickupSteps = [
-    { id: 1, status: 'pending', title: 'Request Submitted', description: 'Your booking request has been received', icon: 'fa-clipboard-check' },
-    { id: 2, status: 'quoted', title: 'Quote Provided', description: 'We have provided a quote for your request', icon: 'fa-file-invoice-dollar' },
-    { id: 3, status: 'accepted', title: 'Quote Paid and Accepted', description: 'You have paid and accepted the quote, and processing has begun', icon: 'fa-check-circle' },
-    { id: 4, status: 'processing', title: 'Processing', description: 'Our florists are preparing your request', icon: 'fa-seedling' },
-    { id: 5, status: 'ready_for_pickup', title: 'Ready for Pickup', description: 'Your request is ready for pickup', icon: 'fa-store' },
-    { id: 6, status: 'completed', title: 'Picked up', description: 'Your request has been picked up', icon: 'fa-check-circle' },
+    { id: 1, key: 'submitted', title: 'Request Submitted', description: 'Your request has been received.', icon: 'fa-clipboard-check' },
+    { id: 2, key: 'payment', title: 'Payment', description: 'We are confirming your GCash payment.', icon: 'fa-credit-card' },
+    { id: 3, key: 'processing', title: 'Processing', description: 'Your payment is confirmed and our florists are preparing your request.', icon: 'fa-seedling' },
+    { id: 4, key: 'ready_for_pickup', title: 'Ready for Pickup', description: 'Your request is ready for pickup.', icon: 'fa-store' },
+    { id: 5, key: 'completed', title: 'Picked up', description: 'Your request has been picked up.', icon: 'fa-check-circle' },
 ];
 
-const OrderBookingTracking = () => {
+const OrderCustomizedTracking = () => {
     const navigate = useNavigate();
     const { requestNumber } = useParams();
     const [request, setRequest] = useState(null);
@@ -39,7 +37,6 @@ const OrderBookingTracking = () => {
             }
 
             setLoading(true);
-            // Step 1: Fetch the request from the 'requests' table
             const { data: foundRequest, error: dbError } = await supabase
                 .from('requests')
                 .select('*')
@@ -54,7 +51,6 @@ const OrderBookingTracking = () => {
             }
 
             let finalAddress = null;
-            // Step 2: If the request has an address_id, fetch the address
             if (foundRequest.data?.address_id) {
                 const { data: foundAddress, error: addressError } = await supabase
                     .from('addresses')
@@ -64,11 +60,13 @@ const OrderBookingTracking = () => {
                 
                 if (addressError) {
                     console.error('Error fetching address:', addressError);
-                    // Continue without address if it fails to load
                 } else {
                     finalAddress = foundAddress;
                 }
+            } else if (foundRequest.data?.address) {
+                finalAddress = foundRequest.data.address;
             }
+
 
             let riderDetails = null;
             if (foundRequest.assigned_rider && ['processing', 'ready_for_delivery', 'out_for_delivery', 'completed', 'claimed'].includes(foundRequest.status)) {
@@ -84,17 +82,16 @@ const OrderBookingTracking = () => {
                 }
             }
 
-            // Step 3: Combine data and set state
             const transformedRequest = {
                 ...foundRequest,
                 rider: riderDetails,
                 date: foundRequest.created_at,
-                deliveryMethod: foundRequest.delivery_method, // Changed from foundRequest.data?.delivery_method
-                pickupTime: foundRequest.pickup_time,         // Changed from foundRequest.data?.pickup_time
-                address: finalAddress, // Attach the fetched address
+                deliveryMethod: foundRequest.data?.delivery_method,
+                pickupTime: foundRequest.data?.pickup_time,
+                address: finalAddress,
                 type: foundRequest.type,
                 requestData: foundRequest.data,
-                imageUrl: foundRequest.image_url,
+                imageUrl: foundRequest.data?.items?.[0]?.image_url || foundRequest.image_url,
                 finalPrice: foundRequest.final_price,
             };
             setRequest(transformedRequest);
@@ -106,26 +103,23 @@ const OrderBookingTracking = () => {
                 if (transformedRequest.status === 'completed' || transformedRequest.status === 'claimed') {
                     setCurrentStep(steps.length + 1);
                 } else {
-                    setCurrentStep(-1); // Special indicator for declined/cancelled
+                    setCurrentStep(-1);
                 }
             } else {
-                const statusMap = {
-                    'pending': 'pending',
-                    'quoted': 'quoted',
-                    'accepted': 'accepted',
-                    'processing': 'processing',
-                    'out_for_delivery': 'out_for_delivery',
-                    'ready_for_pickup': 'ready_for_pickup',
-                };
-                
-                const currentTimelineStatus = statusMap[transformedRequest.status] || 'pending';
-                let stepIndex = steps.findIndex(step => step.status === currentTimelineStatus);
+                let currentStepKey;
+            if (transformedRequest.status === 'pending') {
+                currentStepKey = 'payment';
+            } else {
+                currentStepKey = transformedRequest.status;
+            }
 
-                if (stepIndex === -1) {
-                    stepIndex = 0;
-                }
+            let stepIndex = steps.findIndex(step => step.key === currentStepKey);
 
-                setCurrentStep(stepIndex + 1);
+            if (stepIndex === -1) {
+                stepIndex = 0; // Default to first step if no match
+            }
+            
+            setCurrentStep(stepIndex + 1);
             }
 
             setLoading(false);
@@ -133,7 +127,6 @@ const OrderBookingTracking = () => {
 
         fetchRequest();
 
-        // Real-time subscription for request updates
         const channel = supabase
             .channel(`requests:${requestNumber}`)
             .on(
@@ -163,9 +156,7 @@ const OrderBookingTracking = () => {
     const getTimelineDate = (stepId) => {
         if (!request) return '';
         const requestDate = new Date(request.date);
-        // This is a placeholder for actual dates based on status changes
-        // For a real app, you'd store timestamps for each status change
-        const stepDate = new Date(requestDate.getTime() + (stepId - 1) * 6 * 60 * 60 * 1000); // e.g., 6 hours apart
+        const stepDate = new Date(requestDate.getTime() + (stepId - 1) * 6 * 60 * 60 * 1000);
         
         if (stepId <= currentStep && currentStep !== -1) {
             return stepDate.toLocaleString('en-PH', { 
@@ -181,22 +172,12 @@ const OrderBookingTracking = () => {
     const getExpectedResolutionDate = () => {
         if (!request) return '';
         const requestDate = new Date(request.date);
-        const expectedDate = new Date(requestDate.getTime() + 48 * 60 * 60 * 1000); // 48 hours for resolution
+        const expectedDate = new Date(requestDate.getTime() + 48 * 60 * 60 * 1000);
         return expectedDate.toLocaleDateString('en-PH', { 
             weekday: 'long',
             month: 'long', 
             day: 'numeric'
         });
-    };
-
-    const getRequestTypeLabel = () => {
-        if (!request) return '';
-        const typeMap = {
-            'booking': 'Event Booking',
-            'special_order': 'Special Order',
-            'customized': 'Customized Bouquet',
-        };
-        return typeMap[request.type] || 'Request';
     };
 
     const handleRequestReceived = async () => {
@@ -273,7 +254,7 @@ const OrderBookingTracking = () => {
                                 })}
                             </div>
                             <span className="badge mt-2" style={{ background: 'rgba(255,255,255,0.2)', fontSize: '0.8rem' }}>
-                                {getRequestTypeLabel()}
+                                Customized Bouquet
                             </span>
                         </div>
                         <div className="tracking-current-status">
@@ -281,9 +262,9 @@ const OrderBookingTracking = () => {
                                 <button 
                                     style={{
                                         padding: '8px 20px',
-                                        backgroundColor: '#e8f5e9', // Light green
-                                        color: '#2e7d32', // Darker green text
-                                        borderRadius: '25px', // Rounded pill shape
+                                        backgroundColor: '#e8f5e9',
+                                        color: '#2e7d32',
+                                        borderRadius: '25px',
                                         fontWeight: '600',
                                         border: 'none',
                                         cursor: 'pointer',
@@ -302,17 +283,12 @@ const OrderBookingTracking = () => {
                                     Request {request.status === 'declined' ? 'Declined' : 'Cancelled'}
                                 </div>
                             ) : (
-                                <div 
-                                    className="current-status-badge"
-                                >
+                                <div className="current-status-badge">
                                     {trackingSteps[Math.min(currentStep, trackingSteps.length) - 1]?.title}
                                 </div>
                             )}
                             <div className="expected-delivery">
-                                {!isFinalStep && !isDeclinedOrCancelled && (
-                                    request.status === 'quoted' ? `Please review quote by: ${getExpectedResolutionDate()}` : 
-                                    `Expected resolution by: ${getExpectedResolutionDate()}`
-                                )}
+                                {!isFinalStep && !isDeclinedOrCancelled && `Expected resolution by: ${getExpectedResolutionDate()}`}
                                 {isFinalStep && (isPickup ? 'Picked up successfully!' : 'Request fulfilled!')}
                                 {isDeclinedOrCancelled && (request.status === 'declined' ? 'Request not fulfilled.' : 'Request cancelled by user.')}
                             </div>
@@ -327,7 +303,6 @@ const OrderBookingTracking = () => {
                                 <i className="fas fa-route me-2" style={{ color: 'var(--shop-pink)' }}></i>
                                 Request Timeline
                             </h5>
-                            
                             <div className="timeline">
                                 {trackingSteps.map((step) => (
                                     <div 
@@ -345,11 +320,7 @@ const OrderBookingTracking = () => {
                                             <p>
                                                 {step.description}
                                                 {step.status === 'out_for_delivery' && ['out_for_delivery', 'delivered', 'completed', 'claimed'].includes(request.status) && request.rider && (
-                                                    <>
-                                                        <br />
-                                                        <span className="fw-bold">Rider:</span> {request.rider.name}
-                                                        {request.rider.phone && ` (${request.rider.phone})`}
-                                                    </>
+                                                    <><br /><span className="fw-bold">Rider:</span> {request.rider.name} {request.rider.phone && `(${request.rider.phone})`}</>
                                                 )}
                                             </p>
                                             <div className="timeline-date">{getTimelineDate(step.id)}</div>
@@ -357,9 +328,7 @@ const OrderBookingTracking = () => {
                                     </div>
                                 ))}
                                 {isDeclinedOrCancelled && (
-                                     <div 
-                                        className="timeline-item current"
-                                    >
+                                     <div className="timeline-item current">
                                         <div className="timeline-marker" style={{backgroundColor: '#f44336', borderColor: '#f44336', color: '#fff'}}>
                                             <i className="fas fa-times-circle"></i>
                                         </div>
@@ -391,12 +360,18 @@ const OrderBookingTracking = () => {
                                             <div className="delivery-value">{request.pickupTime}</div>
                                         </div>
                                     )}
+                                    {request.requestData?.payment_method && (
+                                        <div className="delivery-info-row">
+                                            <div className="delivery-label">Payment</div>
+                                            <div className="delivery-value">{request.requestData.payment_method === 'gcash' ? 'GCash' : request.requestData.payment_method}</div>
+                                        </div>
+                                    )}
                                 </>
                             ) : (
                                 <>
                                     <div className="delivery-info-row">
                                         <div className="delivery-label">Recipient</div>
-                                        <div className="delivery-value">{request.address?.name || request.requestData?.recipient_name || request.requestData?.fullName}</div>
+                                        <div className="delivery-value">{request.address?.name}</div>
                                     </div>
                                     <div className="delivery-info-row">
                                         <div className="delivery-label">Phone</div>
@@ -407,10 +382,16 @@ const OrderBookingTracking = () => {
                                         <div className="delivery-value">
                                             {request.address ? 
                                                 `${request.address.street}, ${request.address.barangay}, ${request.address.city}, ${request.address.province}` :
-                                                request.requestData?.venue // Fallback to venue string if address object not available
+                                                'N/A'
                                             }
                                         </div>
                                     </div>
+                                    {request.requestData?.payment_method && (
+                                        <div className="delivery-info-row">
+                                            <div className="delivery-label">Payment</div>
+                                            <div className="delivery-value">{request.requestData.payment_method === 'gcash' ? 'GCash' : request.requestData.payment_method}</div>
+                                        </div>
+                                    )}
                                 </>
                             )}
                         </div>
@@ -423,51 +404,44 @@ const OrderBookingTracking = () => {
                                 Request Details
                             </h5>
                             
-                            <div className="d-flex align-items-center mb-3">
-                                {request.imageUrl && (
-                                    <img
-                                        src={request.imageUrl}
-                                        alt={getRequestTypeLabel()}
-                                        className="rounded me-3"
-                                        style={{ width: '60px', height: '60px', objectFit: 'cover' }}
-                                    />
-                                )}
-                                <div>
-                                    <h6 className="mb-0 fw-bold">{getRequestTypeLabel()}</h6>
+                            {request.requestData && request.requestData.items && request.requestData.items.map((item, index) => (
+                                <div key={item.id || index} className="mb-4">
+                                    <div className="d-flex align-items-center mb-3">
+                                        {item.image_url && (
+                                            <img
+                                                src={item.image_url}
+                                                alt={item.name}
+                                                className="rounded me-3"
+                                                style={{ width: '60px', height: '60px', objectFit: 'cover' }}
+                                            />
+                                        )}
+                                        <div>
+                                            <h6 className="mb-0 fw-bold">{item.name} #{index + 1}</h6>
+                                        </div>
+                                    </div>
+                                    <p className="mb-1 small"><strong>Flowers:</strong> {item.flowers.map(f => f.name).join(', ')}</p>
+                                    <p className="mb-1 small"><strong>Bundle Size:</strong> {item.bundleSize} stems</p>
+                                    {item.wrapper && <p className="mb-1 small"><strong>Wrapper:</strong> {item.wrapper.name}</p>}
+                                    {item.ribbon && <p className="mb-1 small"><strong>Ribbon:</strong> {item.ribbon.name}</p>}
                                 </div>
-                            </div>
-                            
-                            {request.type === 'booking' && (
-                                <>
-                                    <p className="mb-1"><strong>Recipient:</strong> {request.requestData?.recipient_name}</p>
-                                    <p className="mb-1"><strong>Occasion:</strong> {request.requestData?.occasion}</p>
-                                    <p className="mb-1"><strong>Event Date:</strong> {request.requestData?.event_date}</p>
-                                    <p className="mb-1"><strong>Venue:</strong> {request.requestData?.venue}</p>
-                                    {request.notes && <p className="mb-1"><strong>Notes:</strong> {request.notes}</p>}
-                                </>
-                            )}
-                            {request.type === 'special_order' && (
-                                <>
-                                    <p className="mb-1"><strong>Recipient:</strong> {request.requestData?.recipient_name}</p>
-                                    <p className="mb-1"><strong>Occasion:</strong> {request.requestData?.occasion}</p>
-                                    {request.requestData?.contact_number && <p className="mb-1"><strong>Contact Number:</strong> {request.requestData?.contact_number}</p>}
-                                    {request.requestData?.deliveryAddress && <p className="mb-1"><strong>Delivery Address:</strong> {request.requestData?.deliveryAddress}</p>}
-                                    {request.requestData?.notes && <p className="mb-1"><strong>Preferences:</strong> {request.requestData.notes}</p>}
-                                    {request.requestData?.addon && request.requestData.addon !== 'None' && <p className="mb-1"><strong>Add-on:</strong> {request.requestData.addon}</p>}
-                                    {request.requestData?.message && <p className="mb-1"><strong>Message:</strong> {request.requestData.message}</p>}
-                                    {request.notes && <p className="mb-1"><strong>Additional Notes:</strong> {request.notes}</p>}
-                                </>
-                            )}
-                            {request.type === 'customized' && (
-                                <>
-                                    <p className="mb-1"><strong>Flower:</strong> {request.requestData?.flower}</p>
-                                    <p className="mb-1"><strong>Bundle Size:</strong> {request.requestData?.bundleSize}</p>
-                                    {request.notes && <p className="mb-1"><strong>Notes:</strong> {request.notes}</p>}
-                                </>
-                            )}
+                            ))}
 
                             <hr />
 
+                            <div className="d-flex justify-content-between">
+                                <span>Subtotal</span>
+                                <span>{request.requestData.subtotal ? `₱${request.requestData.subtotal.toLocaleString()}` : 'N/A'}</span>
+                            </div>
+                            <div className="d-flex justify-content-between">
+                                <span>Shipping Fee</span>
+                                <span>
+                                    {request.deliveryMethod === 'pickup'
+                                        ? 'FREE'
+                                        : (request.requestData.shipping_fee ? `₱${request.requestData.shipping_fee.toLocaleString()}` : 'N/A')}
+                                </span>
+                            </div>
+
+                            <hr />
 
                             <div className="d-flex justify-content-between fw-bold fs-5 mt-3" style={{ color: 'var(--shop-pink)' }}>
                                 <span>Final Price</span>
@@ -480,10 +454,8 @@ const OrderBookingTracking = () => {
                             style={{ background: 'var(--shop-pink)', color: 'white' }}
                             onClick={() => navigate('/profile', { state: { activeMenu: 'orders' } })}
                         >
-                            <i className="fas fa-clipboard-list me-2"></i>View My Order
+                            <i className="fas fa-clipboard-list me-2"></i>View My Requests
                         </button>
-
-
 
                         <div className="mt-3">
                             <Link to="/profile" className="btn w-100 py-2" style={{ background: 'var(--shop-pink-light)', color: 'var(--shop-pink)' }}>
@@ -497,4 +469,4 @@ const OrderBookingTracking = () => {
     );
 };
 
-export default OrderBookingTracking;
+export default OrderCustomizedTracking;

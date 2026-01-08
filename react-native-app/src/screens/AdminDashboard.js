@@ -99,6 +99,13 @@ const getStatusColor = (status) => {
   }
 };
 
+const getPaymentStatusDisplay = (paymentStatus, paymentMethod) => {
+  if (paymentStatus === 'to_pay' && paymentMethod?.toLowerCase() === 'gcash') {
+    return 'Waiting for Confirmation';
+  }
+  return getStatusLabel(paymentStatus);
+};
+
 const AdminDashboard = () => {
   const navigation = useNavigation();
   const [activeTab, setActiveTab] = useState('catalogue');
@@ -1317,10 +1324,9 @@ const OrdersTab = ({ setActiveTab, handleSelectCustomerForMessage }) => {
                 </Text>
             </View>
             <View style={{flexDirection: 'row', gap: 8, alignItems: 'center'}}>
-                <View style={[styles.eoPaymentStatus, {backgroundColor: item.payment_status === 'paid' ? '#22C55E' : '#FFA726'}]}>
-                    <Text style={styles.eoPaymentStatusText}>{getStatusLabel(item.payment_status)}</Text>
-                </View>
-                {item.payment_method?.toLowerCase() === 'gcash' && item.receipt_url && (
+                                            <View style={[styles.eoPaymentStatus, {backgroundColor: item.payment_status === 'paid' ? '#22C55E' : '#FFA726'}]}>
+                                                <Text style={styles.eoPaymentStatusText}>{getPaymentStatusDisplay(item.payment_status, item.payment_method)}</Text>
+                                            </View>                {item.payment_method?.toLowerCase() === 'gcash' && item.receipt_url && (
                     <TouchableOpacity onPress={() => openReceiptModal(item.receipt_url)}>
                         <Text style={styles.eoViewReceipt}>View Receipt</Text>
                     </TouchableOpacity>
@@ -2486,25 +2492,89 @@ const RequestsTab = ({ setActiveTab, handleSelectCustomerForMessage }) => {
     </>
   );
 
-  const renderCustomizedDetails = (request) => (
-    <>
-      <DetailSection label="Customer Email:" value={request.user_email} />
-      <DetailSection label="Contact Number:" value={request.contact_number || request.user_phone} />
-      <DetailSection label="Quantity (Stems):" value={request.data?.bundleSize?.toString()} />
-      <DetailSection label="Flower Type:" value={request.data?.flower?.name} />
-      <DetailSection label="Wrapper:" value={request.data?.wrapper?.name} />
-      <DetailSection label="Ribbon:" value={request.data?.ribbon?.name} />
-      {/* Optionally, you might want to show individual prices or total price for customized items */}
-            {request.final_price && (
-              <DetailSection label="Final Price:" value={`₱${request.final_price.toFixed(2)}`} />
-            )}    </>
-  );
+  const renderCustomizedDetails = (request) => {
+    // Attempt to parse data if it's a string
+    let requestData = request.data;
+    if (typeof requestData === 'string') {
+        try {
+            requestData = JSON.parse(requestData);
+        } catch (e) {
+            console.error("Failed to parse request.data:", e);
+            requestData = {}; // Default to empty object on parse error
+        }
+    }
+
+    const item = requestData?.items?.[0]; // Get the first item from the items array
+    const flowersString = item?.flowers?.map(f => f.name).join(', ') || '';
+
+    return (
+      <>
+        <Text style={styles.inputLabel}>Customer Email</Text>
+        <TextInput style={styles.input} value={request.user_email} editable={false} />
+        
+        <Text style={styles.inputLabel}>Contact Number</Text>
+        <TextInput style={styles.input} value={request.contact_number || request.user_phone} editable={false} />
+
+        {item ? (
+          <>
+            <Text style={styles.inputLabel}>Quantity (Stems)</Text>
+            <TextInput style={styles.input} value={item.bundleSize?.toString() || ''} editable={false} />
+
+            <Text style={styles.inputLabel}>Flowers</Text>
+            <TextInput style={styles.input} value={flowersString} editable={false} multiline/>
+
+            <Text style={styles.inputLabel}>Wrapper</Text>
+            <TextInput style={styles.input} value={item.wrapper?.name || ''} editable={false} />
+
+            <Text style={styles.inputLabel}>Ribbon</Text>
+            <TextInput style={styles.input} value={item.ribbon?.name || ''} editable={false} />
+            
+            {item.image_url && (
+              <>
+                <Text style={styles.inputLabel}>Customized Bouquet Image</Text>
+                <Image
+                  source={{ uri: item.image_url }}
+                  style={styles.fullImage}
+                  resizeMode="contain"
+                />
+              </>
+            )}
+          </>
+        ) : (
+          // Fallback for old data structure or if items is empty
+          <>
+            <Text style={styles.inputLabel}>Quantity (Stems)</Text>
+            <TextInput style={styles.input} value={requestData?.bundleSize?.toString()} editable={false} />
+            <Text style={styles.inputLabel}>Flower Type</Text>
+            <TextInput style={styles.input} value={requestData?.flower?.name} editable={false} />
+            <Text style={styles.inputLabel}>Wrapper</Text>
+            <TextInput style={styles.input} value={requestData?.wrapper?.name} editable={false} />
+            <Text style={styles.inputLabel}>Ribbon</Text>
+            <TextInput style={styles.input} value={requestData?.ribbon?.name} editable={false} />
+          </>
+        )}
+        
+        {request.final_price && (
+          <>
+            <Text style={styles.inputLabel}>Final Price</Text>
+            <TextInput style={styles.input} value={`₱${request.final_price.toFixed(2)}`} editable={false} />
+          </>
+        )}
+      </>
+    );
+  };
 
   const loadRequests = async () => {
     setLoading(true);
     try {
       const response = await adminAPI.getAllRequests();
-      setRequests(response.data.requests || []);
+      const requests = (response.data.requests || []).map(req => {
+        return {
+            ...req,
+            status: req.status === 'accepted' ? 'processing' : req.status, // Keep this transformation
+        }
+      });
+      setRequests(requests);
     } catch (error) {
       console.error('Error loading requests:', error);
       Alert.alert('Error', 'Failed to load requests');
@@ -2547,13 +2617,14 @@ const RequestsTab = ({ setActiveTab, handleSelectCustomerForMessage }) => {
 
       let toastMessage = `Request Status Updated: Request #${requestToUpdate.request_number} is now ${selectedRequestStatus}.`;
 
-      // New logic for requests: if status changes to 'out_for_delivery' or 'ready_for_pickup'
-      // and payment status is 'waiting_for_confirmation', update payment to 'paid'.
+      // New logic for requests: if status changes to 'processing', 'out_for_delivery', or 'ready_for_pickup'
+      // and payment method is not COD and payment is 'waiting_for_confirmation', update payment to 'paid'.
       if (
-        (selectedRequestStatus === 'out_for_delivery' || selectedRequestStatus === 'ready_for_pickup') &&
-        requestToUpdate.payment_status === 'waiting_for_confirmation'
+        (selectedRequestStatus === 'processing' || selectedRequestStatus === 'out_for_delivery' || selectedRequestStatus === 'ready_for_pickup' || selectedRequestStatus === 'completed') &&
+        requestToUpdate.payment_method?.toLowerCase() !== 'cod' &&
+        (requestToUpdate.payment_status !== 'paid' && requestToUpdate.payment_status !== 'cancelled') // Check if it's not already paid or cancelled
       ) {
-        await adminAPI.updateRequestPaymentStatus(requestId, 'paid');
+        await adminAPI.updateRequestPaymentStatus(requestToUpdate, 'paid');
         toastMessage = `Request Status Updated and Payment Marked as Paid for Request #${requestToUpdate.request_number}.`;
       }
 
@@ -2791,11 +2862,11 @@ const RequestsTab = ({ setActiveTab, handleSelectCustomerForMessage }) => {
 
                         <View style={{flexDirection: 'row', gap: 8, alignItems: 'center'}}>
 
-                            <View style={[styles.eoPaymentStatus, {backgroundColor: item.payment_status === 'paid' ? '#22C55E' : '#FFA726'}]}>
+                                                                        <View style={[styles.eoPaymentStatus, {backgroundColor: item.payment_status === 'paid' ? '#22C55E' : '#FFA726'}]}>
 
-                                <Text style={styles.eoPaymentStatusText}>{getStatusLabel(item.payment_status)}</Text>
+                                                                            <Text style={styles.eoPaymentStatusText}>{getPaymentStatusDisplay(item.payment_status, item.payment_method)}</Text>
 
-                            </View>
+                                                                        </View>
 
                             {(item.payment_method?.toLowerCase() === 'gcash' || !item.payment_method) && item.receipt_url && (
 

@@ -686,27 +686,42 @@ export const adminAPI = {
         const formattedRequests = requests.map(req => {
             const userData = req.users || {};
 
+            let paymentStatusToUse = req.payment_status; // Default to top-level
+            let paymentMethodToUse = req.payment_method; // Default to top-level
+            let receiptUrlToUse = req.receipt_url;     // Default to top-level
+
+            let requestData = req.data;
+            if (typeof requestData === 'string') {
+                try {
+                    requestData = JSON.parse(requestData);
+                } catch (e) {
+                    console.error("Failed to parse request.data in adminAPI.getAllRequests:", e);
+                    requestData = {};
+                }
+            }
+            
+            // If it's a customized request, prioritize fields from the 'data' JSONB
+            if (req.type === 'customized' && requestData) {
+                paymentStatusToUse = requestData.payment_status !== undefined ? requestData.payment_status : paymentStatusToUse;
+                paymentMethodToUse = requestData.payment_method !== undefined ? requestData.payment_method : paymentMethodToUse;
+                receiptUrlToUse = requestData.receipt_url !== undefined ? requestData.receipt_url : receiptUrlToUse;
+            }
+            // For other types like 'booking' or 'special_order', if they also happen to store these in data
+            // (even if there are top-level columns), this ensures `data` takes precedence if present.
+            // If they are only top-level, paymentStatusToUse, paymentMethodToUse, receiptUrlToUse remain `req.payment_status`, etc.
+
             return {
-                id: req.id,
-                request_number: req.request_number,
-                type: req.type,
+                ...req, // Keep all original top-level fields (including original payment_status, etc. if they exist)
                 status: req.status === 'accepted' ? 'processing' : req.status,
-                contact_number: req.contact_number,
-                image_url: req.image_url,
-                notes: req.notes,
-                created_at: req.created_at,
-                delivery_method: req.delivery_method,
-                pickup_time: req.pickup_time,
-                final_price: req.final_price,
-                shipping_fee: req.shipping_fee,
-                payment_status: req.payment_status,
-                receipt_url: req.receipt_url,
-                assigned_rider: req.assigned_rider,
+                // Explicitly set these to the determined values
+                payment_status: paymentStatusToUse,
+                payment_method: paymentMethodToUse,
+                receipt_url: receiptUrlToUse,
                 user_name: userData.name,
                 user_email: userData.email,
                 user_phone: userData.phone,
                 users: userData,
-                data: req.data,
+                data: requestData, // Keep the parsed data object
             };
         });
 
@@ -777,19 +792,67 @@ export const adminAPI = {
         return { data: { success: true, request: data } };
     },
 
-    updateRequestPaymentStatus: async (id, status) => {
-        const { data, error } = await supabase
-            .from('requests')
-            .update({ payment_status: status })
-            .eq('id', id)
-            .select()
-            .single();
+    updateRequestPaymentStatus: async (requestToUpdate, newStatus) => {
+        const requestId = requestToUpdate.id;
+        const requestType = requestToUpdate.type;
 
-        if (error) {
-            console.error('Error updating request payment status:', error);
-            throw error;
+        if (requestType === 'customized') {
+            // Logic for customized requests (update within data JSONB)
+            // First, fetch the current request to get its 'data' JSONB object
+            const { data: currentRequest, error: fetchError } = await supabase
+                .from('requests')
+                .select('data')
+                .eq('id', requestId)
+                .single();
+
+            if (fetchError) {
+                console.error('Error fetching request for payment status update:', fetchError);
+                throw fetchError;
+            }
+
+            let requestData = currentRequest.data;
+            if (typeof requestData === 'string') {
+                try {
+                    requestData = JSON.parse(requestData);
+                } catch (e) {
+                    console.error("Failed to parse request.data during payment status update:", e);
+                    requestData = {};
+                }
+            }
+            
+            // Update the payment_status within the data JSONB object
+            const updatedData = {
+                ...requestData,
+                payment_status: newStatus,
+            };
+
+            const { data, error } = await supabase
+                .from('requests')
+                .update({ data: updatedData }) // Update the entire data JSONB column
+                .eq('id', requestId)
+                .select()
+                .single();
+
+            if (error) {
+                console.error('Error updating request payment status:', error);
+                throw error;
+            }
+            return { data: { success: true, request: data } };
+        } else {
+            // Logic for booking and special_order requests (update top-level payment_status)
+            const { data, error } = await supabase
+                .from('requests')
+                .update({ payment_status: newStatus })
+                .eq('id', requestId)
+                .select()
+                .single();
+
+            if (error) {
+                console.error('Error updating top-level payment status:', error);
+                throw error;
+            }
+            return { data: { success: true, request: data } };
         }
-        return { data: { success: true, request: data } };
     },
 
     getAllStock: async () => {

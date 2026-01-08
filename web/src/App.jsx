@@ -22,6 +22,9 @@ import Profile from './pages/Profile'
 import MyOrders from './pages/MyOrders'
 import Notifications from './pages/Notifications'
 import OrderBookingTracking from './pages/OrderBookingTracking';
+import OrderCustomizedTracking from './pages/OrderCustomizedTracking';
+import CustomizedCart from './pages/CustomizedCart';
+import CustomizedCheckout from './pages/CustomizedCheckout';
 
 import { supabase } from './config/supabase';
 
@@ -206,6 +209,8 @@ function AppContent() {
         <Route path="/contact" element={<Contact />} />
         <Route path="/wishlist" element={<Wishlist cart={cart} addToCart={addToCart} />} />
         <Route path="/cart" element={<Cart cart={cart} updateCartItem={updateCartItem} removeFromCart={removeFromCart} />} />
+        <Route path="/customized-cart" element={<CustomizedCart user={user} />} />
+        <Route path="/customized-checkout" element={<CustomizedCheckout user={user} />} />
         <Route path="/booking-cart" element={<BookingCart user={user} />} />
         <Route path="/booking-checkout" element={<BookingCheckout user={user} />} />
         <Route path="/login" element={<Login onLogin={login} />} />
@@ -218,6 +223,7 @@ function AppContent() {
         <Route path="/order-success/:orderNumber" element={<OrderSuccess />} />
         <Route path="/order-tracking/:orderNumber" element={<OrderTracking />} />
         <Route path="/request-tracking/:requestNumber" element={<OrderBookingTracking />} />
+        <Route path="/customized-request-tracking/:requestNumber" element={<OrderCustomizedTracking />} />
         <Route path="/profile" element={<Profile user={user} logout={logout} />} />
         <Route path="/my-orders" element={<MyOrders />} />
         <Route path="/notifications" element={<Notifications />} />
