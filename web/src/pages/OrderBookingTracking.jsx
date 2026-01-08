@@ -199,7 +199,21 @@ const OrderBookingTracking = () => {
         return typeMap[request.type] || 'Request';
     };
 
+    const handleRequestReceived = async () => {
+        if (!request) return;
 
+        const { error } = await supabase
+            .from('requests')
+            .update({ status: 'completed' })
+            .eq('id', request.id);
+
+        if (error) {
+            console.error('Error updating request status:', error);
+            alert('There was an error confirming your request. Please try again.');
+        } else {
+            alert('Thank you for confirming! Your request is now marked as completed.');
+        }
+    };
 
     const trackingSteps = getTrackingSteps();
     const isPickup = request?.deliveryMethod === 'pickup';
@@ -263,6 +277,25 @@ const OrderBookingTracking = () => {
                             </span>
                         </div>
                         <div className="tracking-current-status">
+                            {request.status === 'out_for_delivery' && (
+                                <button 
+                                    style={{
+                                        padding: '8px 20px',
+                                        backgroundColor: '#e8f5e9', // Light green
+                                        color: '#2e7d32', // Darker green text
+                                        borderRadius: '25px', // Rounded pill shape
+                                        fontWeight: '600',
+                                        border: 'none',
+                                        cursor: 'pointer',
+                                        whiteSpace: 'nowrap',
+                                        marginBottom: '8px',
+                                        marginRight: '0.5rem',
+                                    }}
+                                    onClick={handleRequestReceived}
+                                >
+                                    Order Received
+                                </button>
+                            )}
 
                             {isDeclinedOrCancelled ? (
                                 <div className="current-status-badge" style={{ backgroundColor: '#f44336', color: '#fff' }}>
@@ -311,7 +344,7 @@ const OrderBookingTracking = () => {
                                             <h5>{step.title}</h5>
                                             <p>
                                                 {step.description}
-                                                {step.status === 'ready_for_delivery' && ['out_for_delivery', 'delivered', 'completed', 'claimed'].includes(request.status) && request.rider && (
+                                                {step.status === 'out_for_delivery' && ['out_for_delivery', 'delivered', 'completed', 'claimed'].includes(request.status) && request.rider && (
                                                     <>
                                                         <br />
                                                         <span className="fw-bold">Rider:</span> {request.rider.name}

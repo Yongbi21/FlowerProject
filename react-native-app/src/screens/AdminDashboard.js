@@ -1646,7 +1646,6 @@ const StockTab = () => {
     price: '',
     quantity: '',
     unit: '',
-    reorder_level: '10',
     is_available: true, // Boolean status field
     image: null,
   });
@@ -1703,15 +1702,13 @@ const StockTab = () => {
   
             quantity: '',
   
-            unit: '',
+                        unit: '',
   
-            reorder_level: '10',
+                        is_available: true, // Boolean status field
   
-            is_available: true, // Boolean status field
+                        image: null,
   
-            image: null,
-  
-          });
+                      });
   
           setEditingStock(null);
   
@@ -1815,17 +1812,15 @@ const StockTab = () => {
   
             price: item.price ? item.price.toString() : '',
   
-            quantity: item.quantity ? item.quantity.toString() : '',
+                        quantity: item.quantity ? item.quantity.toString() : '',
   
-            unit: item.unit || '',
+                        unit: item.unit || '',
   
-            reorder_level: item.reorder_level ? item.reorder_level.toString() : '10',
+                        is_available: item.is_available, // Corrected: use item.is_available from API
   
-            is_available: item.is_available, // Corrected: use item.is_available from API
+                        image: item.image_url ? { uri: item.image_url.startsWith('http') ? item.image_url : `${BASE_URL}${item.image_url}` } : null,
   
-            image: item.image_url ? { uri: item.image_url.startsWith('http') ? item.image_url : `${BASE_URL}${item.image_url}` } : null,
-  
-          });
+                      });
   
           setModalVisible(true);
   
@@ -1901,17 +1896,15 @@ const StockTab = () => {
   
               category: activeStockTab, // Add this line to include the category from activeStockTab
   
-              price: parseFloat(stockFormData.price) || 0,
+                            price: parseFloat(stockFormData.price) || 0,
   
-              quantity: parseInt(stockFormData.quantity) || 0,
+                            quantity: parseInt(stockFormData.quantity) || 0,
   
-              reorder_level: parseInt(stockFormData.reorder_level) || 10,
+                            is_available: stockFormData.is_available, // Corrected: send is_available
   
-              is_available: stockFormData.is_available, // Corrected: send is_available
+                            image: stockFormData.image,
   
-              image: stockFormData.image,
-  
-            };
+                          };
   
       
   
@@ -2210,26 +2203,6 @@ const StockTab = () => {
       
                               </View>
       
-                              <View style={styles.halfInput}>
-      
-                                <Text style={styles.inputLabel}>Reorder Level</Text>
-      
-                                <TextInput
-      
-                                  style={styles.input}
-      
-                                  placeholder="10"
-      
-                                  keyboardType="numeric"
-      
-                                  value={stockFormData.reorder_level}
-      
-                                  onChangeText={(text) => setStockFormData({ ...stockFormData, reorder_level: text })}
-      
-                                />
-      
-                              </View>
-      
                             </View>
       
                             <Text style={styles.inputLabel}>Status</Text>
@@ -2403,6 +2376,46 @@ const RequestsTab = ({ setActiveTab, handleSelectCustomerForMessage }) => {
   const [receiptModalVisible, setReceiptModalVisible] = useState(false);
   const [selectedReceiptUrl, setSelectedReceiptUrl] = useState(null);
 
+  // New state for rider assignment
+  const [riders, setRiders] = useState([]);
+  const [assignRiderModalVisible, setAssignRiderModalVisible] = useState(false);
+  const [selectedRider, setSelectedRider] = useState(null);
+  const [requestToAssignRider, setRequestToAssignRider] = useState(null);
+  const [riderSearchQuery, setRiderSearchQuery] = useState('');
+
+  const filteredAndSortedRiders = React.useMemo(() => {
+    let result = riders;
+    if (riderSearchQuery) {
+      result = result.filter(rider =>
+        rider.name.toLowerCase().includes(riderSearchQuery.toLowerCase()) ||
+        (rider.email && rider.email.toLowerCase().includes(riderSearchQuery.toLowerCase()))
+      );
+    }
+    result.sort((a, b) => a.name.localeCompare(b.name));
+    return result;
+  }, [riders, riderSearchQuery]);
+
+  const loadRiders = async () => {
+    try {
+      const { data, error } = await supabase.from('users').select('*').eq('role', 'employee');
+      if (error) throw error;
+      setRiders(data || []);
+    } catch (error) {
+      console.error('Error loading riders:', error);
+    }
+  };
+
+  const requestsWithRiderDetails = React.useMemo(() => {
+    if (!requests.length || !riders.length) return requests;
+    return requests.map(request => {
+      if (request.assigned_rider) {
+        const riderDetails = riders.find(r => r.id === request.assigned_rider);
+        return { ...request, rider: riderDetails || null };
+      }
+      return request;
+    });
+  }, [requests, riders]);
+
   const requestDeliveryStepperStatuses = [
     { id: 'pending', label: 'Pending', description: 'Request received' },
     { id: 'processing', label: 'Processing', description: 'Being prepared' },
@@ -2420,6 +2433,7 @@ const RequestsTab = ({ setActiveTab, handleSelectCustomerForMessage }) => {
   useFocusEffect(
     React.useCallback(() => {
       loadRequests();
+      loadRiders();
 
       const channel = supabase
         .channel('public:requests')
@@ -2619,7 +2633,32 @@ const RequestsTab = ({ setActiveTab, handleSelectCustomerForMessage }) => {
     setModalVisible(true);
   };
 
-  const EnhancedRequestCard = ({ item, onMessageCustomer, onPhoneCall, openDetailsModal, openReceiptModal, handleUpdatePaymentStatus }) => (
+  const handleAssignRider = (request) => {
+    setRequestToAssignRider(request);
+    setSelectedRider(request.rider); // pre-select if already assigned
+    setAssignRiderModalVisible(true);
+  };
+
+  const handleConfirmAssignRider = async () => {
+    if (!requestToAssignRider || !selectedRider) return;
+    try {
+      const { error } = await supabase
+        .from('requests')
+        .update({ assigned_rider: selectedRider.id })
+        .eq('id', requestToAssignRider.id);
+
+      if (error) throw error;
+
+      Toast.show({ type: 'success', text1: 'Rider Assigned' });
+      setAssignRiderModalVisible(false);
+      loadRequests(); // To refresh the list with the new rider
+    } catch (error) {
+      console.error('Error assigning rider to request:', error);
+      Toast.show({ type: 'error', text1: 'Assignment Failed' });
+    }
+  };
+
+  const EnhancedRequestCard = ({ item, onMessageCustomer, onPhoneCall, openDetailsModal, openReceiptModal, handleUpdatePaymentStatus, onAssignRider }) => (
     <View style={styles.eoCard}>
       {/* Header */}
       <View style={styles.eoCardHeader}>
@@ -2705,6 +2744,20 @@ const RequestsTab = ({ setActiveTab, handleSelectCustomerForMessage }) => {
             style={{ width: '100%', height: 200, borderRadius: 8, marginTop: 10 }}
             resizeMode="contain"
           />
+        </View>
+      )}
+
+      {/* Assigned Rider Info */}
+      {item.rider && (
+        <View style={styles.eoSection}>
+            <View style={styles.eoSectionHeader}>
+              <Ionicons name="bicycle-outline" size={16} color="#6B7280"/>
+              <Text style={styles.eoSectionTitle}>Assigned Rider</Text>
+            </View>
+            <View style={styles.eoFlexBetween}>
+                <Text style={styles.eoDetailText}>Name:</Text>
+                <Text style={styles.eoInfoTextBold}>{item.rider.name}</Text>
+            </View>
         </View>
       )}
 
@@ -2810,6 +2863,12 @@ const RequestsTab = ({ setActiveTab, handleSelectCustomerForMessage }) => {
             <Ionicons name="eye" size={18} color="#fff" />
             <Text style={styles.eoMainBtnText}>View Details</Text>
         </TouchableOpacity>
+        {item.delivery_method === 'delivery' && item.status === 'processing' && (
+          <TouchableOpacity style={[styles.eoMainBtn, {backgroundColor: '#10B981', marginTop: 10}]} onPress={() => onAssignRider(item)}>
+            <Ionicons name="person-add-outline" size={18} color="#fff" />
+            <Text style={styles.eoMainBtnText}>Assign Rider</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </View>
   );
@@ -2819,7 +2878,7 @@ const RequestsTab = ({ setActiveTab, handleSelectCustomerForMessage }) => {
       <Text style={styles.tabTitle}>Booking & Custom Requests</Text>
       
       <FlatList
-        data={requests}
+        data={requestsWithRiderDetails}
         renderItem={({item}) => <EnhancedRequestCard 
                                     item={item} 
                                     onMessageCustomer={handleMessageCustomer} 
@@ -2827,6 +2886,7 @@ const RequestsTab = ({ setActiveTab, handleSelectCustomerForMessage }) => {
                                     openDetailsModal={openDetailsModal} 
                                     openReceiptModal={openReceiptModal}
                                     handleUpdatePaymentStatus={handleUpdatePaymentStatus}
+                                    onAssignRider={handleAssignRider}
                                 />}
         keyExtractor={item => item.id.toString()}
         contentContainerStyle={{ paddingBottom: 20, paddingHorizontal: 16 }}
@@ -3095,6 +3155,56 @@ const RequestsTab = ({ setActiveTab, handleSelectCustomerForMessage }) => {
               style={styles.receiptImage}
               resizeMode="contain"
             />
+          </View>
+        </View>
+      </Modal>
+
+      {/* Assign Rider Modal */}
+      <Modal visible={assignRiderModalVisible} animationType="fade" transparent>
+        <View style={styles.modalContainer}>
+          <View style={[styles.modalContent, {maxHeight: '70%'}]}>
+            <Text style={styles.modalTitle}>Assign Rider</Text>
+
+            {/* Clean Search Bar */}
+            <View style={styles.riderSearchContainer}>
+              <Ionicons name="search" size={20} color="#999" style={styles.riderSearchIcon} />
+              <TextInput
+                style={styles.riderSearchInput}
+                placeholder="Search riders..."
+                placeholderTextColor="#999"
+                value={riderSearchQuery}
+                onChangeText={setRiderSearchQuery}
+              />
+            </View>
+            
+            <FlatList
+              data={filteredAndSortedRiders}
+              renderItem={({ item: rider }) => (
+                <TouchableOpacity
+                  style={styles.radioButtonContainer}
+                  onPress={() => setSelectedRider(rider)}
+                >
+                  <View style={[styles.radioButton, selectedRider?.id === rider.id && styles.radioButtonSelected]}>
+                    {selectedRider?.id === rider.id && <View style={styles.radioButtonInner} />}
+                  </View>
+                  <View style={{flex: 1}}>
+                    <Text style={styles.riderName}>{rider.name}</Text>
+                    <Text style={styles.riderEmail}>{rider.phone}</Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+              keyExtractor={(item) => item.id.toString()}
+              ListEmptyComponent={<Text style={styles.emptyText}>No riders found.</Text>}
+              style={{ marginVertical: 10 }}
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={[styles.modalButton, styles.cancelButton]} onPress={() => { setAssignRiderModalVisible(false); setRiderSearchQuery(''); }}>
+                <Text style={styles.buttonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.modalButton, styles.saveButton]} onPress={handleConfirmAssignRider} disabled={!selectedRider}>
+                <Text style={styles.buttonText}>Confirm</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>

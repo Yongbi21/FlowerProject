@@ -1,8 +1,10 @@
-C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\@supabase\supabase-js\dist\main\lib\fetch.js:8     GET https://luzcecstkebntjnfonwv.supabase.co/rest/v1/requests?select=id%2Crequest_number%2Ctype%2Cstatus%2Ccontact_number%2Cimage_url%2Cnotes%2Cdata%2Ccreated_at%2Cdelivery_method%2Cpickup_time%2Cfinal_price%2Cshipping_fee%2Cpayment_method%2Cpayment_status%2Creceipt_url%2Cusers%28id%2Cname%2Cemail%2Cphone%29&order=created_at.desc 400 (Bad Request)
-(anonymous) @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\@supabase\supabase-js\dist\main\lib\fetch.js:8
-(anonymous) @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\@supabase\supabase-js\dist\main\lib\fetch.js:28
-await in (anonymous) (async)
-then @ C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\node_modules\@supabase\postgrest-js\dist\cjs\PostgrestBuilder.js:72
-Show 3 more frames
-Show less
-C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\src\config\api.js:682 Supabase query error for requests: {code: '42703', details: null, hint: null, message: 'column requests.payment_method does not exist'}
+Web Bundling failed 1070ms node_modules\expo\AppEntry.js (524 modules)
+ ERROR  SyntaxError: C:\Users\AJ\Documents\GitHub\FlowerProject\react-native-app\src\screens\AdminDashboard.js: Expected corresponding JSX closing tag for <ScrollView>. (2204:28)
+
+  2202 |                               </View>
+  2203 |
+> 2204 |                             </View>
+       |                             ^
+  2205 |
+  2206 |                             <Text style={styles.inputLabel}>Status</Text>
+  2207 |

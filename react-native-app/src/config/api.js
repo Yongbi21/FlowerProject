@@ -666,6 +666,7 @@ export const adminAPI = {
                 shipping_fee,
                 payment_status,
                 receipt_url,
+                assigned_rider,
                 users (
                     id,
                     name,
@@ -700,6 +701,7 @@ export const adminAPI = {
                 shipping_fee: req.shipping_fee,
                 payment_status: req.payment_status,
                 receipt_url: req.receipt_url,
+                assigned_rider: req.assigned_rider,
                 user_name: userData.name,
                 user_email: userData.email,
                 user_phone: userData.phone,
