@@ -162,11 +162,11 @@ const Customized = ({ addToCart }) => {
                 newFlowers = prev.flowers.filter(f => f.id !== id);
             } else {
                 // Select, but with limit
-                if (prev.flowers.length >= 5) {
+                if (prev.flowers.length >= 2) {
                     setInfoModal({
                         show: true,
                         title: 'Flower Limit Reached',
-                        message: 'You can select up to 5 types of flowers.'
+                        message: 'You can select up to 2 types of flowers.'
                     });
                     return prev; // No change
                 }
@@ -212,8 +212,12 @@ const Customized = ({ addToCart }) => {
   }, [selection]);
 
   const handleAddToCart = async () => {
-    if (selection.flowers.length < 2 || selection.flowers.length > 5 || !selection.bundleSize) {
-      alert('Please select 2 to 5 flower types and a bundle size!');
+    if (selection.flowers.length < 1 || selection.flowers.length > 2 || !selection.bundleSize) {
+      setInfoModal({
+        show: true,
+        title: 'Selection Needed',
+        message: 'Please select 1 to 2 flower types and a bundle size.',
+      });
       return;
     }
 
